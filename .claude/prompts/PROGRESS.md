@@ -1,5 +1,22 @@
 # PanCode Build Progress
 
+## v0.1.4: Dispatch Depth (COMPLETE, 2026-03-19)
+
+107 TypeScript source files. Commit `37c5d08`. Chain dispatch with output
+contracts, three dispatch commands, and full dispatch analytics.
+
+### What shipped in v0.1.4
+
+- validation.ts: post-dispatch output contracts (expectedFiles, expectedPatterns, validationCommand)
+- dispatchChain(): sequential pipeline primitive with $INPUT/$ORIGINAL token substitution, max 8000 char output cap
+- dispatch_chain tool: multi-step agent workflows with per-step validation
+- /stoprun: cancel running dispatch by ID prefix, kill worker process, mark as cancelled
+- /cost: per-run cost breakdown grouped by agent and model, table format
+- /dispatch-insights: agent analytics (runs, ok, errored, error rate, avg time), last 5 dispatches, active dispatch rules
+- Barrel exports for validation types (OutputContract, ValidationResult) and chain types (ChainStep, ChainResult)
+
+---
+
 ## v0.1.3: Coordination + Session (COMPLETE, 2026-03-19)
 
 106 TypeScript source files. Commit `214aa25`. Worker coordination surface
