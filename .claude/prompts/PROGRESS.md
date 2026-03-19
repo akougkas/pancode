@@ -1,5 +1,21 @@
 # PanCode Build Progress
 
+## v0.1.3: Coordination + Session (COMPLETE, 2026-03-19)
+
+106 TypeScript source files. Commit `214aa25`. Worker coordination surface
+with enhanced session commands, board sync after dispatch, and agent identity.
+
+### What shipped in v0.1.3
+
+- Enhanced /context: table format with KEY/SOURCE/TIMESTAMP/VALUE columns, key-based full value lookup, source filtering
+- Enhanced /reset: three subcommands (quick reset, reset context with confirmation, reset all with confirmation), entry count reporting
+- Enhanced /checkpoint: list subcommand reads pancode-checkpoint entries from Pi session, shows context/board counts; restore subcommand is display-only stub
+- Board sync after worker dispatch (pancode:run-finished listener) and on session_start (picks up previous session entries)
+- agentName passed through spawnWorker and runParallel for worker identity in board/context writes
+- Checkpoint data enriched with contextEntries, boardEntries, temporalMemory, persistentMemory, budgetSpent
+
+---
+
 ## v0.1.2: Command Surface (COMPLETE, 2026-03-19)
 
 106 TypeScript source files. Commit `2bbcc68`. Full command surface takeover
