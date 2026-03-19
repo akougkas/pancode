@@ -158,6 +158,7 @@ export const extension = defineExtension((pi) => {
         model: routing.model,
         systemPrompt: routing.systemPrompt,
         cwd: workerCwd,
+        agentName: dispatchAction.agent,
         sampling: routing.sampling,
         signal: signal ?? undefined,
         runId: run.id,
@@ -285,6 +286,7 @@ export const extension = defineExtension((pi) => {
         model: routing.model,
         systemPrompt: routing.systemPrompt,
         cwd: ctx.cwd,
+        agentName,
         sampling: routing.sampling,
         runId: runs[i].id,
       }));

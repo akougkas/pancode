@@ -7,6 +7,7 @@ export interface ParallelTask {
   model: string | null;
   systemPrompt: string;
   cwd: string;
+  agentName?: string;
   sampling?: SamplingPreset | null;
   runId?: string;
 }
@@ -37,6 +38,7 @@ export async function runParallel(
         model: task.model,
         systemPrompt: task.systemPrompt,
         cwd: task.cwd,
+        agentName: task.agentName,
         sampling: task.sampling,
         signal,
         runId: task.runId,
