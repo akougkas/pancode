@@ -1,8 +1,13 @@
 import { defineExtension } from "../../engine/extensions";
 import { PANCODE_HOME } from "../providers";
 import { agentRegistry, loadAgentsFromYaml } from "./spec-registry";
+import { registerShadowExplore } from "./shadow-explore";
 
 export const extension = defineExtension((pi) => {
+  // Register shadow_explore as an orchestrator-internal tool.
+  // Shadow agents are not visible in /agents and are not part of the dispatch system.
+  registerShadowExplore(pi.registerTool.bind(pi));
+
   pi.on("session_start", (_event, _ctx) => {
     const specs = loadAgentsFromYaml(PANCODE_HOME);
     for (const spec of specs) {
