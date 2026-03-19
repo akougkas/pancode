@@ -12,6 +12,13 @@ import {
   resolveThinkingLevelForPreference,
   type PanCodeReasoningPreference,
 } from "../../core/thinking";
+import {
+  cycleMode,
+  setCurrentMode,
+  getModeDefinition,
+  MODE_DEFINITIONS,
+  type ModeDefinition,
+} from "../../core/modes";
 import { sharedBus } from "../../core/shared-bus";
 import { defineExtension, type ExtensionContext } from "../../engine/extensions";
 import type { Api, Model } from "../../engine/types";
@@ -62,9 +69,13 @@ function buildDashboardLines(input: {
   themeName: string;
   workingDirectory: string;
   tools: string[];
+  modeName?: string;
+  modeDescription?: string;
 }): string[] {
+  const modeStr = input.modeName ? `Mode: ${input.modeName} (${input.modeDescription ?? ""})` : null;
   return [
     `${PANCODE_PRODUCT_NAME} shell is active.`,
+    ...(modeStr ? [modeStr] : []),
     `Model: ${input.modelLabel}`,
     `Reasoning: ${input.reasoningPreference} | capability: ${input.reasoningCapability} | applied: ${input.effectiveThinkingLevel}`,
     `Theme: ${input.themeName}`,
@@ -364,6 +375,32 @@ function resolveModelSelection(
   return { error: `Model not found: ${trimmed}` };
 }
 
+/** Map orchestrator modes to named theme colors for visual differentiation in the TUI. */
+function modeThemeColor(mode: ModeDefinition): "accent" | "success" | "warning" | "error" | "muted" {
+  switch (mode.id) {
+    case "capture": return "accent";
+    case "plan": return "muted";
+    case "build": return "success";
+    case "ask": return "warning";
+    case "review": return "error";
+  }
+}
+
+function buildModeInstructions(mode: ModeDefinition): string {
+  switch (mode.id) {
+    case "capture":
+      return "You are in CAPTURE mode. Log tasks using task_write. Do NOT dispatch workers. Do NOT write code. Only capture ideas, TODOs, and requirements.";
+    case "plan":
+      return "You are in PLAN mode. Analyze the request and build a plan. Create tasks with task_write. Do NOT dispatch workers yet. Present a plan for approval.";
+    case "build":
+      return "You are in BUILD mode. You have full dispatch capability. Use task_write to track work items. Dispatch workers for implementation via dispatch_agent or batch_dispatch. Monitor progress and verify results.";
+    case "ask":
+      return "You are in ASK mode. Answer questions and explore. You may dispatch READONLY agents (scout, reviewer) but NOT mutable agents (dev). Do not modify files.";
+    case "review":
+      return "You are in REVIEW mode. Dispatch readonly reviewers to analyze code quality. Do NOT dispatch mutable agents. Focus on quality checks, test coverage, and code review.";
+  }
+}
+
 export const extension = defineExtension((pi) => {
   let currentModelLabel = "no model";
   let currentThemeName = process.env.PANCODE_THEME?.trim() || "pancode-dark";
@@ -554,6 +591,7 @@ export const extension = defineExtension((pi) => {
 
   const showDashboard = async (_args: string, ctx: ExtensionContext) => {
     const modelLabel = ctx.model ? modelRef(ctx.model) : "unresolved";
+    const dashMode = getModeDefinition();
     const lines = [
       ...buildDashboardLines({
         modelLabel,
@@ -563,6 +601,8 @@ export const extension = defineExtension((pi) => {
         themeName: ctx.ui.theme.name ?? currentThemeName,
         workingDirectory: ctx.cwd,
         tools: pi.getActiveTools(),
+        modeName: dashMode.name,
+        modeDescription: dashMode.description,
       }),
       "",
       `Safety: ${process.env.PANCODE_SAFETY ?? "auto-edit"}`,
@@ -772,13 +812,15 @@ export const extension = defineExtension((pi) => {
         const totalCost = budgetState?.totalCost ?? 0;
         const ceiling = budgetState?.ceiling ?? null;
 
-        // Left: model label (accent) + activity indicator
+        // Left: mode label (mode-colored) + model label (accent) + activity indicator
+        const modeInfo = getModeDefinition();
+        const modePart = theme.fg(modeThemeColor(modeInfo), `[${modeInfo.name}]`);
         const modelPart = theme.fg("accent", ` ${currentModelLabel}`);
         const activityIcon = activeCount > 0 ? theme.fg("accent", " \u25CF") : theme.fg("dim", " \u25CB");
         const activityText = activeCount > 0
           ? theme.fg("muted", ` ${activeCount} active`)
           : theme.fg("dim", " idle");
-        const left = modelPart + activityIcon + activityText;
+        const left = modePart + modelPart + activityIcon + activityText;
 
         // Right: runs, budget, context bar
         const ctxFilled = Math.round(contextPercent / 10);
@@ -825,6 +867,10 @@ export const extension = defineExtension((pi) => {
       trackWorkerEnd(event.runId, event.status);
     });
 
+    // Set initial mode status
+    const initMode = getModeDefinition();
+    ctx.ui.setStatus("mode", `[${initMode.name}]`);
+
     if (!welcomeShown) {
       welcomeShown = true;
       sendPanel(emitPanel, `${PANCODE_PRODUCT_NAME} Dashboard`, buildDashboardLines({
@@ -835,6 +881,8 @@ export const extension = defineExtension((pi) => {
         themeName: currentThemeName,
         workingDirectory: ctx.cwd,
         tools: pi.getActiveTools(),
+        modeName: initMode.name,
+        modeDescription: initMode.description,
       }));
     }
   });
@@ -852,6 +900,52 @@ export const extension = defineExtension((pi) => {
       },
       (message, level) => ctx.ui.notify(message, level),
     );
+  });
+
+  // === Mode cycling shortcut ===
+  pi.registerShortcut("shift+tab", {
+    description: "Cycle orchestrator mode",
+    handler: async (ctx) => {
+      const newMode = cycleMode();
+      const def = getModeDefinition(newMode);
+      ctx.ui.setStatus("mode", `[${def.name}]`);
+      ctx.ui.notify(`Mode: ${def.name} -- ${def.description}`, "info");
+    },
+  });
+
+  // === Mode-specific instructions injected before each agent turn ===
+  pi.on("before_agent_start", async () => {
+    const mode = getModeDefinition();
+    return {
+      message: {
+        customType: "pancode-mode-context",
+        content: `[${mode.name.toUpperCase()} MODE] ${buildModeInstructions(mode)}`,
+        display: false,
+      },
+    };
+  });
+
+  // Filter stale mode context messages from conversation history.
+  // Each turn injects a fresh mode context via before_agent_start, so prior
+  // mode messages are noise (and may contradict the current mode after a switch).
+  // Keep only the most recent pancode-mode-context message.
+  pi.on("context", async (event) => {
+    type MsgWithCustomType = (typeof event.messages)[number] & { customType?: string };
+    let lastModeIndex = -1;
+    for (let i = event.messages.length - 1; i >= 0; i--) {
+      if ((event.messages[i] as MsgWithCustomType).customType === "pancode-mode-context") {
+        lastModeIndex = i;
+        break;
+      }
+    }
+    if (lastModeIndex < 0) return;
+
+    return {
+      messages: event.messages.filter((m, i) => {
+        if ((m as MsgWithCustomType).customType !== "pancode-mode-context") return true;
+        return i === lastModeIndex;
+      }),
+    };
   });
 
   pi.registerCommand("dashboard", {
@@ -879,6 +973,11 @@ export const extension = defineExtension((pi) => {
     handler: handlePreferencesCommand,
   });
 
+  pi.registerCommand("settings", {
+    description: "Show or change PanCode preferences",
+    handler: handlePreferencesCommand,
+  });
+
   pi.registerCommand("reasoning", {
     description: "Inspect or change the PanCode reasoning preference",
     handler: handleReasoningCommand,
@@ -887,6 +986,36 @@ export const extension = defineExtension((pi) => {
   pi.registerCommand("thinking", {
     description: "Backward-compatible alias for /reasoning",
     handler: handleReasoningCommand,
+  });
+
+  pi.registerCommand("mode", {
+    description: "Switch orchestrator mode (capture, plan, build, ask, review)",
+    async handler(args, ctx) {
+      const request = args.trim().toLowerCase();
+      if (!request) {
+        const current = getModeDefinition();
+        const lines: string[] = [`Current: ${current.name}`, ""];
+        for (const def of MODE_DEFINITIONS) {
+          const marker = def.id === current.id ? "*" : "-";
+          const dispatch = def.dispatchEnabled ? "dispatch" : "no dispatch";
+          const mutations = def.mutationsAllowed ? "mutations" : "readonly";
+          lines.push(`  ${marker} ${def.name.padEnd(8)} ${def.description} (${dispatch}, ${mutations})`);
+        }
+        lines.push("", "Use /mode <name> to switch, or Shift+Tab to cycle.");
+        sendPanel(emitPanel, `${PANCODE_PRODUCT_NAME} Modes`, lines);
+        return;
+      }
+
+      const target = MODE_DEFINITIONS.find((d) => d.id === request || d.name.toLowerCase() === request);
+      if (!target) {
+        ctx.ui.notify(`Unknown mode: ${request}. Available: capture, plan, build, ask, review`, "error");
+        return;
+      }
+
+      setCurrentMode(target.id);
+      ctx.ui.setStatus("mode", `[${target.name}]`);
+      ctx.ui.notify(`Mode: ${target.name} -- ${target.description}`, "info");
+    },
   });
 
   pi.registerCommand("help", {

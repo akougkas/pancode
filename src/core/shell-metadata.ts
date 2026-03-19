@@ -7,6 +7,7 @@ export interface PanCodeShellCommand {
 }
 
 export const PANCODE_SHELL_COMMANDS: readonly PanCodeShellCommand[] = [
+  { name: "mode", args: "[capture|plan|build|ask|review]", description: "Switch orchestrator behavior mode" },
   { name: "settings", description: "Open PanCode preferences" },
   { name: "models", args: "[provider | provider/model-id | all]", description: "Show model inventory or switch models" },
   { name: "dashboard", description: "Open the PanCode dashboard" },

@@ -12,6 +12,8 @@ import { batchTracker } from "./batch-tracker";
 import { createWorktreeIsolation, mergeDeltaPatches, cleanupAllWorktrees } from "./isolation";
 import { shutdownCoordinator } from "../../core/termination";
 import { runPreFlightChecks } from "./admission";
+import { getModeDefinition } from "../../core/modes";
+import { initTaskStore, taskWrite, taskCheck, taskUpdate, taskList } from "./task-tools";
 
 function textResult(text: string): AgentToolResult<unknown> {
   return { content: [{ type: "text", text }], details: undefined };
@@ -33,6 +35,7 @@ export const extension = defineExtension((pi) => {
     }
     const runtimeRoot = packageRoot ? `${packageRoot}/.pancode` : ".pancode";
     ledger = new RunLedger(runtimeRoot);
+    initTaskStore(runtimeRoot);
     draining = false;
 
     // Register drain handler with shutdown coordinator
@@ -65,6 +68,24 @@ export const extension = defineExtension((pi) => {
       const agentName = params.agent || defaultAgent;
       const task = params.task;
       const isolate = params.isolate ?? false;
+
+      // Mode gating: check if dispatch is allowed in the current behavior mode
+      const mode = getModeDefinition();
+      if (!mode.dispatchEnabled) {
+        return textResult(
+          `Dispatch is disabled in ${mode.name} mode. Switch to Build mode (Shift+Tab) to dispatch workers.`,
+        );
+      }
+
+      // In modes without mutations, only readonly agents are permitted
+      if (!mode.mutationsAllowed) {
+        const spec = agentRegistry.get(agentName);
+        if (spec && !spec.readonly) {
+          return textResult(
+            `Agent "${agentName}" is not readonly. ${mode.name} mode only allows readonly agents. Use scout or reviewer.`,
+          );
+        }
+      }
 
       if (draining) {
         return textResult("Dispatch blocked: system is shutting down.");
@@ -203,6 +224,23 @@ export const extension = defineExtension((pi) => {
       const agentName = params.agent || "dev";
       const concurrency = params.concurrency || 4;
       const tasks = params.tasks;
+
+      // Mode gating: check if dispatch is allowed in the current behavior mode
+      const batchMode = getModeDefinition();
+      if (!batchMode.dispatchEnabled) {
+        return textResult(
+          `Batch dispatch is disabled in ${batchMode.name} mode. Switch to Build mode (Shift+Tab) to dispatch workers.`,
+        );
+      }
+
+      if (!batchMode.mutationsAllowed) {
+        const spec = agentRegistry.get(agentName);
+        if (spec && !spec.readonly) {
+          return textResult(
+            `Agent "${agentName}" is not readonly. ${batchMode.name} mode only allows readonly agents. Use scout or reviewer.`,
+          );
+        }
+      }
 
       if (draining) {
         return textResult("Batch dispatch blocked: system is shutting down.");
@@ -363,6 +401,73 @@ export const extension = defineExtension((pi) => {
         display: true,
         details: { title: "PanCode Batches" },
       });
+    },
+  });
+
+  // === Task tracking tools ===
+
+  pi.registerTool({
+    name: "task_write",
+    label: "Write Task",
+    description:
+      "Create a task in the PanCode task list. Use this to track work items, TODOs, and planned changes.",
+    parameters: Type.Object({
+      title: Type.String({ description: "Short task title" }),
+      description: Type.Optional(Type.String({ description: "Detailed task description" })),
+    }),
+    async execute(_id, params) {
+      const newTask = taskWrite(params.title, params.description ?? "");
+      return textResult(`Task created: [${newTask.id}] ${newTask.title}`);
+    },
+  });
+
+  pi.registerTool({
+    name: "task_check",
+    label: "Check Task",
+    description: "Mark a task as done in the PanCode task list.",
+    parameters: Type.Object({
+      id: Type.String({ description: "Task ID (e.g., t-abc123)" }),
+    }),
+    async execute(_id, params) {
+      const checked = taskCheck(params.id);
+      if (!checked) return textResult(`Task not found: ${params.id}`);
+      return textResult(`Task completed: [${checked.id}] ${checked.title}`);
+    },
+  });
+
+  pi.registerTool({
+    name: "task_update",
+    label: "Update Task",
+    description: "Update a task's title, description, or status.",
+    parameters: Type.Object({
+      id: Type.String({ description: "Task ID" }),
+      title: Type.Optional(Type.String()),
+      description: Type.Optional(Type.String()),
+      status: Type.Optional(
+        Type.Union([Type.Literal("todo"), Type.Literal("doing"), Type.Literal("done"), Type.Literal("blocked")]),
+      ),
+    }),
+    async execute(_id, params) {
+      const updated = taskUpdate(params.id, {
+        title: params.title,
+        description: params.description,
+        status: params.status,
+      });
+      if (!updated) return textResult(`Task not found: ${params.id}`);
+      return textResult(`Task updated: [${updated.id}] ${updated.title} (${updated.status})`);
+    },
+  });
+
+  pi.registerTool({
+    name: "task_list",
+    label: "List Tasks",
+    description: "List all tasks in the PanCode task list.",
+    parameters: Type.Object({}),
+    async execute() {
+      const allTasks = taskList();
+      if (allTasks.length === 0) return textResult("No tasks.");
+      const lines = allTasks.map((t) => `[${t.id}] ${t.status.padEnd(7)} ${t.title}`);
+      return textResult(lines.join("\n"));
     },
   });
 });
