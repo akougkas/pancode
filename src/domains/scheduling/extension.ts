@@ -2,6 +2,8 @@ import { defineExtension } from "../../engine/extensions";
 import { sharedBus } from "../../core/shared-bus";
 import { BudgetTracker } from "./budget";
 import { registerPreFlightCheck } from "../dispatch";
+import { buildClusterView } from "./cluster-transport";
+import { getModelProfileCache } from "../providers";
 
 // Local shape for the cross-domain pancode:run-finished event payload.
 // Matches what dispatch/extension.ts emits on sharedBus.
@@ -108,6 +110,67 @@ export const extension = defineExtension((pi) => {
         content: lines.join("\n"),
         display: true,
         details: { title: "PanCode Budget" },
+      });
+    },
+  });
+
+  pi.registerCommand("cluster", {
+    description: "Show cluster node visibility",
+    async handler(_args, _ctx) {
+      const profiles = getModelProfileCache();
+
+      // Build provider inputs from model profiles
+      const providerMap = new Map<string, { type: string; host: string; port: number; modelCount: number }>();
+      for (const profile of profiles) {
+        if (!providerMap.has(profile.providerId)) {
+          // Derive host/port from provider naming convention
+          const parts = profile.providerId.split("-");
+          const type = parts.pop() ?? "unknown";
+          const host = parts.join("-") || "localhost";
+          providerMap.set(profile.providerId, { type, host, modelCount: 0, port: 0 });
+        }
+        const entry = providerMap.get(profile.providerId)!;
+        entry.modelCount++;
+      }
+
+      const providerInputs = [...providerMap.entries()].map(([id, p]) => ({
+        id,
+        type: p.type,
+        host: p.host,
+        port: p.port,
+        healthy: true,
+        modelCount: p.modelCount,
+      }));
+
+      const nodes = buildClusterView(providerInputs);
+
+      if (nodes.length === 0) {
+        pi.sendMessage({
+          customType: "pancode-panel",
+          content: "No cluster nodes discovered. Connect local engines (LM Studio, Ollama, llama.cpp) to enable cluster view.",
+          display: true,
+          details: { title: "PanCode Cluster" },
+        });
+        return;
+      }
+
+      const lines: string[] = [`${nodes.length} nodes:`, ""];
+      for (const node of nodes) {
+        const engineStrs = node.engines.map((e) => {
+          const healthStr = e.healthy ? "ok" : "down";
+          return `${e.type}:${e.port || "auto"} [${healthStr}] (${e.modelCount} models)`;
+        });
+        lines.push(`${node.name} (${node.host}) [${node.status}]`);
+        for (const es of engineStrs) {
+          lines.push(`  ${es}`);
+        }
+      }
+
+      pi.sendMessage({
+        customType: "pancode-panel",
+        content: lines.join("\n"),
+        display: true,
+        details: { title: "PanCode Cluster" },
       });
     },
   });
