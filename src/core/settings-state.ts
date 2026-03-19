@@ -9,6 +9,10 @@ export interface PanCodeSettings {
   preferredModel: string | null;
   theme: string;
   reasoningPreference: PanCodeReasoningPreference;
+  safetyMode: string | null;
+  workerModel: string | null;
+  budgetCeiling: number | null;
+  intelligence: boolean | null;
 }
 
 // Set by loader.ts at boot
@@ -30,6 +34,16 @@ function normalizeReasoningPreference(value: unknown): PanCodeReasoningPreferenc
   return parseReasoningPreference(value) ?? DEFAULT_REASONING_PREFERENCE;
 }
 
+function normalizeOptionalNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  return null;
+}
+
+function normalizeOptionalBoolean(value: unknown): boolean | null {
+  if (typeof value === "boolean") return value;
+  return null;
+}
+
 function normalizeSettings(value: unknown): PanCodeSettings {
   const object = typeof value === "object" && value != null ? value as Record<string, unknown> : {};
 
@@ -38,6 +52,10 @@ function normalizeSettings(value: unknown): PanCodeSettings {
     preferredModel: normalizeOptionalString(object.preferredModel),
     theme: normalizeTheme(object.theme),
     reasoningPreference: normalizeReasoningPreference(object.reasoningPreference),
+    safetyMode: normalizeOptionalString(object.safetyMode),
+    workerModel: normalizeOptionalString(object.workerModel),
+    budgetCeiling: normalizeOptionalNumber(object.budgetCeiling),
+    intelligence: normalizeOptionalBoolean(object.intelligence),
   };
 }
 

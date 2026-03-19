@@ -1,7 +1,7 @@
 import { DEFAULT_REASONING_PREFERENCE } from "../../core/defaults";
 import {
   PANCODE_PRODUCT_NAME,
-  formatShellCommandLines,
+  formatCategorizedHelp,
 } from "../../core/shell-metadata";
 import { updatePanCodeSettings } from "../../core/settings-state";
 import {
@@ -82,8 +82,7 @@ function buildDashboardLines(input: {
     `Working directory: ${input.workingDirectory}`,
     `Tools: ${input.tools.join(", ") || "(none)"}`,
     "",
-    "Owned commands:",
-    ...formatShellCommandLines(),
+    "Type /help for all commands.",
   ];
 }
 
@@ -556,17 +555,31 @@ export const extension = defineExtension((pi) => {
   const handlePreferencesCommand = async (args: string, ctx: ExtensionContext) => {
     const request = args.trim();
     if (!request || request === "list") {
-      sendPanel(emitPanel, `${PANCODE_PRODUCT_NAME} Preferences`, [
-        `Theme: ${ctx.ui.theme.name ?? currentThemeName}`,
-        `Reasoning: ${currentReasoningPreference}`,
-        `Preferred model: ${ctx.model ? modelRef(ctx.model) : "unresolved"}`,
-        `Safety: ${process.env.PANCODE_SAFETY ?? "auto-edit"}`,
+      const enabledDomains = process.env.PANCODE_ENABLED_DOMAINS ?? "all";
+      const intelligenceEnabled = process.env.PANCODE_INTELLIGENCE !== "false";
+      const budgetCeiling = process.env.PANCODE_BUDGET_CEILING ?? "10.0";
+      const modeInfo = getModeDefinition();
+
+      sendPanel(emitPanel, `${PANCODE_PRODUCT_NAME} Settings`, [
+        "Configuration:",
+        `  Safety mode:           ${process.env.PANCODE_SAFETY ?? "auto-edit"}`,
+        `  Orchestrator model:    ${ctx.model ? modelRef(ctx.model) : "unresolved"}`,
+        `  Worker model:          ${process.env.PANCODE_WORKER_MODEL ?? "(inherit from routing)"}`,
+        `  Reasoning:             ${currentReasoningPreference}`,
+        `  Theme:                 ${ctx.ui.theme.name ?? currentThemeName}`,
+        `  Budget ceiling:        $${budgetCeiling}`,
+        `  Active domains:        ${enabledDomains}`,
+        `  Intelligence:          ${intelligenceEnabled ? "enabled" : "disabled"}`,
+        `  Mode:                  ${modeInfo.name}`,
         "",
         "Subcommands:",
-        "/settings",
-        "/settings theme <name>",
-        "/settings reasoning <off|on>",
-        "/settings model <provider/model-id>",
+        "  /settings safety <suggest|auto-edit|full-auto>",
+        "  /settings model <provider/model-id>",
+        "  /settings worker-model <provider/model-id>",
+        "  /settings reasoning <off|on>",
+        "  /settings theme <name>",
+        "  /settings budget <amount>",
+        "  /settings intelligence <on|off>",
       ]);
       return;
     }
@@ -584,8 +597,52 @@ export const extension = defineExtension((pi) => {
       case "model":
         await handleModelsCommand(value, ctx);
         return;
+      case "safety": {
+        const validLevels = ["suggest", "auto-edit", "full-auto"];
+        if (!value || !validLevels.includes(value)) {
+          ctx.ui.notify(`Invalid safety level. Use: ${validLevels.join(", ")}`, "error");
+          return;
+        }
+        process.env.PANCODE_SAFETY = value;
+        persistSettings({ safetyMode: value }, (message, level) => ctx.ui.notify(message, level));
+        ctx.ui.notify(`Safety mode set to ${value}`, "info");
+        return;
+      }
+      case "worker-model": {
+        if (!value) {
+          ctx.ui.notify("Usage: /settings worker-model <provider/model-id>", "error");
+          return;
+        }
+        process.env.PANCODE_WORKER_MODEL = value;
+        persistSettings({ workerModel: value }, (message, level) => ctx.ui.notify(message, level));
+        ctx.ui.notify(`Worker model set to ${value}`, "info");
+        return;
+      }
+      case "budget": {
+        const newCeiling = parseFloat(value);
+        if (!Number.isFinite(newCeiling) || newCeiling <= 0) {
+          ctx.ui.notify("Invalid budget amount. Use: /settings budget <positive number>", "error");
+          return;
+        }
+        process.env.PANCODE_BUDGET_CEILING = String(newCeiling);
+        persistSettings({ budgetCeiling: newCeiling }, (message, level) => ctx.ui.notify(message, level));
+        ctx.ui.notify(`Budget ceiling set to $${newCeiling.toFixed(2)}`, "info");
+        return;
+      }
+      case "intelligence": {
+        const enabled = value === "on" || value === "true" || value === "enabled";
+        const disabled = value === "off" || value === "false" || value === "disabled";
+        if (!enabled && !disabled) {
+          ctx.ui.notify("Usage: /settings intelligence <on|off>", "error");
+          return;
+        }
+        process.env.PANCODE_INTELLIGENCE = enabled ? "true" : "false";
+        persistSettings({ intelligence: enabled }, (message, level) => ctx.ui.notify(message, level));
+        ctx.ui.notify(`Intelligence ${enabled ? "enabled" : "disabled"}`, "info");
+        return;
+      }
       default:
-        ctx.ui.notify(`Unknown settings subcommand: ${subcommand}`, "error");
+        ctx.ui.notify(`Unknown settings subcommand: ${subcommand}. Use /settings for available options.`, "error");
     }
   };
 
@@ -974,7 +1031,7 @@ export const extension = defineExtension((pi) => {
   });
 
   pi.registerCommand("settings", {
-    description: "Show or change PanCode preferences",
+    description: "Show or change PanCode configuration",
     handler: handlePreferencesCommand,
   });
 
@@ -1019,9 +1076,9 @@ export const extension = defineExtension((pi) => {
   });
 
   pi.registerCommand("help", {
-    description: "Show PanCode-owned commands",
+    description: "Show PanCode commands",
     async handler(_args, _ctx) {
-      sendPanel(emitPanel, `${PANCODE_PRODUCT_NAME} Commands`, formatShellCommandLines());
+      sendPanel(emitPanel, `${PANCODE_PRODUCT_NAME} Commands`, formatCategorizedHelp());
     },
   });
 

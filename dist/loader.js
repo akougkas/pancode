@@ -1,6 +1,6 @@
 import {
   formatPanCodeCliUsage
-} from "./chunk-WNATMMYV.js";
+} from "./chunk-2XWO6ZNN.js";
 import {
   resolvePackageRoot
 } from "./chunk-RRR3VFYK.js";
@@ -85,7 +85,7 @@ async function loadTarget(parsed) {
     const exitCode = runCliCommand(parsed.cliSubcommand, parsed.forwardedArgs);
     process.exit(exitCode);
   }
-  await import("./orchestrator-IZUHGXVZ.js");
+  await import("./orchestrator-OAXAMMVD.js");
 }
 async function main() {
   const packageRoot = initializeEnvironment();

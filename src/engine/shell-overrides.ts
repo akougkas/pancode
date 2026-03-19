@@ -1,5 +1,6 @@
 import { BUILTIN_SLASH_COMMANDS } from "@pancode/pi-coding-agent/core/slash-commands.js";
 import { PANCODE_PRODUCT_NAME } from "../core/shell-metadata";
+import { sharedBus } from "../core/shared-bus";
 import { InteractiveMode } from "./session";
 
 interface ShellPatchedInteractiveMode {
@@ -16,40 +17,45 @@ interface ShellPatchedInteractiveMode {
 }
 
 /**
- * Pi SDK builtins that PanCode replaces entirely. These are spliced out of
- * the array so they never appear in Pi's autocomplete or help rendering.
- * The actual routing still works because Pi SDK hardcodes the method calls
- * in its submit handler (handleModelCommand, showModelsSelector, etc.) and
- * we patch those on the prototype below.
+ * Pi SDK builtins that PanCode replaces entirely. Every built-in command is
+ * spliced out of the array so none appear in Pi's autocomplete or help.
+ * PanCode registers its own commands via extension registerCommand().
+ *
+ * The built-in routing still works because Pi SDK hardcodes command dispatch
+ * in its submit handler. We patch the corresponding prototype methods below
+ * to inject PanCode behavior.
  */
-const HIDDEN_BUILTIN_NAMES = new Set(["model", "scoped-models"]);
-
-/**
- * Pi SDK builtins that PanCode intercepts but keeps visible with rebranded
- * descriptions so they match PanCode's command surface.
- */
-const REBRANDED_DESCRIPTIONS: Record<string, string> = {
-  settings: "Open PanCode preferences",
-  quit: `Exit ${PANCODE_PRODUCT_NAME}`,
-};
+const HIDDEN_BUILTIN_NAMES = new Set([
+  "model",
+  "scoped-models",
+  "settings",
+  "export",
+  "share",
+  "copy",
+  "name",
+  "session",
+  "changelog",
+  "hotkeys",
+  "fork",
+  "tree",
+  "login",
+  "logout",
+  "new",
+  "compact",
+  "resume",
+  "quit",
+  "reload",
+]);
 
 function patchBuiltinCommands(): void {
   // BUILTIN_SLASH_COMMANDS is typed ReadonlyArray but is a plain JS array at runtime.
   // Mutating it is the only way to control what Pi SDK exposes in autocomplete and help.
   const commands = BUILTIN_SLASH_COMMANDS as unknown as Array<{ name: string; description: string }>;
 
-  // Remove commands PanCode replaces entirely. Iterate backwards to avoid index shift.
+  // Remove all commands PanCode shadows. Iterate backwards to avoid index shift.
   for (let i = commands.length - 1; i >= 0; i--) {
     if (HIDDEN_BUILTIN_NAMES.has(commands[i].name)) {
       commands.splice(i, 1);
-    }
-  }
-
-  // Rebrand commands PanCode intercepts but keeps visible.
-  for (const command of commands) {
-    const description = REBRANDED_DESCRIPTIONS[command.name];
-    if (description) {
-      command.description = description;
     }
   }
 }
@@ -73,15 +79,31 @@ export function installPanCodeShellOverrides(): void {
   patchBuiltinCommands();
 
   const prototype = InteractiveMode.prototype as unknown as {
+    // Already patched in v0.1.0
     showSettingsSelector?: () => void;
     handleModelCommand?: (searchTerm?: string) => Promise<void>;
     showModelsSelector?: () => Promise<void>;
+    // New patches for v0.1.2: command surface takeover
+    handleClearCommand?: () => Promise<void>;
+    handleCompactCommand?: (customInstructions?: string) => Promise<void>;
+    handleReloadCommand?: () => Promise<void>;
+    handleSessionCommand?: () => void;
+    handleExportCommand?: (text: string) => Promise<void>;
+    handleCopyCommand?: () => void;
+    handleHotkeysCommand?: () => void;
+    showUserMessageSelector?: () => void;
+    showTreeSelector?: () => void;
+    showOAuthSelector?: (mode: "login" | "logout") => void;
+    showSessionSelector?: () => void;
+    shutdown?: () => Promise<void>;
   };
 
+  // === Settings ===
   prototype.showSettingsSelector = function showSettingsSelector(this: ShellPatchedInteractiveMode) {
-    void routeToShellCommand(this, "/preferences");
+    void routeToShellCommand(this, "/settings");
   };
 
+  // === Models ===
   prototype.handleModelCommand = async function handleModelCommand(
     this: ShellPatchedInteractiveMode,
     searchTerm?: string,
@@ -89,8 +111,50 @@ export function installPanCodeShellOverrides(): void {
     const suffix = searchTerm?.trim() ? ` ${searchTerm.trim()}` : "";
     await routeToShellCommand(this, `/models${suffix}`);
   };
-
   prototype.showModelsSelector = async function showModelsSelector(this: ShellPatchedInteractiveMode) {
     await routeToShellCommand(this, "/models");
   };
+
+  // === /new: emit reset event before Pi creates a new session ===
+  const originalClear = prototype.handleClearCommand;
+  prototype.handleClearCommand = async function handleClearCommand(this: ShellPatchedInteractiveMode) {
+    sharedBus.emit("pancode:session-reset", {});
+    if (originalClear) {
+      await originalClear.call(this);
+    }
+  };
+
+  // === /compact: emit compaction event, then call Pi's handler ===
+  const originalCompact = prototype.handleCompactCommand;
+  prototype.handleCompactCommand = async function handleCompactCommand(
+    this: ShellPatchedInteractiveMode,
+    customInstructions?: string,
+  ) {
+    sharedBus.emit("pancode:compaction-started", { customInstructions: customInstructions ?? null });
+    if (originalCompact) {
+      await originalCompact.call(this, customInstructions);
+    }
+  };
+
+  // === /reload: emit event, then call Pi's handler ===
+  const originalReload = prototype.handleReloadCommand;
+  prototype.handleReloadCommand = async function handleReloadCommand(this: ShellPatchedInteractiveMode) {
+    if (originalReload) {
+      await originalReload.call(this);
+    }
+    sharedBus.emit("pancode:extensions-reloaded", {});
+  };
+
+  // === /session: route to PanCode wrapper that adds domain state summary ===
+  prototype.handleSessionCommand = function handleSessionCommand(this: ShellPatchedInteractiveMode) {
+    void routeToShellCommand(this, "/session");
+  };
+
+  // Pass-through commands: Pi's hardcoded routing calls these methods directly.
+  // We let them execute their Pi behavior unchanged. PanCode owns them visually
+  // through the categorized /help but does not need to modify their execution.
+  // The methods below are NOT patched: handleExportCommand, handleCopyCommand,
+  // handleHotkeysCommand, showUserMessageSelector, showTreeSelector,
+  // showOAuthSelector, showSessionSelector, shutdown.
+  // They retain their original Pi implementations.
 }

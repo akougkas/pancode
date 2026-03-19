@@ -38,6 +38,12 @@ export const extension = defineExtension((pi) => {
     initTaskStore(runtimeRoot);
     draining = false;
 
+    // Listen for session reset events (/new command). Clear task store.
+    sharedBus.on("pancode:session-reset", () => {
+      initTaskStore(runtimeRoot);
+      console.error("[pancode:dispatch] Task store reset for new session.");
+    });
+
     // Register drain handler with shutdown coordinator
     shutdownCoordinator.onDrain(() => {
       draining = true;
