@@ -1,5 +1,19 @@
 # PanCode Build Progress
 
+## v0.1.8: Integration Test Prep (COMPLETE, 2026-03-19)
+
+114 TypeScript source files. Commit `5c50475`. Web development agent templates
+and full pipeline verification for integration test readiness.
+
+### What shipped in v0.1.8
+
+- templates/web-dev-agents.yaml: 6 specialized agents (dev, architect, designer, qa, reviewer, scout) with web-focused system prompts
+- All agents portable via PANCODE_WORKER_MODEL env var
+- Full pipeline verification: typecheck + boundaries + build all pass
+- 114 TypeScript source files across 8 domains
+
+---
+
 ## v0.1.7: Tail + Portability (COMPLETE, 2026-03-19)
 
 115 TypeScript source files. Commit `96b94b4`. Skills discovery, cluster
