@@ -1,5 +1,20 @@
 # PanCode Build Progress
 
+## v0.1.5: Shadow Agents (COMPLETE, 2026-03-19)
+
+109 TypeScript source files. Commit `ddd6ae0`. Shadow explore tool for
+orchestrator-internal codebase intelligence using in-process Pi agent sessions.
+
+### What shipped in v0.1.5
+
+- engine/shadow.ts: lightweight in-process Pi agent session wrapper (SessionManager.inMemory, readonly tools, configurable model)
+- agents/shadow-explore.ts: shadow_explore tool with model resolution (PANCODE_SHADOW_MODEL env, fallback to orchestrator model)
+- Tool registered via agents domain extension, visible in orchestrator tool list
+- In-process execution avoids subprocess overhead for quick exploration queries
+- 30-second timeout, tool call counting, structured error handling
+
+---
+
 ## v0.1.4: Dispatch Depth (COMPLETE, 2026-03-19)
 
 107 TypeScript source files. Commit `37c5d08`. Chain dispatch with output
