@@ -1,5 +1,19 @@
 # PanCode Build Progress
 
+## v0.1.9: pancode.dev Website Build (COMPLETE, 2026-03-19)
+
+114 TypeScript source files. Commit `e9e3685`. Integration test infrastructure
+for building pancode.dev with PanCode agents. Interactive test ready to run.
+
+### What shipped in v0.1.9
+
+- templates/integration-test.sh: automated project scaffolding and test setup
+- Integration test documents full mode lifecycle: capture, plan, build, review
+- Success criteria: renders correctly, multiple agents contribute, no crashes, /doctor passes
+- Ready for manual execution with real local models
+
+---
+
 ## v0.1.8: Integration Test Prep (COMPLETE, 2026-03-19)
 
 114 TypeScript source files. Commit `5c50475`. Web development agent templates
