@@ -6,4 +6,6 @@ export { initTaskStore, taskWrite, taskCheck, taskUpdate, taskList, taskGet, lin
 export type { PanCodeTask } from "./task-tools";
 export { validateOutput, type OutputContract, type ValidationResult, type ValidationCheck } from "./validation";
 export { dispatchChain, type ChainStep, type ChainResult, type ChainStepResult } from "./primitives";
+export { createBackoffManager, type BackoffManager, type BackoffState } from "./backoff";
+export { createResilienceTracker, type ResilienceTracker, type ProviderHealth } from "./resilience";
 
