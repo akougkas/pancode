@@ -1,5 +1,21 @@
 # PanCode Build Progress
 
+## v0.1.7: Tail + Portability (COMPLETE, 2026-03-19)
+
+115 TypeScript source files. Commit `96b94b4`. Skills discovery, cluster
+visibility, portability cleanup (no hardcoded IPs in source).
+
+### What shipped in v0.1.7
+
+- agents/skills.ts: SKILL.md discovery from 4 standard directories, frontmatter parsing, tool validation
+- /skills command: list/show/validate subcommands for skill inspection
+- scheduling/cluster-transport.ts: node-centric cluster view grouped by host
+- /cluster command: display discovered engines with model counts and health status
+- Portability: removed hardcoded IPs, moved node aliases to PANCODE_CLUSTER_ALIASES env var
+- Barrel exports for SkillDefinition, ClusterNode, ClusterEngine types
+
+---
+
 ## v0.1.6: Observability + Resilience (COMPLETE, 2026-03-19)
 
 113 TypeScript source files. Commit `4a89caf`. Structured audit trail, 8-probe
