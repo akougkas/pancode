@@ -1,0 +1,73 @@
+{
+  "name": "pancode",
+  "version": "0.1.0",
+  "description": "Composable multi-agent runtime for software engineering",
+  "type": "module",
+  "author": "Anthony Kougkas <akougkas@gmail.com>",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/akougkas/pancode.git"
+  },
+  "homepage": "https://github.com/akougkas/pancode",
+  "keywords": [
+    "multi-agent",
+    "coding-agent",
+    "orchestrator",
+    "ai",
+    "runtime",
+    "dispatch",
+    "local-llm"
+  ],
+  "workspaces": [
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "bin": {
+    "pancode": "dist/loader.js"
+  },
+  "scripts": {
+    "build:pi-tui": "npm run build -w @pancode/pi-tui",
+    "build:pi-ai": "npm run build -w @pancode/pi-ai",
+    "build:pi-agent-core": "npm run build -w @pancode/pi-agent-core",
+    "build:pi-coding-agent": "npm run build -w @pancode/pi-coding-agent",
+    "build:pi": "npm run build:pi-tui && npm run build:pi-ai && npm run build:pi-agent-core && npm run build:pi-coding-agent",
+    "build": "npm run build:pi && tsup",
+    "dev": "npm run build:pi && node --import tsx src/loader.ts",
+    "start": "npm run build:pi && node --import tsx src/loader.ts",
+    "up": "npm run build:pi && node --import tsx src/loader.ts up",
+    "down": "node --import tsx src/loader.ts down",
+    "worker": "node --import tsx src/loader.ts --worker",
+    "check-boundaries": "node scripts/check-boundaries.mjs",
+    "typecheck": "npm run build:pi && node scripts/check-boundaries.mjs && tsc --noEmit",
+    "postinstall": "node scripts/link-workspace-packages.cjs",
+    "prepublishOnly": "npm run build"
+  },
+  "files": [
+    "dist/",
+    "packages/",
+    "models/",
+    "scripts/"
+  ],
+  "dependencies": {
+    "@lmstudio/sdk": "^1.5.0",
+    "@pancode/pi-agent-core": "*",
+    "@pancode/pi-ai": "*",
+    "@pancode/pi-coding-agent": "*",
+    "@pancode/pi-tui": "*",
+    "@sinclair/typebox": "^0.34.48",
+    "ollama": "^0.6.3",
+    "yaml": "^2.8.2"
+  },
+  "devDependencies": {
+    "@types/diff": "^7.0.2",
+    "@types/hosted-git-info": "^3.0.5",
+    "@types/node": "^22.0.0",
+    "@types/proper-lockfile": "^4.1.4",
+    "tsup": "^8.5.1",
+    "tsx": "^4.0.0",
+    "typescript": "~5.7.0"
+  }
+}

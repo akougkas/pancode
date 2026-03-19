@@ -1,0 +1,91 @@
+import { defineExtension } from "../../engine/extensions";
+import { classifyAction, classifyBashCommand, isActionAllowed } from "./action-classifier";
+import { parseAutonomyMode, type AutonomyMode } from "./scope";
+import { checkDispatchAdmission } from "./scope-enforcement";
+import { createLoopDetector } from "./loop-detector";
+import { loadSafetyRules, checkBashCommand, checkPathAccess, type SafetyRules } from "./yaml-rules";
+import { registerPreFlightCheck } from "../dispatch/admission";
+import { sharedBus } from "../../core/shared-bus";
+
+export const extension = defineExtension((pi) => {
+  let autonomyMode: AutonomyMode = "auto-edit";
+  const loopDetector = createLoopDetector();
+  let yamlRules: SafetyRules = { bashPatterns: [], zeroAccessPaths: [], readOnlyPaths: [], noDeletePaths: [] };
+
+  pi.on("session_start", (_event, _ctx) => {
+    autonomyMode = parseAutonomyMode(process.env.PANCODE_SAFETY);
+
+    // Load YAML safety rules (Layer 2)
+    const packageRoot = process.env.PANCODE_PACKAGE_ROOT ?? process.cwd();
+    yamlRules = loadSafetyRules(packageRoot);
+    console.error(
+      `[pancode:safety] Mode: ${autonomyMode}. YAML rules: ${yamlRules.bashPatterns.length} bash patterns, ` +
+        `${yamlRules.zeroAccessPaths.length} zero-access, ${yamlRules.readOnlyPaths.length} read-only, ` +
+        `${yamlRules.noDeletePaths.length} no-delete paths.`,
+    );
+
+    // Register dispatch pre-flight check for scope enforcement
+    registerPreFlightCheck("scope-enforcement", (context) => {
+      const admission = checkDispatchAdmission(autonomyMode, autonomyMode);
+      if (!admission.admitted) {
+        return { admit: false, reason: admission.reason };
+      }
+      // Check loop detector
+      if (loopDetector.isBlocked(context.agent)) {
+        return { admit: false, reason: `Agent ${context.agent} is blocked by loop detector (too many failures)` };
+      }
+      return { admit: true };
+    });
+
+    // Subscribe to run-finished events for loop detection
+    sharedBus.on("pancode:run-finished", (raw: unknown) => {
+      const payload = raw as Record<string, unknown> | null;
+      const agent = typeof payload?.agent === "string" ? payload.agent : "unknown";
+      if (payload?.status === "error") {
+        const event = loopDetector.recordFailure(agent);
+        if (event) {
+          console.error(`[pancode:safety] Loop detector: ${event.message}`);
+          sharedBus.emit("pancode:warning", { source: "safety", message: event.message });
+        }
+      } else if (payload?.status === "done") {
+        loopDetector.recordSuccess(agent);
+      }
+    });
+  });
+
+  pi.on("tool_call", (event, _ctx) => {
+    const actionClass = classifyAction(event.toolName);
+
+    // Layer 1: Formal scope model
+    if (!isActionAllowed(autonomyMode, actionClass)) {
+      return { block: true, reason: `[pancode:safety] ${actionClass} blocked in ${autonomyMode} mode` };
+    }
+
+    // Layer 2: YAML rules (bash commands)
+    if ((event.toolName === "bash" || event.toolName === "shell") && "command" in event.input) {
+      const command = event.input.command as string;
+      const bashAction = classifyBashCommand(command);
+      if (!isActionAllowed(autonomyMode, bashAction)) {
+        return { block: true, reason: `[pancode:safety] ${bashAction} blocked in ${autonomyMode} mode` };
+      }
+      const yamlCheck = checkBashCommand(command, yamlRules);
+      if (yamlCheck.blocked) {
+        return { block: true, reason: `[pancode:safety] YAML rule: ${yamlCheck.reason}` };
+      }
+    }
+
+    // Layer 2: YAML rules (path access)
+    const input = event.input as Record<string, unknown>;
+    const filePath = input.file_path ?? input.path ?? input.file;
+    if (typeof filePath === "string") {
+      const pathAction =
+        actionClass === "file_delete" ? "delete" : actionClass === "file_write" ? "write" : "read";
+      const pathCheck = checkPathAccess(filePath, pathAction, yamlRules);
+      if (pathCheck.blocked) {
+        return { block: true, reason: `[pancode:safety] YAML rule: ${pathCheck.reason}` };
+      }
+    }
+
+    return undefined;
+  });
+});

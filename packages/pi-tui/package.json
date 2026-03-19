@@ -1,0 +1,28 @@
+{
+  "name": "@pancode/pi-tui",
+  "version": "0.58.1",
+  "description": "Terminal User Interface library (vendored from pi-mono)",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./*": "./dist/*"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@types/mime-types": "^2.1.4",
+    "chalk": "^5.5.0",
+    "get-east-asian-width": "^1.3.0",
+    "marked": "^15.0.12",
+    "mime-types": "^3.0.1"
+  },
+  "optionalDependencies": {
+    "koffi": "^2.9.0"
+  }
+}

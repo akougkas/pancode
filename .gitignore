@@ -1,0 +1,72 @@
+# PanCode GitIgnore
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Logs
+logs/
+*.log
+
+# pancode-specific logs (created by install/validate scripts)
+.pancode-*.log
+
+# Temporary files
+*.tmp
+*.temp
+.tmp/
+.bun-tmp/
+.cache/
+
+# Local configuration (should not be committed)
+settings.local.json
+pancode-settings.json
+.env
+.env.*
+.envrc
+
+# Project config (deployment artifact, not source)
+.pancode/
+
+# Claude Code (local dev infrastructure, not part of product)
+.claude/
+
+# Multi-agent orchestration (shared task infrastructure, not part of product)
+.orchestra/
+
+# Bun
+bun.lockb
+
+# npm pack artifacts
+pancode-*.tgz
+
+# Planning & identity docs (local only, not part of product)
+.planning/
+dist/
+.reference/
+
+# Strategic docs (private until v1.0 public beta)
+scripts/load-dynamo-fleet.sh
+__NUKED/
+.specs/
+
+
+
+

@@ -1,0 +1,57 @@
+family: qwen3.5
+base: Qwen/Qwen3.5-35B-A3B
+license: apache-2.0
+
+architecture:
+  total_params: 35.95B
+  active_params: 3B
+  type: moe
+  experts: 256
+  experts_per_token: 9
+  context_native: 262144
+
+capabilities:
+  tool_calling: true
+  reasoning: true
+  thinking_default: true
+  thinking_format: qwen
+  vision: true
+
+sampling:
+  coding:
+    temperature: 0.6
+    top_p: 0.95
+    top_k: 20
+    presence_penalty: 0.0
+  general:
+    temperature: 0.7
+    top_p: 0.8
+    top_k: 20
+    presence_penalty: 1.5
+  reasoning:
+    temperature: 1.0
+    top_p: 0.95
+    top_k: 20
+    presence_penalty: 1.5
+
+quantizations:
+  q4_k_m:
+    size_gb: 19.5
+    vram_gb: 24
+  q4_k_xl:
+    size_gb: 22.2
+    vram_gb: 28
+  q6_k:
+    size_gb: 31.2
+    vram_gb: 37
+
+distributions:
+  gguf:
+    - repo: unsloth/Qwen3.5-35B-A3B-GGUF
+    - repo: lmstudio-community/Qwen3.5-35B-A3B-GGUF
+
+variants:
+  - id: claude-reasoning-distilled
+    repo: Jackrong/Qwen3.5-35B-A3B-Claude-4.6-Opus-Reasoning-Distilled
+    gguf: mradermacher/Qwen3.5-35B-A3B-Claude-4.6-Opus-Reasoning-Distilled-i1-GGUF
+    distilled_from: claude-4.6-opus

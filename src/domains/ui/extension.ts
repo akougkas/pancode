@@ -1,0 +1,905 @@
+import { DEFAULT_REASONING_PREFERENCE } from "../../core/defaults";
+import {
+  PANCODE_PRODUCT_NAME,
+  formatShellCommandLines,
+} from "../../core/shell-metadata";
+import { updatePanCodeSettings } from "../../core/settings-state";
+import {
+  THINKING_LEVELS,
+  getModelReasoningControl,
+  parseReasoningPreference,
+  parseThinkingLevel,
+  resolveThinkingLevelForPreference,
+  type PanCodeReasoningPreference,
+} from "../../core/thinking";
+import { sharedBus } from "../../core/shared-bus";
+import { defineExtension, type ExtensionContext } from "../../engine/extensions";
+import type { Api, Model } from "../../engine/types";
+import { Container, Text, truncateToWidth, visibleWidth } from "../../engine/tui";
+import { getRunLedger } from "../dispatch";
+import { getMetricsLedger } from "../observability";
+import { getModelProfileCache, type MergedModelProfile } from "../providers";
+import { getBudgetTracker } from "../scheduling";
+import { renderRunBoard } from "./renderers";
+import { renderDispatchBoard } from "./dispatch-board";
+import type { AgentStat, BoardColorizer, DispatchCardData } from "./dispatch-board";
+import { getContextPercent, recordContextUsage } from "./context-tracker";
+import {
+  trackWorkerStart,
+  trackWorkerEnd,
+  updateWorkerProgress,
+  getLiveWorkers,
+  resetAll as resetLiveWorkers,
+} from "./worker-widgets";
+import type { WorkerStatus } from "./worker-widgets";
+import { buildTaskWidget, renderTaskWidget } from "./tasks";
+
+function composeSingleLine(left: string, right: string, width: number): string {
+  const safeWidth = Math.max(0, width);
+  const leftWidth = visibleWidth(left);
+  const rightWidth = visibleWidth(right);
+
+  if (leftWidth + rightWidth + 1 <= safeWidth) {
+    return `${left}${" ".repeat(safeWidth - leftWidth - rightWidth)}${right}`;
+  }
+
+  return truncateToWidth(`${left} ${right}`.trim(), safeWidth);
+}
+
+function sendPanel(
+  sendMessage: (title: string, body: string) => void,
+  title: string,
+  lines: string[],
+): void {
+  sendMessage(title, lines.join("\n"));
+}
+
+function buildDashboardLines(input: {
+  modelLabel: string;
+  reasoningPreference: PanCodeReasoningPreference;
+  reasoningCapability: string;
+  effectiveThinkingLevel: string;
+  themeName: string;
+  workingDirectory: string;
+  tools: string[];
+}): string[] {
+  return [
+    `${PANCODE_PRODUCT_NAME} shell is active.`,
+    `Model: ${input.modelLabel}`,
+    `Reasoning: ${input.reasoningPreference} | capability: ${input.reasoningCapability} | applied: ${input.effectiveThinkingLevel}`,
+    `Theme: ${input.themeName}`,
+    `Working directory: ${input.workingDirectory}`,
+    `Tools: ${input.tools.join(", ") || "(none)"}`,
+    "",
+    "Owned commands:",
+    ...formatShellCommandLines(),
+  ];
+}
+
+function readReasoningPreference(): PanCodeReasoningPreference {
+  return parseReasoningPreference(process.env.PANCODE_REASONING) ?? DEFAULT_REASONING_PREFERENCE;
+}
+
+function describeReasoningCapability(model: {
+  reasoning?: boolean;
+  compat?: {
+    supportsReasoningEffort?: boolean;
+    thinkingFormat?: "openai" | "zai" | "qwen" | "qwen-chat-template";
+  };
+} | null | undefined): string {
+  const control = getModelReasoningControl(model);
+  if (control === "none") return "unsupported";
+  if (control === "levels") return `levels (${THINKING_LEVELS.join(", ")})`;
+
+  switch (model?.compat?.thinkingFormat) {
+    case "qwen":
+      return "toggle (enable_thinking)";
+    case "qwen-chat-template":
+      return "toggle (chat_template_kwargs.enable_thinking)";
+    case "zai":
+      return "toggle (provider enable_thinking)";
+    default:
+      return "toggle";
+  }
+}
+
+function persistSettings(
+  patch: Parameters<typeof updatePanCodeSettings>[0],
+  notify: (message: string, level: "info" | "warning" | "error") => void,
+): void {
+  try {
+    updatePanCodeSettings(patch);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    notify(`Failed to save PanCode settings: ${message}`, "error");
+  }
+}
+
+function parseReasoningCommand(request: string): {
+  preference: PanCodeReasoningPreference;
+  note: string | null;
+} | null {
+  const normalized = request.trim().toLowerCase();
+  const preference = parseReasoningPreference(normalized);
+  if (preference) {
+    return { preference, note: null };
+  }
+
+  const legacyThinkingLevel = parseThinkingLevel(normalized);
+  if (!legacyThinkingLevel) return null;
+
+  return {
+    preference: legacyThinkingLevel === "off" ? "off" : "on",
+    note: legacyThinkingLevel === "off"
+      ? null
+      : `PanCode stores reasoning as off/on; mapped "${legacyThinkingLevel}" to "on".`,
+  };
+}
+
+function modelRef(model: Pick<Model<Api>, "provider" | "id">): string {
+  return `${model.provider}/${model.id}`;
+}
+
+function getRegisteredModels(ctx: ExtensionContext): {
+  all: Array<Model<Api>>;
+  available: Array<Model<Api>>;
+  availableRefs: Set<string>;
+} {
+  ctx.modelRegistry.refresh();
+
+  const sortModels = (models: Array<Model<Api>>) => [...models].sort((left, right) => {
+    const providerDiff = left.provider.localeCompare(right.provider);
+    if (providerDiff !== 0) return providerDiff;
+    return left.id.localeCompare(right.id);
+  });
+
+  const all = sortModels(ctx.modelRegistry.getAll());
+  const available = sortModels(ctx.modelRegistry.getAvailable());
+
+  return {
+    all,
+    available,
+    availableRefs: new Set(available.map((model) => modelRef(model))),
+  };
+}
+
+/**
+ * Returns true if the model id looks like a chat/completion model rather than
+ * an embedding model, reranker, or other non-conversational model.
+ */
+function isChatModel(modelId: string): boolean {
+  const lower = modelId.toLowerCase();
+  // Explicit embedding or reranker keywords
+  if (lower.includes("embedding") || lower.includes("reranker")) return false;
+  // BGE family (rerankers/embeddings)
+  if (/(?:^|[\/-])bge-/.test(lower)) return false;
+  // "embed" without "instruct" or "chat" qualifier (e.g., nomic-embed-text)
+  if (lower.includes("embed") && !lower.includes("instruct") && !lower.includes("chat")) return false;
+  return true;
+}
+
+function formatContextWindow(tokens: number | null): string | null {
+  if (tokens === null) return null;
+  if (tokens >= 1_000) return `${Math.round(tokens / 1_000)}K ctx`;
+  return `${tokens} ctx`;
+}
+
+function formatProfileCapabilities(profile: MergedModelProfile): string {
+  const parts: string[] = [];
+  if (profile.capabilities.reasoning) parts.push("reasoning");
+  const ctx = formatContextWindow(profile.capabilities.contextWindow);
+  if (ctx) parts.push(ctx);
+  return parts.length > 0 ? ` (${parts.join(", ")})` : "";
+}
+
+function formatRegistryModelCapabilities(
+  model: Model<Api>,
+  profiles: MergedModelProfile[],
+): string {
+  const profile = profiles.find((p) => p.providerId === model.provider && p.modelId === model.id);
+  if (profile) return formatProfileCapabilities(profile);
+  const parts: string[] = [];
+  if (model.reasoning) parts.push("reasoning");
+  const ctx = formatContextWindow(model.contextWindow ?? null);
+  if (ctx) parts.push(ctx);
+  return parts.length > 0 ? ` (${parts.join(", ")})` : "";
+}
+
+/**
+ * Build the "Active" section showing models confirmed loaded on connected engines.
+ * Discovery only returns models that are loaded: LM Studio (listLoaded), llama.cpp
+ * (/v1/models), Ollama (list). These are all ready to use with zero load latency.
+ */
+function formatActiveModelLines(currentRef: string, profiles: MergedModelProfile[]): string[] {
+  const chatProfiles = profiles.filter((p) => isChatModel(p.modelId));
+  if (chatProfiles.length === 0) return ["  (no active engines detected)"];
+
+  const byProvider = new Map<string, MergedModelProfile[]>();
+  for (const p of chatProfiles) {
+    const group = byProvider.get(p.providerId) ?? [];
+    group.push(p);
+    byProvider.set(p.providerId, group);
+  }
+
+  const lines: string[] = [];
+  for (const [providerId, group] of byProvider) {
+    lines.push(`  ${providerId}`);
+    for (const profile of group) {
+      const ref = `${profile.providerId}/${profile.modelId}`;
+      const marker = ref === currentRef ? "*" : "-";
+      const caps = formatProfileCapabilities(profile);
+      lines.push(`    ${marker} ${profile.modelId}${caps}`);
+    }
+  }
+
+  return lines;
+}
+
+/**
+ * One-line summary of all available chat models across all authenticated providers.
+ * Always shown in the default /models view so the user knows what else exists.
+ */
+function formatAvailableSummary(registryAvailable: ReadonlyArray<Model<Api>>): string[] {
+  const chatModels = registryAvailable.filter((m) => isChatModel(m.id));
+  if (chatModels.length === 0) return [];
+
+  const providerSet = new Set<string>();
+  for (const m of chatModels) providerSet.add(m.provider);
+  const providerLabel = providerSet.size === 1 ? "1 provider" : `${providerSet.size} providers`;
+
+  return [
+    "",
+    `Available: ${chatModels.length} models across ${providerLabel}. Use /models all to browse.`,
+  ];
+}
+
+/**
+ * Format a filtered list for a single provider.
+ */
+function formatProviderModelLines(
+  currentRef: string,
+  providerName: string,
+  models: ReadonlyArray<Model<Api>>,
+  profiles: MergedModelProfile[],
+): string[] {
+  const sorted = [...models].sort((a, b) => a.id.localeCompare(b.id));
+  const lines: string[] = [`${providerName} (${sorted.length} models):`];
+
+  for (const model of sorted) {
+    const ref = modelRef(model);
+    const marker = ref === currentRef ? "*" : "-";
+    const caps = formatRegistryModelCapabilities(model, profiles);
+    lines.push(`  ${marker} ${model.id}${caps}`);
+  }
+
+  lines.push("", "Use /models <provider/model-id> to switch.");
+  return lines;
+}
+
+/**
+ * Format all available models grouped by provider (for /models all).
+ */
+function formatAllAvailableLines(
+  currentRef: string,
+  models: ReadonlyArray<Model<Api>>,
+  profiles: MergedModelProfile[],
+): string[] {
+  const chatModels = models.filter((m) => isChatModel(m.id));
+  if (chatModels.length === 0) return ["No available models found."];
+
+  const sorted = [...chatModels].sort((a, b) => {
+    const providerDiff = a.provider.localeCompare(b.provider);
+    if (providerDiff !== 0) return providerDiff;
+    return a.id.localeCompare(b.id);
+  });
+
+  const lines: string[] = [];
+  let activeProvider: string | null = null;
+
+  for (const model of sorted) {
+    if (model.provider !== activeProvider) {
+      activeProvider = model.provider;
+      if (lines.length > 0) lines.push("");
+      lines.push(model.provider);
+    }
+
+    const ref = modelRef(model);
+    const marker = ref === currentRef ? "*" : "-";
+    const caps = formatRegistryModelCapabilities(model, profiles);
+    lines.push(`  ${marker} ${model.id}${caps}`);
+  }
+
+  lines.push("", "Use /models <provider/model-id> to switch.");
+  return lines;
+}
+
+/**
+ * Compute per-agent performance statistics from the metrics ledger.
+ * Returns an empty array if fewer than 3 total runs exist to avoid noise.
+ */
+function computeAgentStats(runs: ReadonlyArray<{
+  agent: string;
+  status: string;
+  cost: number;
+  durationMs: number;
+}>): AgentStat[] {
+  if (runs.length < 3) return [];
+
+  const byAgent = new Map<string, typeof runs[number][]>();
+  for (const run of runs) {
+    const group = byAgent.get(run.agent) ?? [];
+    group.push(run);
+    byAgent.set(run.agent, group);
+  }
+
+  return [...byAgent.entries()].map(([agent, agentRuns]) => ({
+    agent,
+    runs: agentRuns.length,
+    successRate: Math.round((agentRuns.filter((r) => r.status === "done").length / agentRuns.length) * 100),
+    avgCostPerRun: agentRuns.reduce((s, r) => s + r.cost, 0) / agentRuns.length,
+    avgDurationMs: agentRuns.reduce((s, r) => s + r.durationMs, 0) / agentRuns.length,
+  }));
+}
+
+function resolveModelSelection(
+  request: string,
+  models: ReadonlyArray<Model<Api>>,
+): { model?: Model<Api>; error?: string } {
+  const trimmed = request.trim();
+  if (!trimmed) {
+    return { error: "Missing model reference. Use provider/model-id." };
+  }
+
+  if (trimmed.includes("/")) {
+    const exactMatch = models.find((model) => modelRef(model) === trimmed);
+    return exactMatch ? { model: exactMatch } : { error: `Model not found: ${trimmed}` };
+  }
+
+  const matchingIds = models.filter((model) => model.id === trimmed);
+  if (matchingIds.length === 1) return { model: matchingIds[0] };
+  if (matchingIds.length > 1) {
+    return { error: `Model id "${trimmed}" is ambiguous. Use provider/model-id.` };
+  }
+
+  return { error: `Model not found: ${trimmed}` };
+}
+
+export const extension = defineExtension((pi) => {
+  let currentModelLabel = "no model";
+  let currentThemeName = process.env.PANCODE_THEME?.trim() || "pancode-dark";
+  let currentReasoningPreference = readReasoningPreference();
+  let welcomeShown = false;
+
+  const emitPanel = (title: string, body: string) => {
+    pi.sendMessage({
+      customType: "pancode-panel",
+      content: body,
+      display: true,
+      details: { title },
+    });
+  };
+
+  pi.registerMessageRenderer("pancode-panel", (message, _options, theme) => {
+    const title = typeof message.details === "object" && message.details && "title" in message.details
+      ? String((message.details as { title?: unknown }).title ?? PANCODE_PRODUCT_NAME)
+      : PANCODE_PRODUCT_NAME;
+    const body = typeof message.content === "string" ? message.content : String(message.content ?? "");
+    const text = `${theme.bold(theme.fg("accent", title))}\n${body}`;
+    return new Text(text, 1, 0);
+  });
+
+  const handleThemeCommand = async (args: string, ctx: ExtensionContext) => {
+    const request = args.trim();
+    const themes = ctx.ui.getAllThemes().map((themeInfo) => themeInfo.name).sort();
+
+    if (!request || request === "list") {
+      const lines = themes.map((name) => `${name === ctx.ui.theme.name ? "*" : "-"} ${name}`);
+      sendPanel(emitPanel, `${PANCODE_PRODUCT_NAME} Themes`, lines);
+      return;
+    }
+
+    const result = ctx.ui.setTheme(request);
+    if (!result.success) {
+      ctx.ui.notify(result.error ?? `Theme not found: ${request}`, "error");
+      return;
+    }
+
+    currentThemeName = request;
+    persistSettings({ theme: request }, (message, level) => ctx.ui.notify(message, level));
+    ctx.ui.setStatus("theme", `Theme: ${request}`);
+    ctx.ui.notify(`Theme set to ${request}`, "info");
+  };
+
+  const handleModelsCommand = async (args: string, ctx: ExtensionContext) => {
+    const request = args.trim();
+    const registry = getRegisteredModels(ctx);
+    const profiles = getModelProfileCache();
+    const currentRef = ctx.model ? modelRef(ctx.model) : "unresolved";
+
+    // /models or /models list: overview with Active + Available sections
+    if (!request || request === "list") {
+      const lines: string[] = [
+        `Current: ${currentRef}`,
+        "",
+        "Active (loaded on connected engines):",
+        ...formatActiveModelLines(currentRef, profiles),
+        ...formatAvailableSummary(registry.available),
+      ];
+      sendPanel(emitPanel, `${PANCODE_PRODUCT_NAME} Models`, lines);
+      return;
+    }
+
+    // /models all: full list of every available chat model grouped by provider
+    if (request === "all") {
+      const chatCount = registry.available.filter((m) => isChatModel(m.id)).length;
+      sendPanel(emitPanel, `${PANCODE_PRODUCT_NAME} Models`, [
+        `Current: ${currentRef}`,
+        `Total available: ${chatCount}`,
+        "",
+        ...formatAllAvailableLines(currentRef, registry.available, profiles),
+      ]);
+      return;
+    }
+
+    // /models <provider>: filter to a single provider if the request matches one
+    const providerModels = registry.available.filter((m) => m.provider === request);
+    if (providerModels.length > 0) {
+      sendPanel(emitPanel, `${PANCODE_PRODUCT_NAME} Models`, [
+        `Current: ${currentRef}`,
+        "",
+        ...formatProviderModelLines(currentRef, request, providerModels, profiles),
+      ]);
+      return;
+    }
+
+    // Otherwise: treat as a model switch request (provider/model-id or bare model-id)
+    const selection = resolveModelSelection(request, registry.available);
+    if (!selection.model) {
+      ctx.ui.notify(selection.error ?? `Model not found: ${request}`, "error");
+      return;
+    }
+
+    const changed = await pi.setModel(selection.model);
+    if (!changed) {
+      ctx.ui.notify(`Could not switch to ${modelRef(selection.model)}. Provider credentials may be unavailable.`, "error");
+      return;
+    }
+
+    currentModelLabel = modelRef(selection.model);
+    ctx.ui.setStatus("model", `Model: ${currentModelLabel}`);
+    ctx.ui.notify(`Model set to ${currentModelLabel}`, "info");
+  };
+
+  const handleReasoningCommand = async (args: string, ctx: ExtensionContext) => {
+    const request = args.trim();
+    if (!request) {
+      sendPanel(emitPanel, `${PANCODE_PRODUCT_NAME} Reasoning`, [
+        `Preference: ${currentReasoningPreference}`,
+        `Applied engine setting: ${pi.getThinkingLevel()}`,
+        `Model: ${ctx.model ? modelRef(ctx.model) : "unresolved"}`,
+        `Capability: ${describeReasoningCapability(ctx.model)}`,
+        "PanCode values: off, on",
+      ]);
+      return;
+    }
+
+    const parsed = parseReasoningCommand(request);
+    if (!parsed) {
+      ctx.ui.notify(`Invalid reasoning value: ${request}. Use "off" or "on".`, "error");
+      return;
+    }
+
+    currentReasoningPreference = parsed.preference;
+    process.env.PANCODE_REASONING = currentReasoningPreference;
+    const effectiveThinkingLevel = resolveThinkingLevelForPreference(ctx.model, currentReasoningPreference);
+    process.env.PANCODE_EFFECTIVE_THINKING = effectiveThinkingLevel;
+    pi.setThinkingLevel(effectiveThinkingLevel);
+    persistSettings(
+      { reasoningPreference: currentReasoningPreference },
+      (message, level) => ctx.ui.notify(message, level),
+    );
+
+    if (parsed.note) {
+      ctx.ui.notify(parsed.note, "warning");
+    }
+
+    const capability = describeReasoningCapability(ctx.model);
+    ctx.ui.setStatus("thinking", `Reasoning: ${currentReasoningPreference} (${effectiveThinkingLevel})`);
+    if (capability === "unsupported" && currentReasoningPreference === "on") {
+      ctx.ui.notify("Reasoning preference saved. The current model leaves the engine setting at off.", "warning");
+      return;
+    }
+
+    ctx.ui.notify(
+      `Reasoning preference: ${currentReasoningPreference} | capability: ${capability} | applied: ${effectiveThinkingLevel}`,
+      "info",
+    );
+  };
+
+  const handlePreferencesCommand = async (args: string, ctx: ExtensionContext) => {
+    const request = args.trim();
+    if (!request || request === "list") {
+      sendPanel(emitPanel, `${PANCODE_PRODUCT_NAME} Preferences`, [
+        `Theme: ${ctx.ui.theme.name ?? currentThemeName}`,
+        `Reasoning: ${currentReasoningPreference}`,
+        `Preferred model: ${ctx.model ? modelRef(ctx.model) : "unresolved"}`,
+        `Safety: ${process.env.PANCODE_SAFETY ?? "auto-edit"}`,
+        "",
+        "Subcommands:",
+        "/settings",
+        "/settings theme <name>",
+        "/settings reasoning <off|on>",
+        "/settings model <provider/model-id>",
+      ]);
+      return;
+    }
+
+    const [subcommand, ...rest] = request.split(/\s+/);
+    const value = rest.join(" ").trim();
+
+    switch (subcommand) {
+      case "theme":
+        await handleThemeCommand(value, ctx);
+        return;
+      case "reasoning":
+        await handleReasoningCommand(value, ctx);
+        return;
+      case "model":
+        await handleModelsCommand(value, ctx);
+        return;
+      default:
+        ctx.ui.notify(`Unknown settings subcommand: ${subcommand}`, "error");
+    }
+  };
+
+  const showDashboard = async (_args: string, ctx: ExtensionContext) => {
+    const modelLabel = ctx.model ? modelRef(ctx.model) : "unresolved";
+    const lines = [
+      ...buildDashboardLines({
+        modelLabel,
+        reasoningPreference: currentReasoningPreference,
+        reasoningCapability: describeReasoningCapability(ctx.model),
+        effectiveThinkingLevel: pi.getThinkingLevel(),
+        themeName: ctx.ui.theme.name ?? currentThemeName,
+        workingDirectory: ctx.cwd,
+        tools: pi.getActiveTools(),
+      }),
+      "",
+      `Safety: ${process.env.PANCODE_SAFETY ?? "auto-edit"}`,
+      `Domains: ${process.env.PANCODE_ENABLED_DOMAINS ?? "unknown"}`,
+    ];
+
+    // Wire run board
+    const ledger = getRunLedger();
+    if (ledger) {
+      const recentRuns = ledger.getRecent(5);
+      if (recentRuns.length > 0) {
+        lines.push("", "Recent runs:");
+        lines.push(...renderRunBoard(recentRuns));
+      }
+
+      const widget = buildTaskWidget(ledger.getAll());
+      const widgetLines = renderTaskWidget(widget);
+      if (widget.activeRuns.length > 0 || widget.completedRuns > 0) {
+        lines.push("", "Tasks:");
+        lines.push(...widgetLines);
+      }
+    }
+
+    // Wire metrics
+    const metrics = getMetricsLedger();
+    if (metrics) {
+      const summary = metrics.getSummary();
+      if (summary.totalRuns > 0) {
+        lines.push("", `Session cost: $${summary.totalCost.toFixed(4)} across ${summary.totalRuns} dispatches`);
+      }
+    }
+
+    // Wire budget
+    const budget = getBudgetTracker();
+    if (budget) {
+      const state = budget.getState();
+      lines.push(`Budget: $${state.totalCost.toFixed(4)} / $${state.ceiling.toFixed(2)}`);
+    }
+
+    sendPanel(emitPanel, `${PANCODE_PRODUCT_NAME} Dashboard`, lines);
+  };
+
+  pi.on("session_start", (_event, ctx) => {
+    currentModelLabel = ctx.model ? modelRef(ctx.model) : "no model";
+    currentThemeName = ctx.ui.theme.name ?? currentThemeName;
+    currentReasoningPreference = readReasoningPreference();
+
+    // Surface cross-domain warnings from dispatch and other subsystems in the shell.
+    sharedBus.on("pancode:warning", (payload) => {
+      const event = payload as { source: string; message: string };
+      ctx.ui.notify(`[${event.source}] ${event.message}`, "warning");
+    });
+    const effectiveThinkingLevel = resolveThinkingLevelForPreference(ctx.model, currentReasoningPreference);
+    process.env.PANCODE_EFFECTIVE_THINKING = effectiveThinkingLevel;
+    pi.setThinkingLevel(effectiveThinkingLevel);
+
+    ctx.ui.setTitle(PANCODE_PRODUCT_NAME);
+    ctx.ui.setHeader((_tui, theme) => ({
+      invalidate() {},
+      render(width) {
+        const left = `${theme.fg("accent", PANCODE_PRODUCT_NAME)} ${theme.fg("muted", process.env.PANCODE_PROFILE ?? "standard")}`;
+        const right = theme.fg("dim", process.env.PANCODE_SAFETY ?? "auto-edit");
+        return [composeSingleLine(left, right, width)];
+      },
+    }));
+
+    // Dispatch board widget: shows active worker cards and recent run history.
+    // Uses Container-based rendering so invalidate() propagates to Pi TUI and
+    // triggers repaints. A 1-second interval timer drives smooth elapsed time
+    // updates on active worker cards. Timer starts when workers are running
+    // and stops when all are idle.
+    ctx.ui.setWidget("pancode-dispatch-board", (_tui, theme) => {
+      const container = new Container();
+      const content = new Text("", 0, 0);
+      container.addChild(content);
+      let refreshTimer: ReturnType<typeof setInterval> | null = null;
+
+      function startTimer() {
+        if (!refreshTimer) {
+          refreshTimer = setInterval(() => container.invalidate(), 1000);
+        }
+      }
+
+      function stopTimer() {
+        if (refreshTimer) {
+          clearInterval(refreshTimer);
+          refreshTimer = null;
+        }
+      }
+
+      return {
+        dispose() {
+          stopTimer();
+          resetLiveWorkers();
+        },
+        invalidate() {
+          container.invalidate();
+        },
+        render(width: number): string[] {
+          const ledger = getRunLedger();
+          if (!ledger) return [];
+
+          const allRuns = ledger.getAll();
+          const liveWorkers = getLiveWorkers();
+          if (liveWorkers.length === 0 && allRuns.length === 0) return [];
+
+          const active: DispatchCardData[] = liveWorkers.map((w) => ({
+            agent: w.agent,
+            status: w.status,
+            elapsedMs: Date.now() - w.startedAt,
+            model: w.model,
+            taskPreview: w.task,
+            runId: w.runId,
+            batchId: null,
+            inputTokens: w.inputTokens > 0 ? w.inputTokens : undefined,
+            outputTokens: w.outputTokens > 0 ? w.outputTokens : undefined,
+            turns: w.turns > 0 ? w.turns : undefined,
+          }));
+
+          const recent: DispatchCardData[] = allRuns
+            .filter((r) => r.status !== "running" && r.status !== "pending")
+            .slice(-5)
+            .map((r) => ({
+              agent: r.agent,
+              status: r.status,
+              elapsedMs: r.completedAt
+                ? new Date(r.completedAt).getTime() - new Date(r.startedAt).getTime()
+                : 0,
+              model: r.model,
+              taskPreview: r.task,
+              runId: r.id,
+              batchId: r.batchId,
+              cost: r.usage.cost > 0 ? r.usage.cost : undefined,
+            }));
+
+          const budget = getBudgetTracker();
+          const metrics = getMetricsLedger();
+          const summary = metrics?.getSummary();
+
+          // Compute per-agent stats and cache totals from the metrics ledger.
+          const metricsRuns = summary?.runs ?? [];
+          const agentStats = computeAgentStats(metricsRuns);
+          let totalCacheRead = 0;
+          let totalCacheWrite = 0;
+          for (const m of metricsRuns) {
+            totalCacheRead += m.cacheReadTokens;
+            totalCacheWrite += m.cacheWriteTokens;
+          }
+
+          // Construct a theme-backed colorizer so the pure renderer can
+          // apply colors without importing Pi SDK APIs directly.
+          const colorizer: BoardColorizer = {
+            accent: (t) => theme.fg("accent", t),
+            bold: (t) => theme.bold(t),
+            muted: (t) => theme.fg("muted", t),
+            dim: (t) => theme.fg("dim", t),
+            success: (t) => theme.fg("success", t),
+            error: (t) => theme.fg("error", t),
+            warning: (t) => theme.fg("warning", t),
+          };
+
+          const lines = renderDispatchBoard(
+            {
+              active,
+              recent,
+              totalRuns: allRuns.length,
+              totalCost: budget ? budget.getState().totalCost : 0,
+              budgetCeiling: budget ? budget.getState().ceiling : null,
+              totalInputTokens: summary?.totalInputTokens ?? 0,
+              totalOutputTokens: summary?.totalOutputTokens ?? 0,
+              totalCacheReadTokens: totalCacheRead > 0 ? totalCacheRead : undefined,
+              totalCacheWriteTokens: totalCacheWrite > 0 ? totalCacheWrite : undefined,
+              agentStats: agentStats.length > 0 ? agentStats : undefined,
+            },
+            width,
+            colorizer,
+          );
+
+          content.setText(lines.join("\n"));
+
+          // Manage refresh timer: run when workers are active, stop when idle.
+          const hasRunning = liveWorkers.some((w) => w.status === "running");
+          if (hasRunning) {
+            startTimer();
+          } else {
+            stopTimer();
+          }
+
+          return container.render(width);
+        },
+      };
+    });
+
+    // Dispatch-aware footer with selective coloring for visual hierarchy.
+    // Model label in accent, activity dot uses accent/dim, stats are muted,
+    // context bar uses accent for filled portions and dim for empty.
+    ctx.ui.setFooter((_tui, theme, _footerData) => ({
+      invalidate() {},
+      render(width) {
+        const liveWorkers = getLiveWorkers();
+        const activeCount = liveWorkers.filter((w) => w.status === "running").length;
+        const budget = getBudgetTracker();
+        const budgetState = budget?.getState();
+        const ledger = getRunLedger();
+        const contextPercent = getContextPercent();
+        const totalRuns = ledger?.getAll().length ?? 0;
+        const totalCost = budgetState?.totalCost ?? 0;
+        const ceiling = budgetState?.ceiling ?? null;
+
+        // Left: model label (accent) + activity indicator
+        const modelPart = theme.fg("accent", ` ${currentModelLabel}`);
+        const activityIcon = activeCount > 0 ? theme.fg("accent", " \u25CF") : theme.fg("dim", " \u25CB");
+        const activityText = activeCount > 0
+          ? theme.fg("muted", ` ${activeCount} active`)
+          : theme.fg("dim", " idle");
+        const left = modelPart + activityIcon + activityText;
+
+        // Right: runs, budget, context bar
+        const ctxFilled = Math.round(contextPercent / 10);
+        const ctxBar = theme.fg("accent", "#".repeat(ctxFilled))
+          + theme.fg("dim", "-".repeat(10 - ctxFilled));
+        const budgetStr = ceiling !== null
+          ? `$${totalCost.toFixed(2)}/$${ceiling.toFixed(2)}`
+          : `$${totalCost.toFixed(2)}`;
+        const right = theme.fg("muted", `Runs: ${totalRuns}  ${budgetStr}  `)
+          + theme.fg("dim", "[") + ctxBar + theme.fg("dim", "]")
+          + theme.fg("muted", ` ${Math.round(contextPercent)}% `);
+
+        const leftW = visibleWidth(left);
+        const rightW = visibleWidth(right);
+        const pad = " ".repeat(Math.max(1, width - leftW - rightW));
+        return [truncateToWidth(left + pad + right, width)];
+      },
+    }));
+
+    // Track orchestrator context window usage from Pi message lifecycle events.
+    // Each "message_end" event from the orchestrator includes cumulative input
+    // token usage. Dividing by the model's contextWindow yields fill percentage.
+    // Only assistant messages carry usage data (UserMessage and ToolResultMessage do not).
+    pi.on("message_end", (event, msgCtx) => {
+      const msg = event.message;
+      if (msg && "usage" in msg && msg.role === "assistant" && msgCtx.model?.contextWindow) {
+        recordContextUsage(msg.usage.input ?? 0, msgCtx.model.contextWindow);
+      }
+    });
+
+    // Subscribe to dispatch events for live worker tracking.
+    sharedBus.on("pancode:run-started", (payload) => {
+      const event = payload as { runId: string; agent: string; task: string; model: string | null };
+      trackWorkerStart(event.runId, event.agent, event.task, event.model);
+    });
+
+    sharedBus.on("pancode:worker-progress", (payload) => {
+      const event = payload as { runId: string; inputTokens: number; outputTokens: number; turns: number };
+      updateWorkerProgress(event.runId, event.inputTokens, event.outputTokens, event.turns);
+    });
+
+    sharedBus.on("pancode:run-finished", (payload) => {
+      const event = payload as { runId: string; status: WorkerStatus };
+      trackWorkerEnd(event.runId, event.status);
+    });
+
+    if (!welcomeShown) {
+      welcomeShown = true;
+      sendPanel(emitPanel, `${PANCODE_PRODUCT_NAME} Dashboard`, buildDashboardLines({
+        modelLabel: currentModelLabel,
+        reasoningPreference: currentReasoningPreference,
+        reasoningCapability: describeReasoningCapability(ctx.model),
+        effectiveThinkingLevel,
+        themeName: currentThemeName,
+        workingDirectory: ctx.cwd,
+        tools: pi.getActiveTools(),
+      }));
+    }
+  });
+
+  pi.on("model_select", (event, ctx) => {
+    currentModelLabel = modelRef(event.model);
+    const effectiveThinkingLevel = resolveThinkingLevelForPreference(event.model, currentReasoningPreference);
+    process.env.PANCODE_EFFECTIVE_THINKING = effectiveThinkingLevel;
+    pi.setThinkingLevel(effectiveThinkingLevel);
+    ctx.ui.setStatus("thinking", `Reasoning: ${currentReasoningPreference} (${pi.getThinkingLevel()})`);
+    persistSettings(
+      {
+        preferredProvider: event.model.provider,
+        preferredModel: event.model.id,
+      },
+      (message, level) => ctx.ui.notify(message, level),
+    );
+  });
+
+  pi.registerCommand("dashboard", {
+    description: "Open the PanCode dashboard",
+    handler: showDashboard,
+  });
+
+  pi.registerCommand("status", {
+    description: "Show the PanCode session summary",
+    handler: showDashboard,
+  });
+
+  pi.registerCommand("theme", {
+    description: "Inspect or change the active PanCode theme",
+    handler: handleThemeCommand,
+  });
+
+  pi.registerCommand("models", {
+    description: "List PanCode-visible models or switch by exact reference",
+    handler: handleModelsCommand,
+  });
+
+  pi.registerCommand("preferences", {
+    description: "Show or change PanCode preferences",
+    handler: handlePreferencesCommand,
+  });
+
+  pi.registerCommand("reasoning", {
+    description: "Inspect or change the PanCode reasoning preference",
+    handler: handleReasoningCommand,
+  });
+
+  pi.registerCommand("thinking", {
+    description: "Backward-compatible alias for /reasoning",
+    handler: handleReasoningCommand,
+  });
+
+  pi.registerCommand("help", {
+    description: "Show PanCode-owned commands",
+    async handler(_args, _ctx) {
+      sendPanel(emitPanel, `${PANCODE_PRODUCT_NAME} Commands`, formatShellCommandLines());
+    },
+  });
+
+  pi.registerCommand("exit", {
+    description: "Exit PanCode",
+    async handler(_args, ctx) {
+      ctx.shutdown();
+    },
+  });
+});

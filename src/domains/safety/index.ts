@@ -1,0 +1,10 @@
+export { extension } from "./extension";
+export { manifest } from "./manifest";
+export type { ScopeLevel, ActionClass, AutonomyMode, SafetyTier, ScopeContract } from "./scope";
+export { lookupTier, parseAutonomyMode, resolveEffectiveMode, DEFAULT_MODE_POLICIES } from "./scope";
+export { classifyAction, classifyBashCommand, isActionAllowed } from "./action-classifier";
+export { enforceScopeSubset, checkDispatchAdmission, capWorkerMode } from "./scope-enforcement";
+export type { LoopDetector, LoopDetectorEvent } from "./loop-detector";
+export { createLoopDetector } from "./loop-detector";
+export type { SafetyRules } from "./yaml-rules";
+export { loadSafetyRules } from "./yaml-rules";
