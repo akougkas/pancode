@@ -9,7 +9,7 @@ export interface ClusterNode {
 
 const SERVICE_PORTS: Record<string, number> = {
   "lm-studio": 1234,
-  "ollama": 11434,
+  ollama: 11434,
   "llama-server": 8080,
 };
 
@@ -32,7 +32,7 @@ function buildClusterNodesFromEnv(): ClusterNode[] {
 
     for (const [provider, port] of Object.entries(SERVICE_PORTS)) {
       const nodeName = `${name}-${provider.replace("-", "")}`;
-      const defaultConcurrency = parseInt(concurrencyEnv ?? "4", 10) || 4;
+      const defaultConcurrency = Number.parseInt(concurrencyEnv ?? "4", 10) || 4;
 
       nodes.push({
         name: nodeName,

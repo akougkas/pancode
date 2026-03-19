@@ -83,5 +83,9 @@ export function cycleMode(direction: 1 | -1 = 1): OrchestratorMode {
 
 export function getModeDefinition(mode?: OrchestratorMode): ModeDefinition {
   const target = mode ?? currentMode;
-  return MODE_DEFINITIONS.find((m) => m.id === target)!;
+  const definition = MODE_DEFINITIONS.find((m) => m.id === target);
+  if (!definition) {
+    throw new Error(`Unknown mode: ${target}`);
+  }
+  return definition;
 }

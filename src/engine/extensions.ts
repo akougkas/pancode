@@ -5,4 +5,3 @@ import type { ExtensionFactory } from "@pancode/pi-coding-agent";
 export function defineExtension(factory: ExtensionFactory): ExtensionFactory {
   return factory;
 }
-

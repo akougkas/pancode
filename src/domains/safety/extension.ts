@@ -1,17 +1,42 @@
+import { sharedBus } from "../../core/shared-bus";
 import { defineExtension } from "../../engine/extensions";
 import { classifyAction, classifyBashCommand, isActionAllowed } from "./action-classifier";
-import { parseAutonomyMode, type AutonomyMode } from "./scope";
-import { checkDispatchAdmission } from "./scope-enforcement";
 import { createLoopDetector } from "./loop-detector";
-import { loadSafetyRules, checkBashCommand, checkPathAccess, type SafetyRules } from "./yaml-rules";
-import { registerPreFlightCheck } from "../dispatch/admission";
-import { sharedBus } from "../../core/shared-bus";
+import { type AutonomyMode, parseAutonomyMode } from "./scope";
+import { checkDispatchAdmission } from "./scope-enforcement";
+import { type SafetyRules, checkBashCommand, checkPathAccess, loadSafetyRules } from "./yaml-rules";
+
+let autonomyMode: AutonomyMode = "auto-edit";
+const loopDetector = createLoopDetector();
+let yamlRules: SafetyRules = { bashPatterns: [], zeroAccessPaths: [], readOnlyPaths: [], noDeletePaths: [] };
+
+interface SafetyPreFlightContext {
+  task: string;
+  agent: string;
+  model: string | null;
+}
+
+interface SafetyPreFlightResult {
+  admit: boolean;
+  reason?: string;
+}
+
+type RegisterPreFlight = (name: string, fn: (context: SafetyPreFlightContext) => SafetyPreFlightResult) => void;
+
+export function registerSafetyPreFlightChecks(register: RegisterPreFlight): void {
+  register("scope-enforcement", (context) => {
+    const admission = checkDispatchAdmission(autonomyMode, autonomyMode);
+    if (!admission.admitted) {
+      return { admit: false, reason: admission.reason };
+    }
+    if (loopDetector.isBlocked(context.agent)) {
+      return { admit: false, reason: `Agent ${context.agent} is blocked by loop detector (too many failures)` };
+    }
+    return { admit: true };
+  });
+}
 
 export const extension = defineExtension((pi) => {
-  let autonomyMode: AutonomyMode = "auto-edit";
-  const loopDetector = createLoopDetector();
-  let yamlRules: SafetyRules = { bashPatterns: [], zeroAccessPaths: [], readOnlyPaths: [], noDeletePaths: [] };
-
   pi.on("session_start", (_event, _ctx) => {
     autonomyMode = parseAutonomyMode(process.env.PANCODE_SAFETY);
 
@@ -23,19 +48,6 @@ export const extension = defineExtension((pi) => {
         `${yamlRules.zeroAccessPaths.length} zero-access, ${yamlRules.readOnlyPaths.length} read-only, ` +
         `${yamlRules.noDeletePaths.length} no-delete paths.`,
     );
-
-    // Register dispatch pre-flight check for scope enforcement
-    registerPreFlightCheck("scope-enforcement", (context) => {
-      const admission = checkDispatchAdmission(autonomyMode, autonomyMode);
-      if (!admission.admitted) {
-        return { admit: false, reason: admission.reason };
-      }
-      // Check loop detector
-      if (loopDetector.isBlocked(context.agent)) {
-        return { admit: false, reason: `Agent ${context.agent} is blocked by loop detector (too many failures)` };
-      }
-      return { admit: true };
-    });
 
     // Subscribe to run-finished events for loop detection
     sharedBus.on("pancode:run-finished", (raw: unknown) => {
@@ -78,8 +90,7 @@ export const extension = defineExtension((pi) => {
     const input = event.input as Record<string, unknown>;
     const filePath = input.file_path ?? input.path ?? input.file;
     if (typeof filePath === "string") {
-      const pathAction =
-        actionClass === "file_delete" ? "delete" : actionClass === "file_write" ? "write" : "read";
+      const pathAction = actionClass === "file_delete" ? "delete" : actionClass === "file_write" ? "write" : "read";
       const pathCheck = checkPathAccess(filePath, pathAction, yamlRules);
       if (pathCheck.blocked) {
         return { block: true, reason: `[pancode:safety] YAML rule: ${pathCheck.reason}` };

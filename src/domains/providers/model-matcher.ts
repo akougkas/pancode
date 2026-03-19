@@ -1,5 +1,5 @@
-import { readFileSync, readdirSync, writeFileSync, mkdirSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import YAML from "yaml";
 import type { DiscoveredModel, ModelCapabilities } from "./engines/types";
 
@@ -75,22 +75,17 @@ export function loadModelKnowledgeBase(modelsDir: string): ModelFamilyProfile[] 
     try {
       const content = readFileSync(filePath, "utf8");
       const parsed = YAML.parse(content) as ModelFamilyProfile;
-      if (parsed && parsed.family) profiles.push(parsed);
+      if (parsed?.family) profiles.push(parsed);
     } catch (err) {
       // Log parse errors but continue loading other profiles
-      console.error(
-        `[pancode:models] Failed to load ${file}: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      console.error(`[pancode:models] Failed to load ${file}: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
   return profiles;
 }
 
-export function matchModel(
-  discovered: DiscoveredModel,
-  knowledgeBase: ModelFamilyProfile[],
-): MergedModelProfile {
+export function matchModel(discovered: DiscoveredModel, knowledgeBase: ModelFamilyProfile[]): MergedModelProfile {
   const modelIdLower = discovered.id.toLowerCase();
 
   // Pass 1: exact variant match
@@ -181,10 +176,7 @@ export function matchAllModels(
   return discovered.map((model) => matchModel(model, knowledgeBase));
 }
 
-export function writeModelCacheYaml(
-  profiles: MergedModelProfile[],
-  pancodeHome: string,
-): void {
+export function writeModelCacheYaml(profiles: MergedModelProfile[], pancodeHome: string): void {
   const serializable = profiles.map((p) => ({
     modelId: p.modelId,
     providerId: p.providerId,
@@ -215,20 +207,11 @@ export function getModelProfileCache(): MergedModelProfile[] {
   return cachedProfiles;
 }
 
-export function findModelProfile(
-  providerId: string,
-  modelId: string,
-): MergedModelProfile | undefined {
-  return cachedProfiles.find(
-    (p) => p.providerId === providerId && p.modelId === modelId,
-  );
+export function findModelProfile(providerId: string, modelId: string): MergedModelProfile | undefined {
+  return cachedProfiles.find((p) => p.providerId === providerId && p.modelId === modelId);
 }
 
-export function getSamplingPreset(
-  providerId: string,
-  modelId: string,
-  presetName: string,
-): SamplingPreset | undefined {
+export function getSamplingPreset(providerId: string, modelId: string, presetName: string): SamplingPreset | undefined {
   const profile = findModelProfile(providerId, modelId);
   return profile?.sampling?.[presetName];
 }

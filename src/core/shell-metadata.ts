@@ -18,7 +18,12 @@ export interface PanCodeShellCommand {
 export const PANCODE_SHELL_COMMANDS: readonly PanCodeShellCommand[] = [
   // SESSION
   { name: "new", description: "Start a new session (clears board, tasks, memory)", category: "session" },
-  { name: "compact", args: "[instructions]", description: "Compact context (prune registry, log to audit)", category: "session" },
+  {
+    name: "compact",
+    args: "[instructions]",
+    description: "Compact context (prune registry, log to audit)",
+    category: "session",
+  },
   { name: "fork", description: "Fork session from a prior message", category: "session" },
   { name: "tree", description: "Navigate the session branch tree", category: "session" },
   { name: "session", description: "Show session info with PanCode state summary", category: "session" },
@@ -36,6 +41,7 @@ export const PANCODE_SHELL_COMMANDS: readonly PanCodeShellCommand[] = [
 
   // AGENTS
   { name: "agents", description: "List registered PanCode agent specs", category: "agents" },
+  { name: "runtimes", description: "List agent runtimes with availability status", category: "agents" },
   { name: "skills", description: "List agent skills (coming soon)", category: "agents" },
 
   // OBSERVE
@@ -50,10 +56,20 @@ export const PANCODE_SHELL_COMMANDS: readonly PanCodeShellCommand[] = [
   // DISPLAY
   { name: "dashboard", description: "Open the PanCode dashboard", category: "display" },
   { name: "status", description: "Show the PanCode session summary", category: "display" },
-  { name: "models", args: "[provider | provider/model-id | all]", description: "Show model inventory or switch models", category: "display" },
+  {
+    name: "models",
+    args: "[provider | provider/model-id | all]",
+    description: "Show model inventory or switch models",
+    category: "display",
+  },
   { name: "settings", args: "[subcommand]", description: "Show or change PanCode configuration", category: "display" },
   { name: "theme", args: "[name|list]", description: "Inspect or change the active theme", category: "display" },
-  { name: "mode", args: "[capture|plan|build|ask|review]", description: "Switch orchestrator behavior mode", category: "display" },
+  {
+    name: "mode",
+    args: "[capture|plan|build|ask|review]",
+    description: "Switch orchestrator behavior mode",
+    category: "display",
+  },
   { name: "reasoning", args: "[off|on]", description: "Inspect or change reasoning preference", category: "display" },
   { name: "help", description: "Show PanCode commands", category: "display" },
   { name: "exit", description: "Exit PanCode", category: "display" },

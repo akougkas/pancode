@@ -8,7 +8,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { atomicWriteJsonSync } from "../../core/config-writer";
+import { atomicWriteJsonSync, withFileLockSync } from "../../core/config-writer";
 
 const MAX_ENTRIES = 500;
 
@@ -29,58 +29,61 @@ export interface ContextRegistry {
   size(): number;
 }
 
+function loadStore(filePath: string): Map<string, ContextEntry> {
+  if (!existsSync(filePath)) return new Map();
+  try {
+    const raw = readFileSync(filePath, "utf-8");
+    const data = JSON.parse(raw) as Record<string, ContextEntry>;
+    return new Map(Object.entries(data));
+  } catch {
+    return new Map();
+  }
+}
+
+function serializeStore(store: Map<string, ContextEntry>): Record<string, ContextEntry> {
+  return Object.fromEntries(store.entries());
+}
+
+function evictOldest(store: Map<string, ContextEntry>): void {
+  if (store.size <= MAX_ENTRIES) return;
+  const sorted = [...store.entries()].sort((a, b) => a[1].timestamp.localeCompare(b[1].timestamp));
+  const toRemove = store.size - MAX_ENTRIES;
+  for (let i = 0; i < toRemove; i += 1) {
+    store.delete(sorted[i][0]);
+  }
+}
+
 export function createContextRegistry(runtimeRoot: string): ContextRegistry {
   const filePath = join(runtimeRoot, "context.json");
-  let store: Map<string, ContextEntry> = new Map();
+  let store = loadStore(filePath);
 
-  // Load existing data from disk if available.
-  if (existsSync(filePath)) {
-    try {
-      const raw = readFileSync(filePath, "utf-8");
-      const data = JSON.parse(raw) as Record<string, ContextEntry>;
-      for (const [key, entry] of Object.entries(data)) {
-        store.set(key, entry);
-      }
-    } catch {
-      // Corrupt file is non-fatal. Start empty.
-    }
-  }
-
-  function persist(): void {
-    const data: Record<string, ContextEntry> = {};
-    for (const [key, entry] of store) {
-      data[key] = entry;
-    }
-    atomicWriteJsonSync(filePath, data);
-  }
-
-  function evictOldest(): void {
-    if (store.size <= MAX_ENTRIES) return;
-    // Sort entries by timestamp ascending, remove the oldest.
-    const sorted = [...store.entries()].sort((a, b) => a[1].timestamp.localeCompare(b[1].timestamp));
-    const toRemove = store.size - MAX_ENTRIES;
-    for (let i = 0; i < toRemove; i++) {
-      store.delete(sorted[i][0]);
-    }
+  function refresh(): void {
+    store = loadStore(filePath);
   }
 
   return {
     set(key: string, value: string, source: string): void {
-      store.set(key, {
-        key,
-        value,
-        source,
-        timestamp: new Date().toISOString(),
+      withFileLockSync(filePath, () => {
+        const next = loadStore(filePath);
+        next.set(key, {
+          key,
+          value,
+          source,
+          timestamp: new Date().toISOString(),
+        });
+        evictOldest(next);
+        atomicWriteJsonSync(filePath, serializeStore(next));
+        store = next;
       });
-      evictOldest();
-      persist();
     },
 
     get(key: string): ContextEntry | null {
+      refresh();
       return store.get(key) ?? null;
     },
 
     getBySource(source: string): ContextEntry[] {
+      refresh();
       const result: ContextEntry[] = [];
       for (const entry of store.values()) {
         if (entry.source === source) result.push(entry);
@@ -89,21 +92,32 @@ export function createContextRegistry(runtimeRoot: string): ContextRegistry {
     },
 
     getAll(): ContextEntry[] {
+      refresh();
       return [...store.values()];
     },
 
     delete(key: string): boolean {
-      const existed = store.delete(key);
-      if (existed) persist();
+      let existed = false;
+      withFileLockSync(filePath, () => {
+        const next = loadStore(filePath);
+        existed = next.delete(key);
+        if (existed) {
+          atomicWriteJsonSync(filePath, serializeStore(next));
+        }
+        store = next;
+      });
       return existed;
     },
 
     clear(): void {
-      store.clear();
-      persist();
+      withFileLockSync(filePath, () => {
+        store = new Map();
+        atomicWriteJsonSync(filePath, {});
+      });
     },
 
     size(): number {
+      refresh();
       return store.size;
     },
   };

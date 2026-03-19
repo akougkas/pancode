@@ -2,7 +2,7 @@ import type { ModelRegistry } from "../../engine/session";
 import type { MergedModelProfile } from "./model-matcher";
 
 function deriveMaxTokens(contextWindow: number): number {
-  const envCap = parseInt(process.env.PANCODE_MAX_OUTPUT_TOKENS ?? "", 10);
+  const envCap = Number.parseInt(process.env.PANCODE_MAX_OUTPUT_TOKENS ?? "", 10);
   const cap = Number.isFinite(envCap) && envCap > 0 ? envCap : 131_072;
   return Math.max(4_096, Math.min(Math.floor(contextWindow / 2), cap));
 }
@@ -27,7 +27,7 @@ export function registerDiscoveredModels(
     if (providerProfiles.some((p) => p.baseUrl !== firstProfile.baseUrl)) {
       console.warn(
         `[pancode:providers] Provider "${providerId}" has models with different baseUrls. ` +
-        `Using first: ${firstProfile.baseUrl}`,
+          `Using first: ${firstProfile.baseUrl}`,
       );
     }
     const baseUrl = `${firstProfile.baseUrl}/v1`;
@@ -43,8 +43,7 @@ export function registerDiscoveredModels(
           // context window. The 8192 fallback will significantly limit usefulness.
           // Add a YAML entry under models/ to specify the correct value.
           console.warn(
-            `[pancode:providers] Model "${profile.modelId}" has no context window. ` +
-            `Defaulting to 8192 tokens. Add a models/ YAML entry to fix this.`,
+            `[pancode:providers] Model "${profile.modelId}" has no context window. Defaulting to 8192 tokens. Add a models/ YAML entry to fix this.`,
           );
         }
         const contextWindow = rawContextWindow ?? 8_192;
@@ -56,9 +55,7 @@ export function registerDiscoveredModels(
           id: profile.modelId,
           name: profile.modelId,
           reasoning,
-          input: vision
-            ? (["text", "image"] as ("text" | "image")[])
-            : (["text"] as ("text" | "image")[]),
+          input: vision ? (["text", "image"] as ("text" | "image")[]) : (["text"] as ("text" | "image")[]),
           cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
           contextWindow,
           maxTokens,

@@ -1,4 +1,4 @@
-import { createSafeEventBus, type SafeEventBus } from "./event-bus";
+import { type SafeEventBus, createSafeEventBus } from "./event-bus";
 
 /**
  * Shared event bus for cross-domain events.

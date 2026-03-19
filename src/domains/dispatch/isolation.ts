@@ -5,9 +5,9 @@
  */
 
 import { execFile as execFileCb } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, rmSync, statSync, readdirSync, writeFileSync, unlinkSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 
 const execFile = promisify(execFileCb);
@@ -53,10 +53,7 @@ async function captureBaseline(repoRoot: string): Promise<Baseline> {
   const stagedDiff = await gitSilent(["diff", "--cached", "--binary"], repoRoot);
   const unstagedDiff = await gitSilent(["diff", "--binary"], repoRoot);
 
-  const untrackedOutput = await gitSilent(
-    ["ls-files", "--others", "--exclude-standard", "-z"],
-    repoRoot,
-  );
+  const untrackedOutput = await gitSilent(["ls-files", "--others", "--exclude-standard", "-z"], repoRoot);
   const untrackedPaths = untrackedOutput.split("\0").filter((p) => p.length > 0);
 
   const untrackedFiles: Array<{ relativePath: string; content: Buffer }> = [];
@@ -85,8 +82,9 @@ async function applyBaseline(worktreeDir: string, baseline: Baseline): Promise<v
     } catch (err) {
       // Non-fatal: the worker starts without the staged changes in its baseline.
       console.warn(
-        `[pancode:dispatch] Staged baseline apply failed for worktree (worker may start with partial state): ` +
-        `${err instanceof Error ? err.message : String(err)}`,
+        `[pancode:dispatch] Staged baseline apply failed for worktree (worker may start with partial state): ${
+          err instanceof Error ? err.message : String(err)
+        }`,
       );
     } finally {
       unlinkSync(patchPath);
@@ -101,8 +99,9 @@ async function applyBaseline(worktreeDir: string, baseline: Baseline): Promise<v
     } catch (err) {
       // Non-fatal: the worker starts without the unstaged changes in its baseline.
       console.warn(
-        `[pancode:dispatch] Unstaged baseline apply failed for worktree (worker may start with partial state): ` +
-        `${err instanceof Error ? err.message : String(err)}`,
+        `[pancode:dispatch] Unstaged baseline apply failed for worktree (worker may start with partial state): ${
+          err instanceof Error ? err.message : String(err)
+        }`,
       );
     } finally {
       unlinkSync(patchPath);
@@ -121,10 +120,7 @@ async function applyBaseline(worktreeDir: string, baseline: Baseline): Promise<v
 
 const activeWorktrees = new Set<string>();
 
-export async function createWorktreeIsolation(
-  repoRoot: string,
-  taskId: string,
-): Promise<IsolationEnvironment> {
+export async function createWorktreeIsolation(repoRoot: string, taskId: string): Promise<IsolationEnvironment> {
   const worktreeDir = join(repoRoot, ".pancode", "worktrees", taskId);
 
   mkdirSync(dirname(worktreeDir), { recursive: true });
@@ -161,9 +157,7 @@ export async function createWorktreeIsolation(
       try {
         await Promise.race([
           git(["worktree", "remove", "--force", worktreeDir], repoRoot),
-          new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error("Worktree cleanup timed out")), 10000),
-          ),
+          new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Worktree cleanup timed out")), 10000)),
         ]);
       } catch {
         rmSync(worktreeDir, { recursive: true, force: true });
@@ -172,10 +166,7 @@ export async function createWorktreeIsolation(
   };
 }
 
-export async function mergeDeltaPatches(
-  repoRoot: string,
-  patches: DeltaPatch[],
-): Promise<MergeResult> {
+export async function mergeDeltaPatches(repoRoot: string, patches: DeltaPatch[]): Promise<MergeResult> {
   if (patches.length === 0) {
     return { success: true, appliedPatches: [], failedPatches: [] };
   }

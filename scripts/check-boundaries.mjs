@@ -78,6 +78,17 @@ for (const filePath of walk(srcRoot)) {
       violations.push(`${path.relative(projectRoot, filePath)} imports ${specifier} outside src/engine`);
     }
 
+    if (isWithin(filePath, engineRoot)) {
+      if (specifier.startsWith(".")) {
+        const resolved = resolveRelativeImport(filePath, specifier);
+        if (isWithin(resolved, domainsRoot)) {
+          violations.push(`${path.relative(projectRoot, filePath)} imports ${specifier} from src/domains`);
+        }
+      } else if (specifier === "src/domains" || specifier.startsWith("src/domains/")) {
+        violations.push(`${path.relative(projectRoot, filePath)} imports ${specifier} from src/domains`);
+      }
+    }
+
     if (!isWithin(filePath, workerRoot)) continue;
 
     if (specifier.startsWith(".")) {

@@ -7,8 +7,8 @@
  */
 
 import { Type } from "@sinclair/typebox";
-import type { ExtensionContext, AgentToolResult } from "../../engine/types";
-import { runShadowQuery, type ShadowQueryResult } from "../../engine/shadow";
+import { type ShadowQueryResult, runShadowQuery } from "../../engine/shadow";
+import type { AgentToolResult, ExtensionContext } from "../../engine/types";
 
 function textResult(text: string): AgentToolResult<unknown> {
   return { content: [{ type: "text", text }], details: undefined };
@@ -28,7 +28,7 @@ const SHADOW_SYSTEM_CONTEXT = [
  */
 function resolveShadowModel(ctx: ExtensionContext): { provider: string; id: string } | null {
   const shadowModelEnv = process.env.PANCODE_SHADOW_MODEL;
-  if (shadowModelEnv && shadowModelEnv.includes("/")) {
+  if (shadowModelEnv?.includes("/")) {
     const [provider, ...rest] = shadowModelEnv.split("/");
     return { provider, id: rest.join("/") };
   }

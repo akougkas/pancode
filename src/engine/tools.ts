@@ -7,4 +7,3 @@ export type {
 export function defineTool<T>(definition: T): T {
   return definition;
 }
-

@@ -5,15 +5,15 @@
  * Runs the query, collects the response, and tears down. No session persistence.
  */
 
+import type { Api, Model } from "@pancode/pi-ai";
 import {
-  createAgentSession,
-  createReadOnlyTools,
+  AuthStorage,
+  type ModelRegistry,
   SessionManager,
   SettingsManager,
-  AuthStorage,
-  ModelRegistry,
+  createAgentSession,
+  createReadOnlyTools,
 } from "@pancode/pi-coding-agent";
-import type { Api, Model } from "@pancode/pi-ai";
 
 export interface ShadowQueryOptions {
   query: string;
@@ -82,10 +82,7 @@ export async function runShadowQuery(options: ShadowQueryOptions): Promise<Shado
       setTimeout(() => reject(new Error("Shadow query timed out")), timeout);
     });
 
-    await Promise.race([
-      session.prompt(options.query),
-      timeoutPromise,
-    ]);
+    await Promise.race([session.prompt(options.query), timeoutPromise]);
 
     unsubscribe();
 

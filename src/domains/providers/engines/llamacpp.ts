@@ -1,18 +1,10 @@
-import type {
-  DiscoveredModel,
-  EngineConnection,
-  EngineHealth,
-  ModelCapabilities,
-} from "./types";
+import type { DiscoveredModel, EngineConnection, EngineHealth, ModelCapabilities } from "./types";
 import { emptyCapabilities } from "./types";
 
 const DEFAULT_PORT = 8080;
 const PROBE_TIMEOUT_MS = 3000;
 
-export function createLlamaCppConnection(
-  baseUrl: string,
-  providerId: string,
-): EngineConnection {
+export function createLlamaCppConnection(baseUrl: string, providerId: string): EngineConnection {
   return {
     type: "llamacpp",
     baseUrl,
@@ -155,10 +147,7 @@ function parseCapabilitiesFromEntry(entry: {
   return caps;
 }
 
-function parseArgValue(
-  args: unknown[],
-  ...flags: string[]
-): number | null {
+function parseArgValue(args: unknown[], ...flags: string[]): number | null {
   for (let i = 0; i < args.length; i++) {
     const value = String(args[i]);
 
@@ -177,20 +166,17 @@ function parseArgValue(
   return null;
 }
 
-function parseArgFloat(
-  args: unknown[],
-  ...flags: string[]
-): number | null {
+function parseArgFloat(args: unknown[], ...flags: string[]): number | null {
   for (let i = 0; i < args.length; i++) {
     const value = String(args[i]);
 
     for (const flag of flags) {
       if (value.startsWith(`${flag}=`)) {
-        const parsed = parseFloat(value.split("=", 2)[1] ?? "");
+        const parsed = Number.parseFloat(value.split("=", 2)[1] ?? "");
         if (Number.isFinite(parsed)) return parsed;
       }
       if (value === flag && i + 1 < args.length) {
-        const parsed = parseFloat(String(args[i + 1]));
+        const parsed = Number.parseFloat(String(args[i + 1]));
         if (Number.isFinite(parsed)) return parsed;
       }
     }

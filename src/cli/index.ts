@@ -1,8 +1,8 @@
-import { up } from "./up";
 import { down } from "./down";
 import { login } from "./login";
-import { version } from "./version";
 import { EXIT_FAILURE } from "./shared";
+import { up } from "./up";
+import { version } from "./version";
 
 export function runCliCommand(command: string, args: string[]): number {
   switch (command) {

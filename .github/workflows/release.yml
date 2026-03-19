@@ -19,6 +19,7 @@ jobs:
       - run: npm run typecheck
       - run: npm run check-boundaries
       - run: npm run build
+      - run: npm run lint
       - run: node dist/loader.js --version
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

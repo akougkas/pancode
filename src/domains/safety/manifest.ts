@@ -4,4 +4,3 @@ export const manifest = {
   name: "safety",
   dependsOn: [],
 } as const satisfies DomainManifest;
-

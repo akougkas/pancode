@@ -60,9 +60,9 @@ export function getModelReasoningControl(
   if (!model?.reasoning) return "none";
   if (model.compat?.supportsReasoningEffort === false) {
     if (
-      model.compat.thinkingFormat === "qwen"
-      || model.compat.thinkingFormat === "qwen-chat-template"
-      || model.compat.thinkingFormat === "zai"
+      model.compat.thinkingFormat === "qwen" ||
+      model.compat.thinkingFormat === "qwen-chat-template" ||
+      model.compat.thinkingFormat === "zai"
     ) {
       return "toggle";
     }

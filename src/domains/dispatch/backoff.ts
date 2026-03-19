@@ -29,7 +29,7 @@ export interface BackoffManager {
 }
 
 function computeDelay(consecutiveFailures: number): number {
-  const exponential = BASE_DELAY_MS * Math.pow(2, consecutiveFailures - 1);
+  const exponential = BASE_DELAY_MS * 2 ** (consecutiveFailures - 1);
   const capped = Math.min(exponential, MAX_DELAY_MS);
   // Add 0-25% jitter to avoid thundering herd
   const jitter = capped * Math.random() * 0.25;

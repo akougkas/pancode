@@ -3,7 +3,7 @@
 // It imports from @pancode/pi-coding-agent directly (allowlisted in check-boundaries).
 // It does NOT import from src/domains/ or src/engine/.
 
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import type { ExtensionFactory, ToolCallEvent } from "@pancode/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
@@ -45,16 +45,49 @@ function readJsonFile<T>(filePath: string, fallback: T): T {
 function atomicWriteJson(filePath: string, data: unknown): void {
   const dir = dirname(filePath);
   mkdirSync(dir, { recursive: true });
-  const tmpPath = `${filePath}.tmp.${process.pid}`;
+  const tmpPath = `${filePath}.tmp.${process.pid}.${Date.now()}`;
   writeFileSync(tmpPath, `${JSON.stringify(data, null, 2)}\n`, "utf8");
   renameSync(tmpPath, filePath);
+}
+
+const LOCK_SLEEP_BUFFER = new SharedArrayBuffer(4);
+const LOCK_SLEEP_VIEW = new Int32Array(LOCK_SLEEP_BUFFER);
+
+function sleepSync(ms: number): void {
+  Atomics.wait(LOCK_SLEEP_VIEW, 0, 0, ms);
+}
+
+function withFileLock<T>(filePath: string, fn: () => T, timeoutMs = 2000): T {
+  mkdirSync(dirname(filePath), { recursive: true });
+  const lockPath = `${filePath}.lock`;
+  const deadline = Date.now() + timeoutMs;
+
+  for (;;) {
+    try {
+      mkdirSync(lockPath);
+      break;
+    } catch (error) {
+      const err = error as NodeJS.ErrnoException;
+      if (err.code !== "EEXIST") throw error;
+      if (Date.now() >= deadline) {
+        throw new Error(`Timed out acquiring file lock for ${filePath}`);
+      }
+      sleepSync(10);
+    }
+  }
+
+  try {
+    return fn();
+  } finally {
+    rmSync(lockPath, { recursive: true, force: true });
+  }
 }
 
 const safetyExtension: ExtensionFactory = (pi) => {
   const autonomyMode = process.env.PANCODE_SAFETY ?? "auto-edit";
 
   // Safety gating: enforce autonomy mode on tool calls
-  pi.on("tool_call", (event: ToolCallEvent): { block?: boolean; reason?: string } | void => {
+  pi.on("tool_call", (event: ToolCallEvent): { block?: boolean; reason?: string } | undefined => {
     const toolName = event.toolName.toLowerCase().replace(/-/g, "_");
 
     const READ_TOOLS = new Set(["read", "grep", "find", "ls", "glob"]);
@@ -127,16 +160,18 @@ const safetyExtension: ExtensionFactory = (pi) => {
         value: Type.String({ description: "Value to store" }),
       }),
       execute: async (_callId, params) => {
-        const board = readJsonFile<BoardData>(boardFile, {});
-        if (!board[params.namespace]) {
-          board[params.namespace] = {};
-        }
-        board[params.namespace][params.key] = {
-          value: params.value,
-          source: agentName,
-          timestamp: new Date().toISOString(),
-        };
-        atomicWriteJson(boardFile, board);
+        withFileLock(boardFile, () => {
+          const board = readJsonFile<BoardData>(boardFile, {});
+          if (!board[params.namespace]) {
+            board[params.namespace] = {};
+          }
+          board[params.namespace][params.key] = {
+            value: params.value,
+            source: agentName,
+            timestamp: new Date().toISOString(),
+          };
+          atomicWriteJson(boardFile, board);
+        });
         return {
           content: [{ type: "text", text: `Board updated: ${params.namespace}/${params.key}` }],
           details: undefined,
@@ -155,13 +190,15 @@ const safetyExtension: ExtensionFactory = (pi) => {
         value: Type.String({ description: "Context value to report" }),
       }),
       execute: async (_callId, params) => {
-        const ctx = readJsonFile<ContextData>(contextFile, {});
-        ctx[params.key] = {
-          value: params.value,
-          source: agentName,
-          timestamp: new Date().toISOString(),
-        };
-        atomicWriteJson(contextFile, ctx);
+        withFileLock(contextFile, () => {
+          const ctx = readJsonFile<ContextData>(contextFile, {});
+          ctx[params.key] = {
+            value: params.value,
+            source: agentName,
+            timestamp: new Date().toISOString(),
+          };
+          atomicWriteJson(contextFile, ctx);
+        });
         return {
           content: [{ type: "text", text: `Context reported: ${params.key}` }],
           details: undefined,

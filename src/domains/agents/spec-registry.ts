@@ -1,5 +1,5 @@
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import YAML from "yaml";
 
 export interface AgentSpec {
@@ -10,6 +10,9 @@ export interface AgentSpec {
   model?: string;
   sampling?: string;
   readonly: boolean;
+  // Runtime selection
+  runtime: string; // "pi" (default) | "cli:claude-code" | "cli:codex" | etc.
+  runtimeArgs: string[]; // Extra args passed to the runtime CLI
 }
 
 export class AgentSpecRegistry {
@@ -49,6 +52,8 @@ interface YamlAgentEntry {
   sampling?: string;
   readonly?: boolean;
   system_prompt?: string;
+  runtime?: string;
+  runtime_args?: string[];
 }
 
 interface YamlAgentsFile {
@@ -82,6 +87,59 @@ agents:
     sampling: general
     readonly: true
     system_prompt: "You are a research scout. Explore the codebase to answer questions and gather information. Do not modify any files. Summarize findings concisely."
+
+  # --- External agent examples (uncomment if installed) ---
+  # claude-reviewer:
+  #   runtime: cli:claude-code
+  #   description: "Claude Code for deep code review"
+  #   runtime_args: ["--allowedTools", "Read,Grep,Glob"]
+  #   readonly: true
+  #   system_prompt: "Review the code for bugs, security issues, and improvements."
+  #
+  # codex-fixer:
+  #   runtime: cli:codex
+  #   description: "Codex for quick targeted edits"
+  #   runtime_args: ["--full-auto"]
+  #   readonly: false
+  #   system_prompt: "Fix the described issue efficiently."
+  #
+  # opencode-scout:
+  #   runtime: cli:opencode
+  #   description: "opencode explore agent for codebase research"
+  #   readonly: true
+  #   system_prompt: "Explore the codebase to answer questions. Summarize findings concisely."
+  #
+  # opencode-builder:
+  #   runtime: cli:opencode
+  #   description: "opencode build agent for implementation"
+  #   readonly: false
+  #   runtime_args: ["--variant", "high"]
+  #   system_prompt: "Implement the requested changes efficiently."
+  #
+  # cline-planner:
+  #   runtime: cli:cline
+  #   description: "Cline CLI for codebase analysis and planning"
+  #   readonly: true
+  #   system_prompt: "Analyze the codebase and create a detailed plan. Do not modify files."
+  #
+  # cline-builder:
+  #   runtime: cli:cline
+  #   description: "Cline CLI for implementation tasks"
+  #   readonly: false
+  #   runtime_args: ["--max-consecutive-mistakes", "3"]
+  #   system_prompt: "Implement the requested changes efficiently."
+  #
+  # copilot-reviewer:
+  #   runtime: cli:copilot-cli
+  #   description: "GitHub Copilot CLI for code review"
+  #   readonly: true
+  #   system_prompt: "Review the code for bugs, security issues, and improvements."
+  #
+  # copilot-builder:
+  #   runtime: cli:copilot-cli
+  #   description: "GitHub Copilot CLI for implementation"
+  #   readonly: false
+  #   system_prompt: "Implement the requested changes efficiently."
 `;
 
 function expandEnvVars(value: string): string {
@@ -134,6 +192,8 @@ export function loadAgentsFromYaml(pancodeHome: string): AgentSpec[] {
       model: model && model.length > 0 ? model : undefined,
       sampling: entry.sampling,
       readonly: entry.readonly ?? false,
+      runtime: entry.runtime ?? "pi",
+      runtimeArgs: Array.isArray(entry.runtime_args) ? entry.runtime_args : [],
     });
   }
 

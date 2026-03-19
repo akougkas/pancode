@@ -13,7 +13,7 @@ export class BudgetTracker {
   private state: BudgetState;
   private readonly persistPath: string;
 
-  constructor(runtimeRoot: string, ceiling: number = 10.0) {
+  constructor(runtimeRoot: string, ceiling = 10.0) {
     this.persistPath = join(runtimeRoot, "budget.json");
     this.state = {
       totalCost: 0,
@@ -50,7 +50,7 @@ export class BudgetTracker {
     this.persist();
   }
 
-  canAdmit(estimatedCost: number = 0): boolean {
+  canAdmit(estimatedCost = 0): boolean {
     return this.state.totalCost + estimatedCost <= this.state.ceiling;
   }
 

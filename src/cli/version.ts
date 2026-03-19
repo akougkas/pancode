@@ -6,9 +6,9 @@ export function version(): number {
   const packageRoot = process.env.PANCODE_PACKAGE_ROOT ?? process.cwd();
   try {
     const pkg = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8"));
-    console.log(pkg.version ?? "0.1.0");
+    console.log(pkg.version ?? "unknown");
   } catch {
-    console.log("0.1.0");
+    console.log("unknown");
   }
   return EXIT_SUCCESS;
 }

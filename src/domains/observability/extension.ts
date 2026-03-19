@@ -1,13 +1,14 @@
-import { defineExtension } from "../../engine/extensions";
 import { sharedBus } from "../../core/shared-bus";
-import { MetricsLedger, type RunMetric } from "./metrics";
-import { createAuditTrail, type AuditTrail } from "./telemetry";
+import { defineExtension } from "../../engine/extensions";
+import { getRunLedger } from "../dispatch";
 import { runHealthChecks } from "./health";
+import { MetricsLedger, type RunMetric } from "./metrics";
+import { type AuditTrail, createAuditTrail } from "./telemetry";
 
 interface RunFinishedEvent {
   runId: string;
   agent: string;
-  status: "done" | "error";
+  status: string;
   usage: {
     cost: number;
     turns: number;
@@ -22,6 +23,7 @@ interface RunFinishedEvent {
 
 let metricsLedger: MetricsLedger | null = null;
 let auditTrail: AuditTrail | null = null;
+let budgetSnapshot = { totalCost: 0, ceiling: 10 };
 
 export function getMetricsLedger(): MetricsLedger | null {
   return metricsLedger;
@@ -40,9 +42,18 @@ export const extension = defineExtension((pi) => {
     const runtimeRoot = packageRoot ? `${packageRoot}/.pancode` : ".pancode";
     metricsLedger = new MetricsLedger(runtimeRoot);
     auditTrail = createAuditTrail(1000);
+    budgetSnapshot = {
+      totalCost: 0,
+      ceiling: Number.parseFloat(process.env.PANCODE_BUDGET_CEILING ?? "10.0") || 10,
+    };
 
     // Record session start
-    auditTrail.record({ domain: "session", event: "session_start", detail: "PanCode session started", severity: "info" });
+    auditTrail.record({
+      domain: "session",
+      event: "session_start",
+      detail: "PanCode session started",
+      severity: "info",
+    });
 
     // Subscribe to dispatch events for both metrics and audit
     sharedBus.on("pancode:run-finished", (payload) => {
@@ -94,7 +105,20 @@ export const extension = defineExtension((pi) => {
 
     // Subscribe to compaction
     sharedBus.on("pancode:compaction-started", () => {
-      auditTrail?.record({ domain: "session", event: "compaction", detail: "Context compaction triggered", severity: "info" });
+      auditTrail?.record({
+        domain: "session",
+        event: "compaction",
+        detail: "Context compaction triggered",
+        severity: "info",
+      });
+    });
+
+    sharedBus.on("pancode:budget-updated", (payload) => {
+      const event = payload as { totalCost: number; ceiling: number };
+      budgetSnapshot = {
+        totalCost: event.totalCost,
+        ceiling: event.ceiling,
+      };
     });
   });
 
@@ -113,7 +137,7 @@ export const extension = defineExtension((pi) => {
       }
 
       const summary = metricsLedger.getSummary();
-      const recent = metricsLedger.getRecent(parseInt(args.trim(), 10) || 10);
+      const recent = metricsLedger.getRecent(Number.parseInt(args.trim(), 10) || 10);
 
       const lines: string[] = [
         `Total runs: ${summary.totalRuns}`,
@@ -208,38 +232,15 @@ export const extension = defineExtension((pi) => {
     description: "Run diagnostic health checks",
     async handler(_args, _ctx) {
       const packageRoot = process.env.PANCODE_PACKAGE_ROOT;
-      const runtimeRoot = packageRoot
-        ? `${packageRoot}/.pancode/runtime`
-        : ".pancode/runtime";
+      const runtimeRoot = packageRoot ? `${packageRoot}/.pancode/runtime` : ".pancode/runtime";
 
-      // Gather inputs from other domains via lazy imports to avoid hard dependencies.
       let activeWorkerCount = 0;
       let runs: Array<{ status: string; startedAt: string }> = [];
-      let providerHealth: Array<{ status: string }> = [];
-      let budgetSpent = 0;
-      let budgetCeiling = 10;
-
-      try {
-        const { getRunLedger } = await import("../dispatch");
-        const ledger = getRunLedger();
-        if (ledger) {
-          activeWorkerCount = ledger.getActive().length;
-          runs = ledger.getAll().map((r) => ({ status: r.status, startedAt: r.startedAt }));
-        }
-      } catch {
-        // dispatch domain not loaded
-      }
-
-      try {
-        const { getBudgetTracker } = await import("../scheduling");
-        const tracker = getBudgetTracker();
-        if (tracker) {
-          const state = tracker.getState();
-          budgetSpent = state.totalCost;
-          budgetCeiling = state.ceiling;
-        }
-      } catch {
-        // scheduling domain not loaded
+      const providerHealth: Array<{ status: string }> = [];
+      const ledger = getRunLedger();
+      if (ledger) {
+        activeWorkerCount = ledger.getActive().length;
+        runs = ledger.getAll().map((r) => ({ status: r.status, startedAt: r.startedAt }));
       }
 
       const report = await runHealthChecks({
@@ -247,8 +248,8 @@ export const extension = defineExtension((pi) => {
         activeWorkerCount,
         runs,
         providerHealth,
-        budgetSpent,
-        budgetCeiling,
+        budgetSpent: budgetSnapshot.totalCost,
+        budgetCeiling: budgetSnapshot.ceiling,
       });
 
       const statusIcon = (status: string) => {

@@ -1,7 +1,7 @@
+import { spawn } from "node:child_process";
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { spawn } from "node:child_process";
-import { loadConfig, type PanCodeConfig } from "../core/config";
+import { type PanCodeConfig, loadConfig } from "../core/config";
 import { ensureProjectRuntime } from "../core/init";
 import { buildWorkerModelArgs, createWorkerEnvironment } from "./provider-bridge";
 
@@ -59,30 +59,70 @@ Options:
 
 function parseArgs(argv: string[]): WorkerArgs {
   const parsed: WorkerArgs = {
-    prompt: null, resultFile: null, provider: null, model: null,
-    cwd: null, tools: null, timeoutMs: null,
-    systemPrompt: null, appendSystemPrompt: null, safetyExtPath: null,
+    prompt: null,
+    resultFile: null,
+    provider: null,
+    model: null,
+    cwd: null,
+    tools: null,
+    timeoutMs: null,
+    systemPrompt: null,
+    appendSystemPrompt: null,
+    safetyExtPath: null,
     help: false,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
-    if (arg === "--help" || arg === "-h") { parsed.help = true; continue; }
-    if (arg === "--prompt") { parsed.prompt = argv[++index] ?? null; continue; }
-    if (arg === "--result-file") { parsed.resultFile = argv[++index] ?? null; continue; }
-    if (arg === "--provider") { parsed.provider = argv[++index] ?? null; continue; }
-    if (arg === "--model") { parsed.model = argv[++index] ?? null; continue; }
-    if (arg === "--cwd") { parsed.cwd = argv[++index] ?? null; continue; }
-    if (arg === "--tools") { parsed.tools = argv[++index] ?? null; continue; }
-    if (arg === "--system-prompt") { parsed.systemPrompt = argv[++index] ?? null; continue; }
-    if (arg === "--append-system-prompt") { parsed.appendSystemPrompt = argv[++index] ?? null; continue; }
-    if (arg === "--safety-ext") { parsed.safetyExtPath = argv[++index] ?? null; continue; }
+    if (arg === "--help" || arg === "-h") {
+      parsed.help = true;
+      continue;
+    }
+    if (arg === "--prompt") {
+      parsed.prompt = argv[++index] ?? null;
+      continue;
+    }
+    if (arg === "--result-file") {
+      parsed.resultFile = argv[++index] ?? null;
+      continue;
+    }
+    if (arg === "--provider") {
+      parsed.provider = argv[++index] ?? null;
+      continue;
+    }
+    if (arg === "--model") {
+      parsed.model = argv[++index] ?? null;
+      continue;
+    }
+    if (arg === "--cwd") {
+      parsed.cwd = argv[++index] ?? null;
+      continue;
+    }
+    if (arg === "--tools") {
+      parsed.tools = argv[++index] ?? null;
+      continue;
+    }
+    if (arg === "--system-prompt") {
+      parsed.systemPrompt = argv[++index] ?? null;
+      continue;
+    }
+    if (arg === "--append-system-prompt") {
+      parsed.appendSystemPrompt = argv[++index] ?? null;
+      continue;
+    }
+    if (arg === "--safety-ext") {
+      parsed.safetyExtPath = argv[++index] ?? null;
+      continue;
+    }
     if (arg === "--timeout-ms") {
       const value = argv[++index] ?? null;
       parsed.timeoutMs = value == null ? null : Number.parseInt(value, 10);
       continue;
     }
-    if (!arg.startsWith("--") && parsed.prompt == null) { parsed.prompt = arg; continue; }
+    if (!arg.startsWith("--") && parsed.prompt == null) {
+      parsed.prompt = arg;
+      continue;
+    }
     throw new Error(`Unknown argument: ${arg}`);
   }
 
@@ -92,12 +132,14 @@ function parseArgs(argv: string[]): WorkerArgs {
 // biome-ignore lint: Pi SDK JSON events use dynamic shapes
 function extractAssistantText(message: any): string {
   if (!message || message.role !== "assistant" || !Array.isArray(message.content)) return "";
-  return message.content
-    // biome-ignore lint: Pi SDK content parts have dynamic shape
-    .filter((part: any) => part?.type === "text" && typeof part.text === "string")
-    // biome-ignore lint: Pi SDK content parts have dynamic shape
-    .map((part: any) => part.text as string)
-    .join("");
+  return (
+    message.content
+      // biome-ignore lint: Pi SDK content parts have dynamic shape
+      .filter((part: any) => part?.type === "text" && typeof part.text === "string")
+      // biome-ignore lint: Pi SDK content parts have dynamic shape
+      .map((part: any) => part.text as string)
+      .join("")
+  );
 }
 
 // biome-ignore lint: Pi SDK JSON events use dynamic shapes
@@ -105,7 +147,10 @@ function collectAssistantStateFromEvent(event: any, state: AssistantState): void
   if (event?.type === "message_end") {
     const message = event.message;
     const text = extractAssistantText(message);
-    if (text) { state.assistantText = text; state.assistantError = ""; }
+    if (text) {
+      state.assistantText = text;
+      state.assistantError = "";
+    }
     if (message?.role === "assistant" && message.stopReason === "error" && typeof message.errorMessage === "string") {
       state.assistantError = message.errorMessage;
     }
@@ -116,9 +161,14 @@ function collectAssistantStateFromEvent(event: any, state: AssistantState): void
     for (let index = event.messages.length - 1; index >= 0; index -= 1) {
       const message = event.messages[index];
       const text = extractAssistantText(message);
-      if (text) { state.assistantText = text; state.assistantError = ""; return; }
+      if (text) {
+        state.assistantText = text;
+        state.assistantError = "";
+        return;
+      }
       if (message?.role === "assistant" && message.stopReason === "error" && typeof message.errorMessage === "string") {
-        state.assistantError = message.errorMessage; return;
+        state.assistantError = message.errorMessage;
+        return;
       }
     }
   }
@@ -129,7 +179,10 @@ function parseCapturedStdout(stdoutText: string): AssistantState {
   for (const line of stdoutText.split("\n")) {
     const trimmed = line.trim();
     if (!trimmed) continue;
-    if (!trimmed.startsWith("{")) { state.stdoutNoise.push(line); continue; }
+    if (!trimmed.startsWith("{")) {
+      state.stdoutNoise.push(line);
+      continue;
+    }
     try {
       const event = JSON.parse(trimmed);
       state.eventsCount += 1;
@@ -160,9 +213,15 @@ interface WorkerPiConfig extends Pick<PanCodeConfig, "tools" | "provider" | "mod
 
 function buildPiArgs(config: WorkerPiConfig, prompt: string): string[] {
   const args = [
-    "--mode", "json", "--print", "--no-session",
-    "--no-skills", "--no-prompt-templates", "--no-themes",
-    "--tools", config.tools,
+    "--mode",
+    "json",
+    "--print",
+    "--no-session",
+    "--no-skills",
+    "--no-prompt-templates",
+    "--no-themes",
+    "--tools",
+    config.tools,
     ...buildWorkerModelArgs(config),
   ];
 
@@ -191,8 +250,12 @@ function monitorParent(): void {
   const parentPid = Number.parseInt(process.env.PANCODE_PARENT_PID ?? "", 10);
   if (!Number.isInteger(parentPid) || parentPid <= 0) return;
   const heartbeat = setInterval(() => {
-    try { process.kill(parentPid, 0); }
-    catch { clearInterval(heartbeat); process.exit(1); }
+    try {
+      process.kill(parentPid, 0);
+    } catch {
+      clearInterval(heartbeat);
+      process.exit(1);
+    }
   }, 5000);
   heartbeat.unref();
 }
@@ -229,29 +292,40 @@ async function runPi(config: FullWorkerConfig): Promise<PiRunResult> {
 
     let spawnError: Error | null = null;
     let timedOut = false;
-    const timeout = setTimeout(() => { timedOut = true; child.kill("SIGKILL"); }, config.timeoutMs);
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      child.kill("SIGKILL");
+    }, config.timeoutMs);
     timeout.unref();
 
     closeSync(stdoutFd);
     closeSync(stderrFd);
 
-    child.on("error", (error) => { spawnError = error; });
+    child.on("error", (error) => {
+      spawnError = error;
+    });
     child.on("close", (exitCode, signal) => {
       clearTimeout(timeout);
-      if (spawnError) { reject(spawnError); return; }
+      if (spawnError) {
+        reject(spawnError);
+        return;
+      }
 
       const stdoutText = readFileSync(stdoutPath, "utf8");
       const stderrText = readFileSync(stderrPath, "utf8");
       const parsed = parseCapturedStdout(stdoutText);
 
       resolve({
-        exitCode, signal, timedOut,
+        exitCode,
+        signal,
+        timedOut,
         assistantText: parsed.assistantText,
         assistantError: parsed.assistantError,
         stdoutNoise: parsed.stdoutNoise.join(""),
         stderr: stderrText,
         eventsCount: parsed.eventsCount,
-        stdoutPath, stderrPath,
+        stdoutPath,
+        stderrPath,
       });
     });
   });
@@ -264,7 +338,10 @@ function writeResultFile(resultFile: string, payload: Record<string, unknown>): 
 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
-  if (args.help) { printUsage(); return; }
+  if (args.help) {
+    printUsage();
+    return;
+  }
   if (!args.resultFile) throw new Error("Missing required --result-file argument.");
 
   const baseConfig = loadConfig({
@@ -273,7 +350,7 @@ async function main(): Promise<void> {
     model: args.model,
     cwd: args.cwd ?? undefined,
     tools: args.tools ?? undefined,
-    timeoutMs: Number.isFinite(args.timeoutMs) ? args.timeoutMs! : undefined,
+    timeoutMs: Number.isFinite(args.timeoutMs) ? (args.timeoutMs as number) : undefined,
   });
   ensureProjectRuntime(baseConfig);
 
@@ -298,22 +375,36 @@ async function main(): Promise<void> {
     const result = await runPi(workerConfig);
     writeResultFile(args.resultFile, {
       ok: result.exitCode === 0 && !result.assistantError,
-      prompt: workerConfig.prompt, cwd: workerConfig.cwd,
-      exitCode: result.exitCode, signal: result.signal,
-      timedOut: result.timedOut, eventsCount: result.eventsCount,
-      assistantText: result.assistantText, assistantError: result.assistantError,
-      stdoutNoise: result.stdoutNoise, stderr: result.stderr,
-      stdoutPath: result.stdoutPath, stderrPath: result.stderrPath,
+      prompt: workerConfig.prompt,
+      cwd: workerConfig.cwd,
+      exitCode: result.exitCode,
+      signal: result.signal,
+      timedOut: result.timedOut,
+      eventsCount: result.eventsCount,
+      assistantText: result.assistantText,
+      assistantError: result.assistantError,
+      stdoutNoise: result.stdoutNoise,
+      stderr: result.stderr,
+      stdoutPath: result.stdoutPath,
+      stderrPath: result.stderrPath,
     });
     if (result.exitCode !== 0 || result.assistantError) {
       process.exitCode = result.exitCode ?? 1;
     }
   } catch (error) {
     writeResultFile(args.resultFile, {
-      ok: false, prompt: args.prompt, exitCode: null, signal: null,
-      timedOut: false, eventsCount: 0, assistantText: "", assistantError: "",
-      stdoutNoise: "", stderr: error instanceof Error ? error.message : String(error),
-      stdoutPath: "", stderrPath: "",
+      ok: false,
+      prompt: args.prompt,
+      exitCode: null,
+      signal: null,
+      timedOut: false,
+      eventsCount: 0,
+      assistantText: "",
+      assistantError: "",
+      stdoutNoise: "",
+      stderr: error instanceof Error ? error.message : String(error),
+      stdoutPath: "",
+      stderrPath: "",
     });
     process.exitCode = 1;
   }

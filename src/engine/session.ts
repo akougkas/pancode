@@ -1,4 +1,7 @@
 import {
+  type CreateAgentSessionOptions,
+  type CreateAgentSessionResult,
+  type InteractiveModeOptions,
   AuthStorage as PiAuthStorage,
   DefaultResourceLoader as PiDefaultResourceLoader,
   InteractiveMode as PiInteractiveMode,
@@ -9,9 +12,6 @@ import {
   createAgentSession as piCreateAgentSession,
   createEventBus as piCreateEventBus,
   readOnlyTools as piReadOnlyTools,
-  type CreateAgentSessionOptions,
-  type CreateAgentSessionResult,
-  type InteractiveModeOptions,
 } from "@pancode/pi-coding-agent";
 
 export type { CreateAgentSessionOptions, CreateAgentSessionResult, InteractiveModeOptions };
@@ -29,8 +29,6 @@ export function createEventBus() {
   return piCreateEventBus();
 }
 
-export async function createAgentSession(
-  options?: CreateAgentSessionOptions,
-): Promise<CreateAgentSessionResult> {
+export async function createAgentSession(options?: CreateAgentSessionOptions): Promise<CreateAgentSessionResult> {
   return piCreateAgentSession(options);
 }

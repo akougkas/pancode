@@ -6,4 +6,12 @@ export const DEFAULT_THEME = "pancode-dark";
 export const DEFAULT_SAFETY = "auto-edit" as const;
 export const DEFAULT_REASONING_PREFERENCE = "on" as const;
 export const DEFAULT_THINKING_LEVEL = "low" as const;
-export const DEFAULT_ENABLED_DOMAINS = ["safety", "session", "agents", "dispatch", "observability", "scheduling", "ui"] as const;
+export const DEFAULT_ENABLED_DOMAINS = [
+  "safety",
+  "session",
+  "agents",
+  "dispatch",
+  "observability",
+  "scheduling",
+  "ui",
+] as const;

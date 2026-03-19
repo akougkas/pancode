@@ -1,10 +1,10 @@
 import { join } from "node:path";
-import { PANCODE_PRODUCT_NAME } from "../../core/shell-metadata";
 import { sharedBus } from "../../core/shared-bus";
+import { PANCODE_PRODUCT_NAME } from "../../core/shell-metadata";
 import { defineExtension } from "../../engine/extensions";
 import { createContextRegistry } from "./context-registry";
-import { createSharedBoard } from "./shared-board";
 import { createSessionMemory } from "./memory";
+import { createSharedBoard } from "./shared-board";
 
 // Module-level singletons accessible by other domains via barrel export.
 let contextRegistry: ReturnType<typeof createContextRegistry> | null = null;
@@ -51,8 +51,9 @@ export const extension = defineExtension((pi) => {
   };
 
   pi.on("session_start", (_event, _ctx) => {
-    const runtimeRoot = process.env.PANCODE_RUNTIME_ROOT
-      ?? join(process.env.PANCODE_PACKAGE_ROOT ?? process.cwd(), ".pancode", "runtime");
+    const runtimeRoot =
+      process.env.PANCODE_RUNTIME_ROOT ??
+      join(process.env.PANCODE_PACKAGE_ROOT ?? process.cwd(), ".pancode", "runtime");
     contextRegistry = createContextRegistry(runtimeRoot);
     sharedBoard = createSharedBoard(runtimeRoot);
     sessionMemory = createSessionMemory(runtimeRoot, contextRegistry);
@@ -72,7 +73,9 @@ export const extension = defineExtension((pi) => {
     // Listen for compaction events to prune stale context entries.
     sharedBus.on("pancode:compaction-started", () => {
       if (contextRegistry && contextRegistry.size() > 0) {
-        console.error(`[pancode:session] Compaction: context registry has ${contextRegistry.size()} entries (preserved).`);
+        console.error(
+          `[pancode:session] Compaction: context registry has ${contextRegistry.size()} entries (preserved).`,
+        );
       }
     });
 
@@ -93,10 +96,7 @@ export const extension = defineExtension((pi) => {
   pi.registerCommand("session", {
     description: "Show session info with PanCode state summary",
     async handler(_args, ctx) {
-      const lines: string[] = [
-        `${PANCODE_PRODUCT_NAME} Session`,
-        "",
-      ];
+      const lines: string[] = [`${PANCODE_PRODUCT_NAME} Session`, ""];
 
       // Pi session info
       const sessionFile = ctx.sessionManager.getSessionFile();
@@ -150,10 +150,18 @@ export const extension = defineExtension((pi) => {
       // /checkpoint list: show all checkpoints from session entries
       if (subcommand === "list") {
         const entries = ctx.sessionManager.getEntries();
-        interface CheckpointData { label?: string; timestamp?: string; contextEntries?: number; boardEntries?: number }
+        interface CheckpointData {
+          label?: string;
+          timestamp?: string;
+          contextEntries?: number;
+          boardEntries?: number;
+        }
         const checkpoints: Array<{ label: string; timestamp: string; data: CheckpointData }> = [];
         for (const entry of entries) {
-          if ("customType" in entry && (entry.customType === "pancode-checkpoint" || entry.customType === "pancode:checkpoint")) {
+          if (
+            "customType" in entry &&
+            (entry.customType === "pancode-checkpoint" || entry.customType === "pancode:checkpoint")
+          ) {
             const data = ("data" in entry ? entry.data : undefined) as CheckpointData | undefined;
             checkpoints.push({
               label: data?.label ?? "(unlabeled)",
@@ -179,7 +187,10 @@ export const extension = defineExtension((pi) => {
 
       // /checkpoint restore <id>: display checkpoint data (no auto-restore in Phase B)
       if (subcommand === "restore") {
-        ctx.ui.notify("Checkpoint restore is display-only in this version. Full restore is planned for a future release.", "warning");
+        ctx.ui.notify(
+          "Checkpoint restore is display-only in this version. Full restore is planned for a future release.",
+          "warning",
+        );
         return;
       }
 

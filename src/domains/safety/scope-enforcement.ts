@@ -1,5 +1,5 @@
-import type { ScopeContract, AutonomyMode } from "./scope";
-import { scopeLevelIndex, resolveEffectiveMode } from "./scope";
+import type { AutonomyMode, ScopeContract } from "./scope";
+import { resolveEffectiveMode, scopeLevelIndex } from "./scope";
 
 export interface AdmissionResult {
   admitted: boolean;
@@ -29,10 +29,7 @@ export function enforceScopeSubset(worker: ScopeContract, orchestrator: ScopeCon
   return { admitted: true };
 }
 
-export function checkDispatchAdmission(
-  workerMode: AutonomyMode,
-  orchestratorMode: AutonomyMode,
-): AdmissionResult {
+export function checkDispatchAdmission(workerMode: AutonomyMode, orchestratorMode: AutonomyMode): AdmissionResult {
   const effectiveMode = resolveEffectiveMode(workerMode, orchestratorMode);
   if (effectiveMode !== workerMode) {
     return {

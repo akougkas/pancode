@@ -9,7 +9,7 @@
  * This keeps the renderer free of engine dependencies.
  */
 
-import { visibleWidth, truncateToWidth } from "../../engine/tui";
+import { truncateToWidth, visibleWidth } from "../../engine/tui";
 import { formatCost, formatDuration, formatTokenCount, padRight, truncate } from "./widget-utils";
 
 // ---------------------------------------------------------------------------
@@ -18,7 +18,7 @@ import { formatCost, formatDuration, formatTokenCount, padRight, truncate } from
 
 export interface DispatchCardData {
   agent: string;
-  status: "pending" | "running" | "done" | "error" | "cancelled" | "timeout";
+  status: "pending" | "running" | "done" | "error" | "cancelled" | "timeout" | "interrupted";
   elapsedMs: number;
   model: string | null;
   taskPreview: string;
@@ -28,6 +28,7 @@ export interface DispatchCardData {
   inputTokens?: number;
   outputTokens?: number;
   turns?: number;
+  runtime?: string; // Runtime ID for badge display (omit or "pi" for no badge)
 }
 
 export interface AgentStat {
@@ -100,6 +101,7 @@ const STATUS_ICONS: Record<string, string> = {
   done: "✓",
   error: "✗",
   cancelled: "⊘",
+  interrupted: "⊘",
   timeout: "⊘",
 };
 
@@ -140,11 +142,7 @@ function calculateGridColumns(cardCount: number, terminalWidth: number): number 
  * └─────────────────────┘
  * ```
  */
-export function renderDispatchCard(
-  card: DispatchCardData,
-  cardWidth: number,
-  c: BoardColorizer = PLAIN,
-): string[] {
+export function renderDispatchCard(card: DispatchCardData, cardWidth: number, c: BoardColorizer = PLAIN): string[] {
   const inner = Math.max(1, cardWidth - 4);
 
   const statusIcon = STATUS_ICONS[card.status] ?? "○";
@@ -155,21 +153,25 @@ export function renderDispatchCard(
   // Pad the full plain line to inner width, then rebuild with colors.
   const plainStatusLine = padRight(`${plainPrefix}${" ".repeat(gap)}${elapsed}`, inner);
   // Compute any trailing padding from padRight (if line was shorter than inner).
-  const trailingPad = plainStatusLine.length - (`${plainPrefix}${" ".repeat(gap)}${elapsed}`).length;
+  const trailingPad = plainStatusLine.length - `${plainPrefix}${" ".repeat(gap)}${elapsed}`.length;
   const statusLine =
     `${colorizeStatusIcon(statusIcon, card.status, c)} ${c.muted(statusText)}` +
     `${" ".repeat(gap)}${c.dim(elapsed)}${" ".repeat(Math.max(0, trailingPad))}`;
 
   // Pad plain text first, then apply color to the padded result.
   const modelLine = c.muted(padRight(card.model ? truncate(card.model, inner) : "", inner));
-  const agentLine = c.bold(c.accent(padRight(card.agent, inner)));
+
+  // Show runtime badge next to agent name for non-Pi runtimes
+  const runtimeBadge = card.runtime && card.runtime !== "pi" ? ` [${card.runtime.replace("cli:", "")}]` : "";
+  const agentLabel = card.agent + runtimeBadge;
+  const agentLine = c.bold(c.accent(padRight(truncate(agentLabel, inner), inner)));
 
   // Line 4: show live token stats when available, otherwise task preview.
   // Token/turn stats are dim supporting data; task text stays default.
   let taskLine: string;
   const totalTokens = (card.inputTokens ?? 0) + (card.outputTokens ?? 0);
   if (totalTokens > 0 && card.turns) {
-    const tokStr = formatTokenCount(totalTokens) + " tok";
+    const tokStr = `${formatTokenCount(totalTokens)} tok`;
     const turnStr = `T${card.turns}`;
     const prefix = `${tokStr}  ${turnStr}  `;
     const remaining = Math.max(0, inner - prefix.length);
@@ -274,11 +276,7 @@ function renderAgentStatLine(stat: AgentStat, c: BoardColorizer = PLAIN): string
 /**
  * Render the footer section of the dispatch board (budget, runs, tokens).
  */
-export function renderDispatchFooter(
-  state: DispatchBoardState,
-  _width: number,
-  c: BoardColorizer = PLAIN,
-): string[] {
+export function renderDispatchFooter(state: DispatchBoardState, _width: number, c: BoardColorizer = PLAIN): string[] {
   const budget =
     state.budgetCeiling !== null
       ? `$${state.totalCost.toFixed(2)} / $${state.budgetCeiling.toFixed(2)}`
@@ -293,9 +291,7 @@ export function renderDispatchFooter(
   const cacheRead = state.totalCacheReadTokens ?? 0;
   const cacheInput = state.totalInputTokens;
   const cacheStr =
-    cacheRead > 0 && cacheInput > 0
-      ? `  |  Cache: ${Math.round((cacheRead / (cacheRead + cacheInput)) * 100)}%`
-      : "";
+    cacheRead > 0 && cacheInput > 0 ? `  |  Cache: ${Math.round((cacheRead / (cacheRead + cacheInput)) * 100)}%` : "";
 
   return [
     `${INDENT}${c.muted("Budget:")} ${c.dim(budget)}  ${c.dim("|")}  ${c.muted("Runs:")} ${c.dim(String(state.totalRuns))}${c.dim(tokens)}${c.dim(cacheStr)}`,
@@ -316,13 +312,11 @@ export function renderDispatchFooterLine(
   width: number,
 ): string {
   const left = ` ${modelLabel}`;
-  const mid = activeCount > 0 ? ` \u25CF ${activeCount} active` : ` \u25CB idle`;
+  const mid = activeCount > 0 ? ` \u25CF ${activeCount} active` : " \u25CB idle";
   const ctxFilled = Math.round(contextPercent / 10);
   const ctxBar = `[${"#".repeat(ctxFilled)}${"-".repeat(10 - ctxFilled)}] ${Math.round(contextPercent)}%`;
   const budget =
-    budgetCeiling !== null
-      ? `$${totalCost.toFixed(2)}/$${budgetCeiling.toFixed(2)}`
-      : `$${totalCost.toFixed(2)}`;
+    budgetCeiling !== null ? `$${totalCost.toFixed(2)}/$${budgetCeiling.toFixed(2)}` : `$${totalCost.toFixed(2)}`;
   const right = `Runs: ${totalRuns}  ${budget}  ${ctxBar} `;
   const padWidth = Math.max(1, width - visibleWidth(left + mid) - visibleWidth(right));
   return truncateToWidth(left + mid + " ".repeat(padWidth) + right, width);
@@ -335,11 +329,7 @@ export function renderDispatchFooterLine(
 /**
  * Render the full dispatch board: header, active card grid, recent runs, footer.
  */
-export function renderDispatchBoard(
-  state: DispatchBoardState,
-  width: number,
-  c: BoardColorizer = PLAIN,
-): string[] {
+export function renderDispatchBoard(state: DispatchBoardState, width: number, c: BoardColorizer = PLAIN): string[] {
   const lines: string[] = [];
 
   lines.push(c.bold(c.accent("DISPATCH BOARD")));

@@ -74,7 +74,8 @@ export function resolveDomainOrder(enabledDomains: readonly string[], registry: 
       return leftPriority === rightPriority ? left.localeCompare(right) : leftPriority - rightPriority;
     });
 
-    const name = ready.shift()!;
+    const name = ready.shift();
+    if (!name) break;
     ordered.push(name);
 
     for (const dependent of dependents.get(name) ?? []) {
@@ -92,7 +93,9 @@ export function resolveDomainOrder(enabledDomains: readonly string[], registry: 
   return ordered.map((name) => registry[name]);
 }
 
-export function collectDomainExtensions(enabledDomains: readonly string[], registry: DomainRegistry): ExtensionFactory[] {
+export function collectDomainExtensions(
+  enabledDomains: readonly string[],
+  registry: DomainRegistry,
+): ExtensionFactory[] {
   return resolveDomainOrder(enabledDomains, registry).map((entry) => entry.extension);
 }
-

@@ -1,4 +1,5 @@
 export { extension } from "./extension";
+export { registerSafetyPreFlightChecks } from "./extension";
 export { manifest } from "./manifest";
 export type { ScopeLevel, ActionClass, AutonomyMode, SafetyTier, ScopeContract } from "./scope";
 export { lookupTier, parseAutonomyMode, resolveEffectiveMode, DEFAULT_MODE_POLICIES } from "./scope";

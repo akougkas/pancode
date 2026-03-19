@@ -1,6 +1,6 @@
 import { BUILTIN_SLASH_COMMANDS } from "@pancode/pi-coding-agent/core/slash-commands.js";
-import { PANCODE_PRODUCT_NAME } from "../core/shell-metadata";
 import { sharedBus } from "../core/shared-bus";
+import { PANCODE_PRODUCT_NAME } from "../core/shell-metadata";
 import { InteractiveMode } from "./session";
 
 interface ShellPatchedInteractiveMode {
@@ -60,10 +60,7 @@ function patchBuiltinCommands(): void {
   }
 }
 
-async function routeToShellCommand(
-  mode: ShellPatchedInteractiveMode,
-  command: string,
-): Promise<void> {
+async function routeToShellCommand(mode: ShellPatchedInteractiveMode, command: string): Promise<void> {
   mode.editor.setText("");
   await mode.session.prompt(command);
   mode.updatePendingMessagesDisplay?.();

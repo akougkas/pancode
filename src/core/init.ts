@@ -5,4 +5,3 @@ export function ensureProjectRuntime(config: Pick<PanCodeConfig, "runtimeRoot" |
   mkdirSync(config.runtimeRoot, { recursive: true });
   mkdirSync(config.resultsDir, { recursive: true });
 }
-

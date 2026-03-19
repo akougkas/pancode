@@ -1,8 +1,8 @@
 import type { DomainRegistry } from "../core/domain-loader";
 import { extension as agentsExtension, manifest as agentsManifest } from "./agents";
 import { extension as dispatchExtension, manifest as dispatchManifest } from "./dispatch";
-import { extension as observabilityExtension, manifest as observabilityManifest } from "./observability";
 import { extension as intelligenceExtension, manifest as intelligenceManifest } from "./intelligence";
+import { extension as observabilityExtension, manifest as observabilityManifest } from "./observability";
 import { extension as safetyExtension, manifest as safetyManifest } from "./safety";
 import { extension as schedulingExtension, manifest as schedulingManifest } from "./scheduling";
 import { extension as sessionExtension, manifest as sessionManifest } from "./session";

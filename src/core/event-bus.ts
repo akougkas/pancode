@@ -11,7 +11,7 @@ export interface SafeEventBus {
 }
 
 function reportListenerError(channel: string, error: unknown): void {
-  const message = error instanceof Error ? error.stack ?? error.message : String(error);
+  const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
   console.error(`[pancode:event-bus] Listener crashed on ${channel}: ${message}`);
 }
 
@@ -59,4 +59,3 @@ export function createSafeEventBus(): SafeEventBus {
 
   return bus;
 }
-

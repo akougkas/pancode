@@ -1,10 +1,10 @@
-import { writeFileSync, mkdirSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import YAML from "yaml";
-import type { EngineConnection, EngineType, DiscoveredModel } from "./engines/types";
+import { createLlamaCppConnection } from "./engines/llamacpp";
 import { createLmStudioConnection } from "./engines/lmstudio";
 import { createOllamaConnection } from "./engines/ollama";
-import { createLlamaCppConnection } from "./engines/llamacpp";
+import type { DiscoveredModel, EngineConnection, EngineType } from "./engines/types";
 
 interface KnownService {
   type: EngineType;
@@ -128,10 +128,7 @@ export async function discoverEngines(): Promise<DiscoveryResult[]> {
   return results;
 }
 
-export function writeProvidersYaml(
-  results: DiscoveryResult[],
-  pancodeHome: string,
-): void {
+export function writeProvidersYaml(results: DiscoveryResult[], pancodeHome: string): void {
   const providers = results.map((r) => ({
     providerId: r.providerId,
     engine: r.engine,

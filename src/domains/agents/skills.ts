@@ -5,7 +5,7 @@
  * Phase B is discovery and display only. No execution.
  */
 
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 export interface SkillDefinition {
@@ -48,7 +48,10 @@ function parseFrontmatter(content: string): { meta: Record<string, string>; body
     }
   }
 
-  const body = lines.slice(closingIndex + 1).join("\n").trim();
+  const body = lines
+    .slice(closingIndex + 1)
+    .join("\n")
+    .trim();
   return { meta, body };
 }
 

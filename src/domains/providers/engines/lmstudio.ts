@@ -1,20 +1,12 @@
 import { LMStudioClient } from "@lmstudio/sdk";
-import type {
-  DiscoveredModel,
-  EngineConnection,
-  EngineHealth,
-  ModelCapabilities,
-} from "./types";
-import { emptyCapabilities } from "./types";
 import { parseParamCount } from "./parse-params";
+import type { DiscoveredModel, EngineConnection, EngineHealth, ModelCapabilities } from "./types";
+import { emptyCapabilities } from "./types";
 
 const DEFAULT_PORT = 1234;
 const PROBE_TIMEOUT_MS = 3000;
 
-export function createLmStudioConnection(
-  baseUrl: string,
-  providerId: string,
-): EngineConnection {
+export function createLmStudioConnection(baseUrl: string, providerId: string): EngineConnection {
   let client: LMStudioClient | null = null;
 
   function parseHost(): { host: string; port: number } {
@@ -115,9 +107,7 @@ export function createLmStudioConnection(
         if (!Array.isArray(body.data)) return [];
 
         return body.data
-          .filter((entry): entry is { id: string } =>
-            typeof entry.id === "string" && entry.id.trim().length > 0,
-          )
+          .filter((entry): entry is { id: string } => typeof entry.id === "string" && entry.id.trim().length > 0)
           .map((entry) => ({
             id: entry.id,
             engine: "lmstudio" as const,
@@ -183,13 +173,10 @@ export function createLmStudioConnection(
       if (client) {
         // LMStudioClient uses Symbol.asyncDispose; fire and forget
         client[Symbol.asyncDispose]().catch((err) => {
-          console.error(
-            `[pancode:lmstudio] Disconnect error: ${err instanceof Error ? err.message : String(err)}`,
-          );
+          console.error(`[pancode:lmstudio] Disconnect error: ${err instanceof Error ? err.message : String(err)}`);
         });
         client = null;
       }
     },
   } as EngineConnection & { listModelsViaRest(): Promise<DiscoveredModel[]> };
 }
-

@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { atomicWriteJsonSync } from "./config-writer";
 import { DEFAULT_REASONING_PREFERENCE, DEFAULT_THEME } from "./defaults";
-import { parseReasoningPreference, type PanCodeReasoningPreference } from "./thinking";
+import { type PanCodeReasoningPreference, parseReasoningPreference } from "./thinking";
 
 export interface PanCodeSettings {
   preferredProvider: string | null;
@@ -16,7 +16,12 @@ export interface PanCodeSettings {
 }
 
 // Set by loader.ts at boot
-export const PANCODE_HOME = process.env.PANCODE_HOME!;
+const pancodeHome = process.env.PANCODE_HOME;
+if (!pancodeHome) {
+  throw new Error("PANCODE_HOME must be set before loading settings-state");
+}
+
+export const PANCODE_HOME = pancodeHome;
 export const PANCODE_SETTINGS_PATH = join(PANCODE_HOME, "settings.json");
 
 function normalizeOptionalString(value: unknown): string | null {
@@ -45,7 +50,7 @@ function normalizeOptionalBoolean(value: unknown): boolean | null {
 }
 
 function normalizeSettings(value: unknown): PanCodeSettings {
-  const object = typeof value === "object" && value != null ? value as Record<string, unknown> : {};
+  const object = typeof value === "object" && value != null ? (value as Record<string, unknown>) : {};
 
   return {
     preferredProvider: normalizeOptionalString(object.preferredProvider),

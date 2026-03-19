@@ -1,8 +1,11 @@
+import { sharedBus } from "../../core/shared-bus";
 import { defineExtension } from "../../engine/extensions";
+import { discoverAndRegisterRuntimes } from "../../engine/runtimes/discovery";
+import { runtimeRegistry } from "../../engine/runtimes/registry";
 import { PANCODE_HOME } from "../providers";
-import { agentRegistry, loadAgentsFromYaml } from "./spec-registry";
 import { registerShadowExplore } from "./shadow-explore";
-import { discoverSkills, validateSkillTools, type SkillDefinition } from "./skills";
+import { type SkillDefinition, discoverSkills, validateSkillTools } from "./skills";
+import { agentRegistry, loadAgentsFromYaml } from "./spec-registry";
 
 export const extension = defineExtension((pi) => {
   // Register shadow_explore as an orchestrator-internal tool.
@@ -10,6 +13,10 @@ export const extension = defineExtension((pi) => {
   registerShadowExplore(pi.registerTool.bind(pi));
 
   pi.on("session_start", (_event, _ctx) => {
+    // Discover and register runtimes before loading agents
+    const discovery = discoverAndRegisterRuntimes();
+    sharedBus.emit("pancode:runtimes-discovered", discovery);
+
     const specs = loadAgentsFromYaml(PANCODE_HOME);
     for (const spec of specs) {
       if (!agentRegistry.has(spec.name)) {
@@ -22,17 +29,73 @@ export const extension = defineExtension((pi) => {
     description: "List registered PanCode agent specs",
     async handler(_args, _ctx) {
       const specs = agentRegistry.getAll();
-      const lines = specs.map((spec) => {
-        const readonlyTag = spec.readonly ? " [readonly]" : "";
-        const samplingTag = spec.sampling ? ` (sampling: ${spec.sampling})` : "";
-        return `- ${spec.name}: ${spec.description}${readonlyTag}${samplingTag} (tools: ${spec.tools})`;
-      });
+      if (specs.length === 0) {
+        pi.sendMessage({
+          customType: "pancode-panel",
+          content: "No agents registered.",
+          display: true,
+          details: { title: "PanCode Agents" },
+        });
+        return;
+      }
+
+      // Table header
+      const lines: string[] = [
+        `${"AGENT".padEnd(16)} ${"RUNTIME".padEnd(18)} ${"MODEL".padEnd(16)} ${"READONLY"}`,
+        `${"-----".padEnd(16)} ${"-------".padEnd(18)} ${"-----".padEnd(16)} ${"--------"}`,
+      ];
+
+      for (const spec of specs) {
+        const agent = spec.name.padEnd(16);
+        const runtime = spec.runtime.padEnd(18);
+        const modelName = spec.model ? (spec.model.split("/").pop() ?? spec.model) : "(provider)";
+        const model = modelName.slice(0, 14).padEnd(16);
+        const readonly = spec.readonly ? "yes" : "no";
+        lines.push(`${agent} ${runtime} ${model} ${readonly}`);
+      }
 
       pi.sendMessage({
         customType: "pancode-panel",
-        content: lines.length > 0 ? lines.join("\n") : "No agents registered.",
+        content: lines.join("\n"),
         display: true,
         details: { title: "PanCode Agents" },
+      });
+    },
+  });
+
+  pi.registerCommand("runtimes", {
+    description: "List all registered agent runtimes with availability status",
+    async handler(_args, _ctx) {
+      const allRuntimes = runtimeRegistry.all();
+      if (allRuntimes.length === 0) {
+        pi.sendMessage({
+          customType: "pancode-panel",
+          content: "No runtimes registered. Run /agents to trigger discovery.",
+          display: true,
+          details: { title: "PanCode Runtimes" },
+        });
+        return;
+      }
+
+      const lines: string[] = [
+        `${"RUNTIME".padEnd(20)} ${"TIER".padEnd(9)} ${"STATUS".padEnd(10)} BINARY`,
+        `${"-------".padEnd(20)} ${"----".padEnd(9)} ${"------".padEnd(10)} ------`,
+      ];
+
+      for (const rt of allRuntimes) {
+        const id = rt.id.padEnd(20);
+        const tier = rt.tier.padEnd(9);
+        const available = rt.isAvailable();
+        const status = (available ? "active" : "missing").padEnd(10);
+        const binary = rt.tier === "native" ? "(built-in)" : ((rt as { binaryName?: string }).binaryName ?? "unknown");
+        lines.push(`${id} ${tier} ${status} ${binary}`);
+      }
+
+      pi.sendMessage({
+        customType: "pancode-panel",
+        content: lines.join("\n"),
+        display: true,
+        details: { title: "PanCode Runtimes" },
       });
     },
   });
@@ -48,7 +111,8 @@ export const extension = defineExtension((pi) => {
         if (skills.length === 0) {
           pi.sendMessage({
             customType: "pancode-panel",
-            content: "No skills discovered. Place SKILL.md or *.skill.md files in .pancode/skills/, .claude/, .codex/, or .gemini/",
+            content:
+              "No skills discovered. Place SKILL.md or *.skill.md files in .pancode/skills/, .claude/, .codex/, or .gemini/",
             display: true,
             details: { title: "PanCode Skills" },
           });

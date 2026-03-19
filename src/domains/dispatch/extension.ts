@@ -1,26 +1,27 @@
 import { Type } from "@sinclair/typebox";
-import { defineExtension } from "../../engine/extensions";
+import { getModeDefinition } from "../../core/modes";
 import { sharedBus } from "../../core/shared-bus";
+import { shutdownCoordinator } from "../../core/termination";
+import { defineExtension } from "../../engine/extensions";
 import type { AgentToolResult } from "../../engine/types";
 import { agentRegistry } from "../agents";
-import { RunLedger, createRunEnvelope } from "./state";
-import { evaluateRules, DEFAULT_DISPATCH_RULES, type DispatchRule } from "./rules";
-import { resolveWorkerRouting } from "./routing";
-import { stopAllWorkers, spawnWorker, liveWorkerProcesses } from "./worker-spawn";
-import { runParallel, dispatchChain } from "./primitives";
+import { registerSafetyPreFlightChecks } from "../safety";
+import { registerPreFlightCheck, runPreFlightChecks } from "./admission";
 import { batchTracker } from "./batch-tracker";
-import { createWorktreeIsolation, mergeDeltaPatches, cleanupAllWorktrees } from "./isolation";
-import { shutdownCoordinator } from "../../core/termination";
-import { runPreFlightChecks } from "./admission";
-import { getModeDefinition } from "../../core/modes";
-import { initTaskStore, taskWrite, taskCheck, taskUpdate, taskList } from "./task-tools";
+import { cleanupAllWorktrees, createWorktreeIsolation, mergeDeltaPatches } from "./isolation";
+import { dispatchChain, runParallel } from "./primitives";
+import { resolveWorkerRouting } from "./routing";
+import { DEFAULT_DISPATCH_RULES, type DispatchRule, evaluateRules } from "./rules";
+import { RunLedger, createRunEnvelope } from "./state";
+import { initTaskStore, taskCheck, taskList, taskUpdate, taskWrite } from "./task-tools";
+import { liveWorkerProcesses, spawnWorker, stopAllWorkers } from "./worker-spawn";
 
 function textResult(text: string): AgentToolResult<unknown> {
   return { content: [{ type: "text", text }], details: undefined };
 }
 
 let ledger: RunLedger | null = null;
-let dispatchRules: DispatchRule[] = [...DEFAULT_DISPATCH_RULES];
+const dispatchRules: DispatchRule[] = [...DEFAULT_DISPATCH_RULES];
 let draining = false;
 
 export function getRunLedger(): RunLedger | null {
@@ -37,6 +38,7 @@ export const extension = defineExtension((pi) => {
     ledger = new RunLedger(runtimeRoot);
     initTaskStore(runtimeRoot);
     draining = false;
+    registerSafetyPreFlightChecks(registerPreFlightCheck);
 
     // Listen for session reset events (/new command). Clear task store.
     sharedBus.on("pancode:session-reset", () => {
@@ -49,14 +51,12 @@ export const extension = defineExtension((pi) => {
       draining = true;
       sharedBus.emit("pancode:shutdown-draining", {});
     });
-  });
 
-  pi.on("session_shutdown", async () => {
-    await stopAllWorkers();
-    await cleanupAllWorktrees();
-    if (ledger) {
-      ledger.markInterrupted();
-    }
+    shutdownCoordinator.onTerminate(async () => {
+      await stopAllWorkers();
+      await cleanupAllWorktrees();
+      ledger?.markInterrupted();
+    });
   });
 
   pi.registerTool({
@@ -67,7 +67,9 @@ export const extension = defineExtension((pi) => {
     parameters: Type.Object({
       task: Type.String({ description: "The task description to send to the worker agent" }),
       agent: Type.Optional(Type.String({ description: "Agent spec name (default: dev)", default: "dev" })),
-      isolate: Type.Optional(Type.Boolean({ description: "Run in a git worktree for filesystem isolation", default: false })),
+      isolate: Type.Optional(
+        Type.Boolean({ description: "Run in a git worktree for filesystem isolation", default: false }),
+      ),
     }),
     async execute(_toolCallId, params, signal, onUpdate, ctx) {
       const defaultAgent = process.env.PANCODE_DEFAULT_AGENT ?? "dev";
@@ -128,7 +130,13 @@ export const extension = defineExtension((pi) => {
       run.status = "running";
       ledger?.add(run);
 
-      sharedBus.emit("pancode:run-started", { runId: run.id, task, agent: dispatchAction.agent, model: routing.model });
+      sharedBus.emit("pancode:run-started", {
+        runId: run.id,
+        task,
+        agent: dispatchAction.agent,
+        model: routing.model,
+        runtime: routing.runtime,
+      });
 
       const isolateLabel = isolate ? " (isolated)" : "";
       if (onUpdate) {
@@ -162,6 +170,9 @@ export const extension = defineExtension((pi) => {
         sampling: routing.sampling,
         signal: signal ?? undefined,
         runId: run.id,
+        runtime: routing.runtime,
+        runtimeArgs: routing.runtimeArgs,
+        readonly: routing.readonly,
       });
 
       // Merge worktree delta back to parent
@@ -171,13 +182,11 @@ export const extension = defineExtension((pi) => {
           if (patches.length > 0) {
             const mergeResult = await mergeDeltaPatches(ctx.cwd, patches);
             if (!mergeResult.success) {
-              workerResult.error = (workerResult.error ? workerResult.error + "; " : "") +
-                `Delta merge failed: ${mergeResult.error}`;
+              workerResult.error = `${workerResult.error ? `${workerResult.error}; ` : ""}Delta merge failed: ${mergeResult.error}`;
             }
           }
         } catch (err) {
-          workerResult.error = (workerResult.error ? workerResult.error + "; " : "") +
-            `Delta capture failed: ${err instanceof Error ? err.message : String(err)}`;
+          workerResult.error = `${workerResult.error ? `${workerResult.error}; ` : ""}Delta capture failed: ${err instanceof Error ? err.message : String(err)}`;
         } finally {
           await isolation.cleanup();
         }
@@ -202,9 +211,10 @@ export const extension = defineExtension((pi) => {
         completedAt: run.completedAt ?? new Date().toISOString(),
       });
 
-      const usageStr = workerResult.usage.cost > 0
-        ? ` | cost: $${workerResult.usage.cost.toFixed(4)} | turns: ${workerResult.usage.turns}`
-        : ` | turns: ${workerResult.usage.turns}`;
+      const usageStr =
+        workerResult.usage.cost > 0
+          ? ` | cost: $${workerResult.usage.cost.toFixed(4)} | turns: ${workerResult.usage.turns}`
+          : ` | turns: ${workerResult.usage.turns}`;
 
       const statusEmoji = run.status === "done" ? "completed" : "failed";
       const summary = `Worker ${statusEmoji} (${run.id})${usageStr}\n\nAgent: ${run.agent}${run.model ? ` | Model: ${run.model}` : ""}`;
@@ -223,9 +233,17 @@ export const extension = defineExtension((pi) => {
     description:
       "Dispatch multiple tasks in parallel to worker agents. Each task runs as a separate subprocess. Up to 4 workers run concurrently by default.",
     parameters: Type.Object({
-      tasks: Type.Array(Type.String({ description: "Task descriptions" }), { description: "Array of task descriptions", minItems: 1, maxItems: 8 }),
-      agent: Type.Optional(Type.String({ description: "Agent spec name for all tasks (default: dev)", default: "dev" })),
-      concurrency: Type.Optional(Type.Number({ description: "Max parallel workers (default: 4)", default: 4, minimum: 1, maximum: 8 })),
+      tasks: Type.Array(Type.String({ description: "Task descriptions" }), {
+        description: "Array of task descriptions",
+        minItems: 1,
+        maxItems: 8,
+      }),
+      agent: Type.Optional(
+        Type.String({ description: "Agent spec name for all tasks (default: dev)", default: "dev" }),
+      ),
+      concurrency: Type.Optional(
+        Type.Number({ description: "Max parallel workers (default: 4)", default: 4, minimum: 1, maximum: 8 }),
+      ),
     }),
     async execute(_toolCallId, params, signal, onUpdate, ctx) {
       const agentName = params.agent || "dev";
@@ -254,7 +272,11 @@ export const extension = defineExtension((pi) => {
       }
 
       // Pre-flight admission checks for batch dispatch
-      const batchPreflight = runPreFlightChecks({ task: tasks[0], agent: agentName, model: resolveWorkerRouting(agentName).model });
+      const batchPreflight = runPreFlightChecks({
+        task: tasks[0],
+        agent: agentName,
+        model: resolveWorkerRouting(agentName).model,
+      });
       if (!batchPreflight.admit) {
         return textResult(`Batch dispatch blocked: ${batchPreflight.reason}`);
       }
@@ -272,12 +294,22 @@ export const extension = defineExtension((pi) => {
         run.status = "running";
         ledger?.add(run);
         batchTracker.addRun(batch.id, run.id);
-        sharedBus.emit("pancode:run-started", { runId: run.id, task, agent: agentName, model: routing.model });
+        sharedBus.emit("pancode:run-started", {
+          runId: run.id,
+          task,
+          agent: agentName,
+          model: routing.model,
+          runtime: routing.runtime,
+        });
         return run;
       });
 
       if (onUpdate) {
-        onUpdate(textResult(`Dispatching batch of ${tasks.length} tasks to ${agentName} workers (concurrency: ${concurrency})...`));
+        onUpdate(
+          textResult(
+            `Dispatching batch of ${tasks.length} tasks to ${agentName} workers (concurrency: ${concurrency})...`,
+          ),
+        );
       }
 
       const parallelTasks = tasks.map((task, i) => ({
@@ -289,6 +321,9 @@ export const extension = defineExtension((pi) => {
         agentName,
         sampling: routing.sampling,
         runId: runs[i].id,
+        runtime: routing.runtime,
+        runtimeArgs: routing.runtimeArgs,
+        readonly: routing.readonly,
       }));
 
       const results = await runParallel(parallelTasks, concurrency, signal ?? undefined);
@@ -335,7 +370,9 @@ export const extension = defineExtension((pi) => {
 
       const batchState = batchTracker.get(batch.id);
       summaryLines.push("");
-      summaryLines.push(`Completed: ${batchState?.completedCount ?? 0}/${tasks.length} | Failed: ${batchState?.failedCount ?? 0} | Cost: $${totalCost.toFixed(4)}`);
+      summaryLines.push(
+        `Completed: ${batchState?.completedCount ?? 0}/${tasks.length} | Failed: ${batchState?.failedCount ?? 0} | Cost: $${totalCost.toFixed(4)}`,
+      );
 
       return textResult(summaryLines.join("\n"));
     },
@@ -349,7 +386,9 @@ export const extension = defineExtension((pi) => {
     parameters: Type.Object({
       steps: Type.Array(
         Type.Object({
-          task: Type.String({ description: "Task for this step. Use $INPUT for previous output, $ORIGINAL for the original task." }),
+          task: Type.String({
+            description: "Task for this step. Use $INPUT for previous output, $ORIGINAL for the original task.",
+          }),
           agent: Type.Optional(Type.String({ description: "Agent for this step. Defaults to 'dev'." })),
         }),
         { minItems: 1, maxItems: 10 },
@@ -393,7 +432,13 @@ export const extension = defineExtension((pi) => {
           run.model = routing.model;
           run.status = "running";
           ledger?.add(run);
-          sharedBus.emit("pancode:run-started", { runId: run.id, task, agent, model: routing.model });
+          sharedBus.emit("pancode:run-started", {
+            runId: run.id,
+            task,
+            agent,
+            model: routing.model,
+            runtime: routing.runtime,
+          });
 
           const result = await spawnWorker({
             task,
@@ -405,6 +450,9 @@ export const extension = defineExtension((pi) => {
             sampling: routing.sampling,
             signal: signal ?? undefined,
             runId: run.id,
+            runtime: routing.runtime,
+            runtimeArgs: routing.runtimeArgs,
+            readonly: routing.readonly,
           });
 
           run.status = result.exitCode === 0 && !result.error ? "done" : "error";
@@ -431,7 +479,10 @@ export const extension = defineExtension((pi) => {
       );
 
       // Build summary
-      const lines: string[] = [`Chain: ${params.steps.length} steps, ${chainResult.success ? "SUCCESS" : "FAILED"}`, ""];
+      const lines: string[] = [
+        `Chain: ${params.steps.length} steps, ${chainResult.success ? "SUCCESS" : "FAILED"}`,
+        "",
+      ];
       for (const step of chainResult.steps) {
         const statusStr = step.result.exitCode === 0 && !step.result.error ? "OK" : "FAIL";
         const costStr = step.result.usage.cost > 0 ? ` $${step.result.usage.cost.toFixed(4)}` : "";
@@ -554,11 +605,7 @@ export const extension = defineExtension((pi) => {
         byModel.set(modelKey, modelStats);
       }
 
-      const lines: string[] = [
-        `Total: ${allRuns.length} runs, $${totalCost.toFixed(4)}`,
-        "",
-        "By agent:",
-      ];
+      const lines: string[] = [`Total: ${allRuns.length} runs, $${totalCost.toFixed(4)}`, "", "By agent:"];
 
       for (const [agent, stats] of [...byAgent.entries()].sort((a, b) => b[1].cost - a[1].cost)) {
         lines.push(`  ${agent.padEnd(12)} ${String(stats.runs).padEnd(6)} $${stats.cost.toFixed(4)}`);
@@ -628,7 +675,7 @@ export const extension = defineExtension((pi) => {
         const avgMs = stats.runs > 0 ? stats.totalMs / stats.runs : 0;
         const avgStr = avgMs > 60000 ? `${(avgMs / 60000).toFixed(1)}m` : `${(avgMs / 1000).toFixed(1)}s`;
         lines.push(
-          `${agent.padEnd(12)} ${String(stats.runs).padEnd(6)} ${String(stats.ok).padEnd(6)} ${String(stats.errored).padEnd(6)} ${(errPct + "%").padEnd(8)} ${avgStr}`,
+          `${agent.padEnd(12)} ${String(stats.runs).padEnd(6)} ${String(stats.ok).padEnd(6)} ${String(stats.errored).padEnd(6)} ${`${errPct}%`.padEnd(8)} ${avgStr}`,
         );
       }
 
@@ -636,9 +683,10 @@ export const extension = defineExtension((pi) => {
       const recent = allRuns.slice(-5);
       lines.push("", "Last 5 dispatches:");
       for (const run of recent) {
-        const durationMs = run.completedAt && run.startedAt
-          ? new Date(run.completedAt).getTime() - new Date(run.startedAt).getTime()
-          : 0;
+        const durationMs =
+          run.completedAt && run.startedAt
+            ? new Date(run.completedAt).getTime() - new Date(run.startedAt).getTime()
+            : 0;
         const durStr = durationMs > 0 ? ` ${(durationMs / 1000).toFixed(1)}s` : "";
         const truncatedTask = run.task.length > 40 ? `${run.task.slice(0, 37)}...` : run.task;
         lines.push(`  [${run.id}] ${run.status.padEnd(9)} ${run.agent.padEnd(8)} ${truncatedTask}${durStr}`);
@@ -672,7 +720,7 @@ export const extension = defineExtension((pi) => {
         return;
       }
 
-      const count = parseInt(args.trim(), 10) || 10;
+      const count = Number.parseInt(args.trim(), 10) || 10;
       const runs = ledger.getRecent(count);
       const active = ledger.getActive();
 
@@ -718,7 +766,9 @@ export const extension = defineExtension((pi) => {
       const lines: string[] = [];
       for (const batch of batches) {
         const statusStr = batch.completedAt ? "done" : "running";
-        lines.push(`[${batch.id}] ${statusStr} ${batch.completedCount}/${batch.taskCount} ok, ${batch.failedCount} failed`);
+        lines.push(
+          `[${batch.id}] ${statusStr} ${batch.completedCount}/${batch.taskCount} ok, ${batch.failedCount} failed`,
+        );
       }
 
       pi.sendMessage({
@@ -735,8 +785,7 @@ export const extension = defineExtension((pi) => {
   pi.registerTool({
     name: "task_write",
     label: "Write Task",
-    description:
-      "Create a task in the PanCode task list. Use this to track work items, TODOs, and planned changes.",
+    description: "Create a task in the PanCode task list. Use this to track work items, TODOs, and planned changes.",
     parameters: Type.Object({
       title: Type.String({ description: "Short task title" }),
       description: Type.Optional(Type.String({ description: "Detailed task description" })),

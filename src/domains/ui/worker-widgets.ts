@@ -15,7 +15,7 @@
 // Types
 // ---------------------------------------------------------------------------
 
-export type WorkerStatus = "pending" | "running" | "done" | "error" | "cancelled" | "timeout";
+export type WorkerStatus = "pending" | "running" | "done" | "error" | "cancelled" | "timeout" | "interrupted";
 
 export interface LiveWorkerState {
   runId: string;
@@ -27,6 +27,7 @@ export interface LiveWorkerState {
   inputTokens: number;
   outputTokens: number;
   turns: number;
+  runtime?: string; // Runtime ID for display badge
 }
 
 // ---------------------------------------------------------------------------
@@ -40,7 +41,13 @@ const pendingCleanups = new Set<string>();
 // State management
 // ---------------------------------------------------------------------------
 
-export function trackWorkerStart(runId: string, agent: string, task: string, model: string | null): void {
+export function trackWorkerStart(
+  runId: string,
+  agent: string,
+  task: string,
+  model: string | null,
+  runtime?: string,
+): void {
   pendingCleanups.delete(runId);
   liveWorkers.set(runId, {
     runId,
@@ -52,15 +59,11 @@ export function trackWorkerStart(runId: string, agent: string, task: string, mod
     inputTokens: 0,
     outputTokens: 0,
     turns: 0,
+    runtime,
   });
 }
 
-export function updateWorkerProgress(
-  runId: string,
-  inputTokens: number,
-  outputTokens: number,
-  turns: number,
-): void {
+export function updateWorkerProgress(runId: string, inputTokens: number, outputTokens: number, turns: number): void {
   const worker = liveWorkers.get(runId);
   if (worker) {
     worker.inputTokens = inputTokens;

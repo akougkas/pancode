@@ -1,6 +1,6 @@
 import { PANCODE_PRODUCT_NAME } from "../core/shell-metadata";
-import { installPanCodeShellOverrides } from "./shell-overrides";
 import { InteractiveMode, type InteractiveModeOptions } from "./session";
+import { installPanCodeShellOverrides } from "./shell-overrides";
 import type { AgentSession } from "./types";
 
 export interface PanCodeInteractiveShellOptions extends InteractiveModeOptions {}

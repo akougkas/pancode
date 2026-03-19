@@ -1,9 +1,9 @@
-import { defineExtension } from "../../engine/extensions";
 import { sharedBus } from "../../core/shared-bus";
-import { BudgetTracker } from "./budget";
+import { defineExtension } from "../../engine/extensions";
 import { registerPreFlightCheck } from "../dispatch";
-import { buildClusterView } from "./cluster-transport";
 import { getModelProfileCache } from "../providers";
+import { BudgetTracker } from "./budget";
+import { buildClusterView } from "./cluster-transport";
 
 // Local shape for the cross-domain pancode:run-finished event payload.
 // Matches what dispatch/extension.ts emits on sharedBus.
@@ -22,6 +22,19 @@ export function getBudgetTracker(): BudgetTracker | null {
   return budgetTracker;
 }
 
+function publishBudgetState(): void {
+  if (!budgetTracker) return;
+  const state = budgetTracker.getState();
+  process.env.PANCODE_BUDGET_SPENT = state.totalCost.toFixed(4);
+  sharedBus.emit("pancode:budget-updated", {
+    totalCost: state.totalCost,
+    ceiling: state.ceiling,
+    runsCount: state.runsCount,
+    totalInputTokens: state.totalInputTokens,
+    totalOutputTokens: state.totalOutputTokens,
+  });
+}
+
 export const extension = defineExtension((pi) => {
   pi.on("session_start", (_event, _ctx) => {
     const packageRoot = process.env.PANCODE_PACKAGE_ROOT;
@@ -29,9 +42,10 @@ export const extension = defineExtension((pi) => {
       console.error("[pancode:scheduling] PANCODE_PACKAGE_ROOT is not set. Domain state will not persist.");
     }
     const runtimeRoot = packageRoot ? `${packageRoot}/.pancode` : ".pancode";
-    const ceiling = parseFloat(process.env.PANCODE_BUDGET_CEILING ?? "10.0") || 10.0;
+    const ceiling = Number.parseFloat(process.env.PANCODE_BUDGET_CEILING ?? "10.0") || 10.0;
     budgetTracker = new BudgetTracker(runtimeRoot, ceiling);
     budgetTracker.resetSession();
+    publishBudgetState();
 
     // Register budget admission gate with the dispatch pre-flight pipeline.
     // Scheduling depends on dispatch, so this import direction is legal.
@@ -54,6 +68,7 @@ export const extension = defineExtension((pi) => {
       const event = payload as RunFinishedEvent;
       if (event.status === "done") {
         budgetTracker.recordCost(event.usage.cost, event.usage.inputTokens, event.usage.outputTokens);
+        publishBudgetState();
       }
     });
   });
@@ -74,7 +89,7 @@ export const extension = defineExtension((pi) => {
       const subcommand = args.trim().split(/\s+/);
 
       if (subcommand[0] === "set" && subcommand[1]) {
-        const newCeiling = parseFloat(subcommand[1]);
+        const newCeiling = Number.parseFloat(subcommand[1]);
         if (!Number.isFinite(newCeiling) || newCeiling <= 0) {
           pi.sendMessage({
             customType: "pancode-panel",
@@ -85,6 +100,7 @@ export const extension = defineExtension((pi) => {
           return;
         }
         budgetTracker.setCeiling(newCeiling);
+        publishBudgetState();
         pi.sendMessage({
           customType: "pancode-panel",
           content: `Budget ceiling set to $${newCeiling.toFixed(2)}`,
@@ -129,7 +145,8 @@ export const extension = defineExtension((pi) => {
           const host = parts.join("-") || "localhost";
           providerMap.set(profile.providerId, { type, host, modelCount: 0, port: 0 });
         }
-        const entry = providerMap.get(profile.providerId)!;
+        const entry = providerMap.get(profile.providerId);
+        if (!entry) continue;
         entry.modelCount++;
       }
 
@@ -147,7 +164,8 @@ export const extension = defineExtension((pi) => {
       if (nodes.length === 0) {
         pi.sendMessage({
           customType: "pancode-panel",
-          content: "No cluster nodes discovered. Connect local engines (LM Studio, Ollama, llama.cpp) to enable cluster view.",
+          content:
+            "No cluster nodes discovered. Connect local engines (LM Studio, Ollama, llama.cpp) to enable cluster view.",
           display: true,
           details: { title: "PanCode Cluster" },
         });

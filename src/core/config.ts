@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { resolve, join } from "node:path";
+import { join, resolve } from "node:path";
 import {
   DEFAULT_ENABLED_DOMAINS,
   DEFAULT_PROFILE,
@@ -12,11 +12,7 @@ import {
 } from "./defaults";
 import { resolvePackageRoot } from "./package-root";
 import { loadPanCodeSettings } from "./settings-state";
-import {
-  parseReasoningPreference,
-  reasoningPreferenceFromThinking,
-  type PanCodeReasoningPreference,
-} from "./thinking";
+import { type PanCodeReasoningPreference, parseReasoningPreference, reasoningPreferenceFromThinking } from "./thinking";
 
 export type SafetyLevel = "suggest" | "auto-edit" | "full-auto";
 
@@ -102,11 +98,12 @@ export function loadConfig(overrides: ConfigOverrides = {}): PanCodeConfig {
   const settings = loadPanCodeSettings();
   const defaultModel = getFirstEnvValue("PANCODE_MODEL", "PANCODE_DEFAULT_MODEL") ?? readDefaultModelFile(packageRoot);
   const domains = [...(overrides.domains ?? overrides.extensions ?? DEFAULT_ENABLED_DOMAINS)];
-  const reasoningPreference = overrides.reasoningPreference
-    ?? parseReasoningPreference(getFirstEnvValue("PANCODE_REASONING"))
-    ?? reasoningPreferenceFromThinking(getFirstEnvValue("PANCODE_THINKING"))
-    ?? settings.reasoningPreference
-    ?? DEFAULT_REASONING_PREFERENCE;
+  const reasoningPreference =
+    overrides.reasoningPreference ??
+    parseReasoningPreference(getFirstEnvValue("PANCODE_REASONING")) ??
+    reasoningPreferenceFromThinking(getFirstEnvValue("PANCODE_THINKING")) ??
+    settings.reasoningPreference ??
+    DEFAULT_REASONING_PREFERENCE;
 
   return {
     packageRoot,
@@ -123,7 +120,8 @@ export function loadConfig(overrides: ConfigOverrides = {}): PanCodeConfig {
     preferredProvider: settings.preferredProvider,
     preferredModel: settings.preferredModel,
     tools: overrides.tools ?? getFirstEnvValue("PANCODE_TOOLS", "PANCODE_PHASE0_TOOLS") ?? DEFAULT_TOOLS,
-    timeoutMs: overrides.timeoutMs ?? parseTimeoutMs(process.env.PANCODE_TIMEOUT_MS ?? process.env.PANCODE_PHASE0_TIMEOUT_MS),
+    timeoutMs:
+      overrides.timeoutMs ?? parseTimeoutMs(process.env.PANCODE_TIMEOUT_MS ?? process.env.PANCODE_PHASE0_TIMEOUT_MS),
     runtimeRoot,
     resultsDir: join(runtimeRoot, "results"),
   };

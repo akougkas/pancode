@@ -1,17 +1,11 @@
+import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { randomUUID } from "node:crypto";
+import type { RuntimeUsage } from "../../engine/runtimes";
 
-export type RunStatus = "pending" | "running" | "done" | "error" | "timeout" | "cancelled";
+export type RunStatus = "pending" | "running" | "done" | "error" | "timeout" | "cancelled" | "interrupted";
 
-export interface RunUsage {
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadTokens: number;
-  cacheWriteTokens: number;
-  cost: number;
-  turns: number;
-}
+export type RunUsage = RuntimeUsage;
 
 export interface RunEnvelope {
   id: string;
@@ -108,7 +102,7 @@ export class RunLedger {
   markInterrupted(): void {
     for (const run of this.runs) {
       if (run.status === "running" || run.status === "pending") {
-        run.status = "cancelled";
+        run.status = "interrupted";
         run.completedAt = new Date().toISOString();
       }
     }

@@ -137,7 +137,11 @@ async function main(): Promise<void> {
     return;
   }
 
-  process.argv = [process.argv[0] ?? "node", process.env.PANCODE_BIN_PATH ?? process.argv[1] ?? "pancode", ...parsed.forwardedArgs];
+  process.argv = [
+    process.argv[0] ?? "node",
+    process.env.PANCODE_BIN_PATH ?? process.argv[1] ?? "pancode",
+    ...parsed.forwardedArgs,
+  ];
   process.env.PANCODE_ENTRYPOINT = parsed.target;
 
   await loadTarget(parsed);

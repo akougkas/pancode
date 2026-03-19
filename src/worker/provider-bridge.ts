@@ -11,7 +11,12 @@ export function buildWorkerModelArgs(config: Pick<PanCodeConfig, "provider" | "m
 }
 
 // Set by loader.ts at boot
-export const PANCODE_HOME = process.env.PANCODE_HOME!;
+const pancodeHome = process.env.PANCODE_HOME;
+if (!pancodeHome) {
+  throw new Error("PANCODE_HOME must be set before loading provider-bridge");
+}
+
+export const PANCODE_HOME = pancodeHome;
 export const PANCODE_AGENT_DIR = join(PANCODE_HOME, "agent-engine");
 
 function copyLegacyFileIfMissing(fileName: string): void {

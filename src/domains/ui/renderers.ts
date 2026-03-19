@@ -1,8 +1,13 @@
-import type { RunEnvelope } from "../dispatch";
 import type { AgentSpec } from "../agents";
+import type { RunEnvelope } from "../dispatch";
 import type { SessionMetrics } from "../observability";
 
-export { renderDispatchBoard, renderDispatchCard, renderDispatchFooter, renderDispatchFooterLine } from "./dispatch-board";
+export {
+  renderDispatchBoard,
+  renderDispatchCard,
+  renderDispatchFooter,
+  renderDispatchFooterLine,
+} from "./dispatch-board";
 export type { BoardColorizer, DispatchCardData, DispatchBoardState } from "./dispatch-board";
 
 export function renderRunBoard(runs: RunEnvelope[]): string[] {

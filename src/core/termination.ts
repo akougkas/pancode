@@ -12,7 +12,7 @@ export interface TerminationCheck {
 
 export interface RunStatusEntry {
   id: string;
-  status: "running" | "done" | "error" | "timeout" | "cancelled";
+  status: "running" | "done" | "error" | "timeout" | "cancelled" | "interrupted";
 }
 
 export class TerminationPolicy {
@@ -30,7 +30,6 @@ export class TerminationPolicy {
         return this.checkFailFast(runs);
       case "deadline":
         return this.checkDeadline();
-      case "fail-tolerant":
       default:
         return { shouldTerminate: false };
     }

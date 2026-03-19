@@ -1,20 +1,12 @@
 import { Ollama } from "ollama";
-import type {
-  DiscoveredModel,
-  EngineConnection,
-  EngineHealth,
-  ModelCapabilities,
-} from "./types";
-import { emptyCapabilities } from "./types";
 import { parseParamCount } from "./parse-params";
+import type { DiscoveredModel, EngineConnection, EngineHealth, ModelCapabilities } from "./types";
+import { emptyCapabilities } from "./types";
 
 const DEFAULT_PORT = 11434;
 const PROBE_TIMEOUT_MS = 3000;
 
-export function createOllamaConnection(
-  baseUrl: string,
-  providerId: string,
-): EngineConnection {
+export function createOllamaConnection(baseUrl: string, providerId: string): EngineConnection {
   let client: Ollama | null = null;
 
   function ensureClient(): Ollama {
@@ -148,4 +140,3 @@ export function createOllamaConnection(
     },
   };
 }
-

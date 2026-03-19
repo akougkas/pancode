@@ -7,7 +7,7 @@ export function parseParamCount(raw: string): number | null {
   const match = raw.match(/^([\d.]+)\s*([BKMGT])/i);
   if (!match) return null;
 
-  const value = parseFloat(match[1]);
+  const value = Number.parseFloat(match[1]);
   if (!Number.isFinite(value)) return null;
 
   const unit = match[2].toUpperCase();

@@ -1,22 +1,22 @@
-import { agentRegistry } from "../agents";
-import { findModelProfile, getSamplingPreset, type SamplingPreset } from "../providers";
 import { sharedBus } from "../../core/shared-bus";
+import { agentRegistry } from "../agents";
+import { type SamplingPreset, findModelProfile, getSamplingPreset } from "../providers";
 
 export interface WorkerRouting {
   model: string | null;
   tools: string;
   systemPrompt: string;
   sampling: SamplingPreset | null;
+  runtime: string; // Runtime ID from agent spec
+  runtimeArgs: string[]; // Extra args from agent spec
+  readonly: boolean; // From agent spec
 }
 
 function getWorkerModel(): string | null {
   return process.env.PANCODE_WORKER_MODEL?.trim() || null;
 }
 
-function resolveModelSampling(
-  model: string | null,
-  presetName: string | undefined,
-): SamplingPreset | null {
+function resolveModelSampling(model: string | null, presetName: string | undefined): SamplingPreset | null {
   if (!model || !presetName) return null;
 
   // model is "provider/model-id"
@@ -46,6 +46,9 @@ export function resolveWorkerRouting(agentName: string): WorkerRouting {
       tools: "read,bash,grep,find,ls,write,edit",
       systemPrompt: "",
       sampling: null,
+      runtime: "pi",
+      runtimeArgs: [],
+      readonly: false,
     };
   }
 
@@ -70,5 +73,8 @@ export function resolveWorkerRouting(agentName: string): WorkerRouting {
     tools: spec.tools,
     systemPrompt: spec.systemPrompt,
     sampling,
+    runtime: spec.runtime,
+    runtimeArgs: spec.runtimeArgs,
+    readonly: spec.readonly,
   };
 }

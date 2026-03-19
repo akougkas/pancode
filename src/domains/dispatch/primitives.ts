@@ -1,6 +1,6 @@
-import { spawnWorker, type WorkerResult } from "./worker-spawn";
-import type { SamplingPreset } from "../providers";
+import type { RuntimeSamplingConfig } from "../../engine/runtimes";
 import { type OutputContract, type ValidationResult, validateOutput } from "./validation";
+import { type WorkerResult, spawnWorker } from "./worker-spawn";
 
 export interface ParallelTask {
   task: string;
@@ -9,8 +9,11 @@ export interface ParallelTask {
   systemPrompt: string;
   cwd: string;
   agentName?: string;
-  sampling?: SamplingPreset | null;
+  sampling?: RuntimeSamplingConfig | null;
   runId?: string;
+  runtime?: string;
+  runtimeArgs?: string[];
+  readonly?: boolean;
 }
 
 export interface ParallelResult {
@@ -25,14 +28,16 @@ export async function runParallel(
   concurrency: number = DEFAULT_CONCURRENCY,
   signal?: AbortSignal,
 ): Promise<ParallelResult[]> {
-  const results: ParallelResult[] = [];
-  const queue = [...tasks];
+  const results = new Array<ParallelResult | null>(tasks.length).fill(null);
+  const queue = tasks.map((task, index) => ({ task, index }));
   const active: Promise<void>[] = [];
 
   const runNext = async (): Promise<void> => {
     while (queue.length > 0) {
       if (signal?.aborted) break;
-      const task = queue.shift()!;
+      const next = queue.shift();
+      if (!next) break;
+      const { task, index } = next;
       const workerResult = await spawnWorker({
         task: task.task,
         tools: task.tools,
@@ -43,8 +48,11 @@ export async function runParallel(
         sampling: task.sampling,
         signal,
         runId: task.runId,
+        runtime: task.runtime,
+        runtimeArgs: task.runtimeArgs,
+        readonly: task.readonly,
       });
-      results.push({ task: task.task, result: workerResult });
+      results[index] = { task: task.task, result: workerResult };
     }
   };
 
@@ -54,7 +62,19 @@ export async function runParallel(
   }
 
   await Promise.all(active);
-  return results;
+  return results.map((result, index) => {
+    if (result) return result;
+    return {
+      task: tasks[index].task,
+      result: {
+        exitCode: 1,
+        result: "",
+        error: signal?.aborted ? "Dispatch aborted" : "Task did not run",
+        usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, cost: 0, turns: 0 },
+        model: tasks[index].model,
+      },
+    };
+  });
 }
 
 // === Chain dispatch ===
@@ -105,9 +125,7 @@ export async function dispatchChain(
     const cappedOriginal = originalTask.slice(0, MAX_SUBSTITUTED_OUTPUT);
 
     // Token substitution: $INPUT is previous step output, $ORIGINAL is the initial task
-    const task = step.task
-      .replace(/\$INPUT/g, cappedPrevious)
-      .replace(/\$ORIGINAL/g, cappedOriginal);
+    const task = step.task.replace(/\$INPUT/g, cappedPrevious).replace(/\$ORIGINAL/g, cappedOriginal);
 
     const startTime = Date.now();
     const result = await spawnFn(task, agent);

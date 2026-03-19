@@ -1,45 +1,36 @@
 import { DEFAULT_REASONING_PREFERENCE } from "../../core/defaults";
-import {
-  PANCODE_PRODUCT_NAME,
-  formatCategorizedHelp,
-} from "../../core/shell-metadata";
+import { MODE_DEFINITIONS, type ModeDefinition, cycleMode, getModeDefinition, setCurrentMode } from "../../core/modes";
 import { updatePanCodeSettings } from "../../core/settings-state";
+import { sharedBus } from "../../core/shared-bus";
+import { PANCODE_PRODUCT_NAME, formatCategorizedHelp } from "../../core/shell-metadata";
 import {
+  type PanCodeReasoningPreference,
   THINKING_LEVELS,
   getModelReasoningControl,
   parseReasoningPreference,
   parseThinkingLevel,
   resolveThinkingLevelForPreference,
-  type PanCodeReasoningPreference,
 } from "../../core/thinking";
-import {
-  cycleMode,
-  setCurrentMode,
-  getModeDefinition,
-  MODE_DEFINITIONS,
-  type ModeDefinition,
-} from "../../core/modes";
-import { sharedBus } from "../../core/shared-bus";
-import { defineExtension, type ExtensionContext } from "../../engine/extensions";
-import type { Api, Model } from "../../engine/types";
+import { type ExtensionContext, defineExtension } from "../../engine/extensions";
 import { Container, Text, truncateToWidth, visibleWidth } from "../../engine/tui";
+import type { Api, Model } from "../../engine/types";
 import { getRunLedger } from "../dispatch";
 import { getMetricsLedger } from "../observability";
-import { getModelProfileCache, type MergedModelProfile } from "../providers";
+import { type MergedModelProfile, getModelProfileCache } from "../providers";
 import { getBudgetTracker } from "../scheduling";
-import { renderRunBoard } from "./renderers";
+import { getContextPercent, recordContextUsage } from "./context-tracker";
 import { renderDispatchBoard } from "./dispatch-board";
 import type { AgentStat, BoardColorizer, DispatchCardData } from "./dispatch-board";
-import { getContextPercent, recordContextUsage } from "./context-tracker";
+import { renderRunBoard } from "./renderers";
+import { buildTaskWidget, renderTaskWidget } from "./tasks";
 import {
-  trackWorkerStart,
-  trackWorkerEnd,
-  updateWorkerProgress,
   getLiveWorkers,
   resetAll as resetLiveWorkers,
+  trackWorkerEnd,
+  trackWorkerStart,
+  updateWorkerProgress,
 } from "./worker-widgets";
 import type { WorkerStatus } from "./worker-widgets";
-import { buildTaskWidget, renderTaskWidget } from "./tasks";
 
 function composeSingleLine(left: string, right: string, width: number): string {
   const safeWidth = Math.max(0, width);
@@ -53,11 +44,7 @@ function composeSingleLine(left: string, right: string, width: number): string {
   return truncateToWidth(`${left} ${right}`.trim(), safeWidth);
 }
 
-function sendPanel(
-  sendMessage: (title: string, body: string) => void,
-  title: string,
-  lines: string[],
-): void {
+function sendPanel(sendMessage: (title: string, body: string) => void, title: string, lines: string[]): void {
   sendMessage(title, lines.join("\n"));
 }
 
@@ -90,13 +77,18 @@ function readReasoningPreference(): PanCodeReasoningPreference {
   return parseReasoningPreference(process.env.PANCODE_REASONING) ?? DEFAULT_REASONING_PREFERENCE;
 }
 
-function describeReasoningCapability(model: {
-  reasoning?: boolean;
-  compat?: {
-    supportsReasoningEffort?: boolean;
-    thinkingFormat?: "openai" | "zai" | "qwen" | "qwen-chat-template";
-  };
-} | null | undefined): string {
+function describeReasoningCapability(
+  model:
+    | {
+        reasoning?: boolean;
+        compat?: {
+          supportsReasoningEffort?: boolean;
+          thinkingFormat?: "openai" | "zai" | "qwen" | "qwen-chat-template";
+        };
+      }
+    | null
+    | undefined,
+): string {
   const control = getModelReasoningControl(model);
   if (control === "none") return "unsupported";
   if (control === "levels") return `levels (${THINKING_LEVELS.join(", ")})`;
@@ -140,9 +132,10 @@ function parseReasoningCommand(request: string): {
 
   return {
     preference: legacyThinkingLevel === "off" ? "off" : "on",
-    note: legacyThinkingLevel === "off"
-      ? null
-      : `PanCode stores reasoning as off/on; mapped "${legacyThinkingLevel}" to "on".`,
+    note:
+      legacyThinkingLevel === "off"
+        ? null
+        : `PanCode stores reasoning as off/on; mapped "${legacyThinkingLevel}" to "on".`,
   };
 }
 
@@ -157,11 +150,12 @@ function getRegisteredModels(ctx: ExtensionContext): {
 } {
   ctx.modelRegistry.refresh();
 
-  const sortModels = (models: Array<Model<Api>>) => [...models].sort((left, right) => {
-    const providerDiff = left.provider.localeCompare(right.provider);
-    if (providerDiff !== 0) return providerDiff;
-    return left.id.localeCompare(right.id);
-  });
+  const sortModels = (models: Array<Model<Api>>) =>
+    [...models].sort((left, right) => {
+      const providerDiff = left.provider.localeCompare(right.provider);
+      if (providerDiff !== 0) return providerDiff;
+      return left.id.localeCompare(right.id);
+    });
 
   const all = sortModels(ctx.modelRegistry.getAll());
   const available = sortModels(ctx.modelRegistry.getAvailable());
@@ -202,10 +196,7 @@ function formatProfileCapabilities(profile: MergedModelProfile): string {
   return parts.length > 0 ? ` (${parts.join(", ")})` : "";
 }
 
-function formatRegistryModelCapabilities(
-  model: Model<Api>,
-  profiles: MergedModelProfile[],
-): string {
+function formatRegistryModelCapabilities(model: Model<Api>, profiles: MergedModelProfile[]): string {
   const profile = profiles.find((p) => p.providerId === model.provider && p.modelId === model.id);
   if (profile) return formatProfileCapabilities(profile);
   const parts: string[] = [];
@@ -257,10 +248,7 @@ function formatAvailableSummary(registryAvailable: ReadonlyArray<Model<Api>>): s
   for (const m of chatModels) providerSet.add(m.provider);
   const providerLabel = providerSet.size === 1 ? "1 provider" : `${providerSet.size} providers`;
 
-  return [
-    "",
-    `Available: ${chatModels.length} models across ${providerLabel}. Use /models all to browse.`,
-  ];
+  return ["", `Available: ${chatModels.length} models across ${providerLabel}. Use /models all to browse.`];
 }
 
 /**
@@ -327,15 +315,17 @@ function formatAllAvailableLines(
  * Compute per-agent performance statistics from the metrics ledger.
  * Returns an empty array if fewer than 3 total runs exist to avoid noise.
  */
-function computeAgentStats(runs: ReadonlyArray<{
-  agent: string;
-  status: string;
-  cost: number;
-  durationMs: number;
-}>): AgentStat[] {
+function computeAgentStats(
+  runs: ReadonlyArray<{
+    agent: string;
+    status: string;
+    cost: number;
+    durationMs: number;
+  }>,
+): AgentStat[] {
   if (runs.length < 3) return [];
 
-  const byAgent = new Map<string, typeof runs[number][]>();
+  const byAgent = new Map<string, (typeof runs)[number][]>();
   for (const run of runs) {
     const group = byAgent.get(run.agent) ?? [];
     group.push(run);
@@ -377,11 +367,16 @@ function resolveModelSelection(
 /** Map orchestrator modes to named theme colors for visual differentiation in the TUI. */
 function modeThemeColor(mode: ModeDefinition): "accent" | "success" | "warning" | "error" | "muted" {
   switch (mode.id) {
-    case "capture": return "accent";
-    case "plan": return "muted";
-    case "build": return "success";
-    case "ask": return "warning";
-    case "review": return "error";
+    case "capture":
+      return "accent";
+    case "plan":
+      return "muted";
+    case "build":
+      return "success";
+    case "ask":
+      return "warning";
+    case "review":
+      return "error";
   }
 }
 
@@ -416,9 +411,10 @@ export const extension = defineExtension((pi) => {
   };
 
   pi.registerMessageRenderer("pancode-panel", (message, _options, theme) => {
-    const title = typeof message.details === "object" && message.details && "title" in message.details
-      ? String((message.details as { title?: unknown }).title ?? PANCODE_PRODUCT_NAME)
-      : PANCODE_PRODUCT_NAME;
+    const title =
+      typeof message.details === "object" && message.details && "title" in message.details
+        ? String((message.details as { title?: unknown }).title ?? PANCODE_PRODUCT_NAME)
+        : PANCODE_PRODUCT_NAME;
     const body = typeof message.content === "string" ? message.content : String(message.content ?? "");
     const text = `${theme.bold(theme.fg("accent", title))}\n${body}`;
     return new Text(text, 1, 0);
@@ -426,7 +422,10 @@ export const extension = defineExtension((pi) => {
 
   const handleThemeCommand = async (args: string, ctx: ExtensionContext) => {
     const request = args.trim();
-    const themes = ctx.ui.getAllThemes().map((themeInfo) => themeInfo.name).sort();
+    const themes = ctx.ui
+      .getAllThemes()
+      .map((themeInfo) => themeInfo.name)
+      .sort();
 
     if (!request || request === "list") {
       const lines = themes.map((name) => `${name === ctx.ui.theme.name ? "*" : "-"} ${name}`);
@@ -497,7 +496,10 @@ export const extension = defineExtension((pi) => {
 
     const changed = await pi.setModel(selection.model);
     if (!changed) {
-      ctx.ui.notify(`Could not switch to ${modelRef(selection.model)}. Provider credentials may be unavailable.`, "error");
+      ctx.ui.notify(
+        `Could not switch to ${modelRef(selection.model)}. Provider credentials may be unavailable.`,
+        "error",
+      );
       return;
     }
 
@@ -530,9 +532,8 @@ export const extension = defineExtension((pi) => {
     const effectiveThinkingLevel = resolveThinkingLevelForPreference(ctx.model, currentReasoningPreference);
     process.env.PANCODE_EFFECTIVE_THINKING = effectiveThinkingLevel;
     pi.setThinkingLevel(effectiveThinkingLevel);
-    persistSettings(
-      { reasoningPreference: currentReasoningPreference },
-      (message, level) => ctx.ui.notify(message, level),
+    persistSettings({ reasoningPreference: currentReasoningPreference }, (message, level) =>
+      ctx.ui.notify(message, level),
     );
 
     if (parsed.note) {
@@ -619,7 +620,7 @@ export const extension = defineExtension((pi) => {
         return;
       }
       case "budget": {
-        const newCeiling = parseFloat(value);
+        const newCeiling = Number.parseFloat(value);
         if (!Number.isFinite(newCeiling) || newCeiling <= 0) {
           ctx.ui.notify("Invalid budget amount. Use: /settings budget <positive number>", "error");
           return;
@@ -777,6 +778,7 @@ export const extension = defineExtension((pi) => {
             inputTokens: w.inputTokens > 0 ? w.inputTokens : undefined,
             outputTokens: w.outputTokens > 0 ? w.outputTokens : undefined,
             turns: w.turns > 0 ? w.turns : undefined,
+            runtime: w.runtime,
           }));
 
           const recent: DispatchCardData[] = allRuns
@@ -785,9 +787,7 @@ export const extension = defineExtension((pi) => {
             .map((r) => ({
               agent: r.agent,
               status: r.status,
-              elapsedMs: r.completedAt
-                ? new Date(r.completedAt).getTime() - new Date(r.startedAt).getTime()
-                : 0,
+              elapsedMs: r.completedAt ? new Date(r.completedAt).getTime() - new Date(r.startedAt).getTime() : 0,
               model: r.model,
               taskPreview: r.task,
               runId: r.id,
@@ -874,21 +874,20 @@ export const extension = defineExtension((pi) => {
         const modePart = theme.fg(modeThemeColor(modeInfo), `[${modeInfo.name}]`);
         const modelPart = theme.fg("accent", ` ${currentModelLabel}`);
         const activityIcon = activeCount > 0 ? theme.fg("accent", " \u25CF") : theme.fg("dim", " \u25CB");
-        const activityText = activeCount > 0
-          ? theme.fg("muted", ` ${activeCount} active`)
-          : theme.fg("dim", " idle");
+        const activityText = activeCount > 0 ? theme.fg("muted", ` ${activeCount} active`) : theme.fg("dim", " idle");
         const left = modePart + modelPart + activityIcon + activityText;
 
         // Right: runs, budget, context bar
         const ctxFilled = Math.round(contextPercent / 10);
-        const ctxBar = theme.fg("accent", "#".repeat(ctxFilled))
-          + theme.fg("dim", "-".repeat(10 - ctxFilled));
-        const budgetStr = ceiling !== null
-          ? `$${totalCost.toFixed(2)}/$${ceiling.toFixed(2)}`
-          : `$${totalCost.toFixed(2)}`;
-        const right = theme.fg("muted", `Runs: ${totalRuns}  ${budgetStr}  `)
-          + theme.fg("dim", "[") + ctxBar + theme.fg("dim", "]")
-          + theme.fg("muted", ` ${Math.round(contextPercent)}% `);
+        const ctxBar = theme.fg("accent", "#".repeat(ctxFilled)) + theme.fg("dim", "-".repeat(10 - ctxFilled));
+        const budgetStr =
+          ceiling !== null ? `$${totalCost.toFixed(2)}/$${ceiling.toFixed(2)}` : `$${totalCost.toFixed(2)}`;
+        const right =
+          theme.fg("muted", `Runs: ${totalRuns}  ${budgetStr}  `) +
+          theme.fg("dim", "[") +
+          ctxBar +
+          theme.fg("dim", "]") +
+          theme.fg("muted", ` ${Math.round(contextPercent)}% `);
 
         const leftW = visibleWidth(left);
         const rightW = visibleWidth(right);
@@ -910,8 +909,8 @@ export const extension = defineExtension((pi) => {
 
     // Subscribe to dispatch events for live worker tracking.
     sharedBus.on("pancode:run-started", (payload) => {
-      const event = payload as { runId: string; agent: string; task: string; model: string | null };
-      trackWorkerStart(event.runId, event.agent, event.task, event.model);
+      const event = payload as { runId: string; agent: string; task: string; model: string | null; runtime?: string };
+      trackWorkerStart(event.runId, event.agent, event.task, event.model, event.runtime);
     });
 
     sharedBus.on("pancode:worker-progress", (payload) => {
@@ -930,17 +929,21 @@ export const extension = defineExtension((pi) => {
 
     if (!welcomeShown) {
       welcomeShown = true;
-      sendPanel(emitPanel, `${PANCODE_PRODUCT_NAME} Dashboard`, buildDashboardLines({
-        modelLabel: currentModelLabel,
-        reasoningPreference: currentReasoningPreference,
-        reasoningCapability: describeReasoningCapability(ctx.model),
-        effectiveThinkingLevel,
-        themeName: currentThemeName,
-        workingDirectory: ctx.cwd,
-        tools: pi.getActiveTools(),
-        modeName: initMode.name,
-        modeDescription: initMode.description,
-      }));
+      sendPanel(
+        emitPanel,
+        `${PANCODE_PRODUCT_NAME} Dashboard`,
+        buildDashboardLines({
+          modelLabel: currentModelLabel,
+          reasoningPreference: currentReasoningPreference,
+          reasoningCapability: describeReasoningCapability(ctx.model),
+          effectiveThinkingLevel,
+          themeName: currentThemeName,
+          workingDirectory: ctx.cwd,
+          tools: pi.getActiveTools(),
+          modeName: initMode.name,
+          modeDescription: initMode.description,
+        }),
+      );
     }
   });
 

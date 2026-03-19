@@ -32,7 +32,7 @@ export interface ProviderInput {
 function parseNodeAliases(): Record<string, string> {
   // Read node name aliases from PANCODE_CLUSTER_ALIASES env var.
   // Format: "ip1=name1,ip2=name2" e.g., "192.168.86.141=mini,192.168.86.143=dynamo"
-  const aliases: Record<string, string> = { "127.0.0.1": "local", "localhost": "local" };
+  const aliases: Record<string, string> = { "127.0.0.1": "local", localhost: "local" };
   const raw = process.env.PANCODE_CLUSTER_ALIASES;
   if (raw) {
     for (const pair of raw.split(",")) {

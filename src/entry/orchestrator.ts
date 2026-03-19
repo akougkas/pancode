@@ -1,34 +1,29 @@
 import { join } from "node:path";
-import { loadConfig, type PanCodeConfig, type SafetyLevel } from "../core/config";
-import { createSafeEventBus } from "../core/event-bus";
+import { type PanCodeConfig, type SafetyLevel, loadConfig } from "../core/config";
 import { collectDomainExtensions, resolveDomainOrder } from "../core/domain-loader";
+import { createSafeEventBus } from "../core/event-bus";
 import { ensureProjectRuntime } from "../core/init";
 import { resolvePackageRoot } from "../core/package-root";
 import { shutdownCoordinator } from "../core/termination";
 import { resolveThinkingLevelForPreference } from "../core/thinking";
 import { DOMAIN_REGISTRY } from "../domains";
-import {
-  createSharedAuth,
-  registerApiProvidersOnRegistry,
-  discoverEngines,
-  writeProvidersYaml,
-  loadModelKnowledgeBase,
-  matchAllModels,
-  writeModelCacheYaml,
-  setModelProfileCache,
-  registerDiscoveredModels,
-  resolveConfiguredModel,
-  PANCODE_HOME,
-} from "../domains/providers";
 import { ensureAgentsYaml } from "../domains/agents/spec-registry";
 import {
-  codingTools,
-  createAgentSession,
-  readOnlyTools,
-} from "../engine/session";
-import { stopAllWorkers } from "../domains/dispatch/worker-spawn";
-import { PanCodeInteractiveShell } from "../engine/shell";
+  PANCODE_HOME,
+  createSharedAuth,
+  discoverEngines,
+  loadModelKnowledgeBase,
+  matchAllModels,
+  registerApiProvidersOnRegistry,
+  registerDiscoveredModels,
+  resolveConfiguredModel,
+  setModelProfileCache,
+  writeModelCacheYaml,
+  writeProvidersYaml,
+} from "../domains/providers";
 import { DefaultResourceLoader, SessionManager, SettingsManager } from "../engine/resources";
+import { codingTools, createAgentSession, readOnlyTools } from "../engine/session";
+import { PanCodeInteractiveShell } from "../engine/shell";
 
 interface ParsedArgs {
   cwd: string | null;
@@ -80,12 +75,30 @@ function parseArgs(argv: string[]): ParsedArgs {
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
 
-    if (arg === "--help" || arg === "-h") { parsed.help = true; continue; }
-    if (arg === "--cwd") { parsed.cwd = argv[++index] ?? null; continue; }
-    if (arg === "--provider") { parsed.provider = argv[++index] ?? null; continue; }
-    if (arg === "--model") { parsed.model = argv[++index] ?? null; continue; }
-    if (arg === "--profile") { parsed.profile = argv[++index] ?? null; continue; }
-    if (arg === "--theme") { parsed.theme = argv[++index] ?? null; continue; }
+    if (arg === "--help" || arg === "-h") {
+      parsed.help = true;
+      continue;
+    }
+    if (arg === "--cwd") {
+      parsed.cwd = argv[++index] ?? null;
+      continue;
+    }
+    if (arg === "--provider") {
+      parsed.provider = argv[++index] ?? null;
+      continue;
+    }
+    if (arg === "--model") {
+      parsed.model = argv[++index] ?? null;
+      continue;
+    }
+    if (arg === "--profile") {
+      parsed.profile = argv[++index] ?? null;
+      continue;
+    }
+    if (arg === "--theme") {
+      parsed.theme = argv[++index] ?? null;
+      continue;
+    }
     if (arg === "--safety") {
       const value = parseSafetyLevel(argv[++index]);
       if (!value) throw new Error("Invalid --safety value. Use suggest, auto-edit, or full-auto.");
@@ -105,7 +118,10 @@ function resolveToolset(config: PanCodeConfig) {
 
 export async function runOrchestratorEntry(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
-  if (args.help) { printUsage(); return; }
+  if (args.help) {
+    printUsage();
+    return;
+  }
 
   process.env.PI_SKIP_VERSION_CHECK = "1";
 
@@ -213,15 +229,13 @@ export async function runOrchestratorEntry(): Promise<void> {
   const shell = new PanCodeInteractiveShell(session, { modelFallbackMessage: bootFallbackMessage ?? sessionFallback });
 
   shutdownCoordinator.onTerminate(async () => {
-    // 1. Stop all workers first so no subprocess is active during state persistence
-    await stopAllWorkers();
-
-    // 2. Disconnect engine connections
+    // Disconnect engine connections after domain terminate handlers run.
     for (const result of discoveryResults) {
       result.connection.disconnect();
     }
+  });
 
-    // 3. Fire session_shutdown so domains can persist clean state
+  shutdownCoordinator.onPersist(async () => {
     const runner = session.extensionRunner;
     if (runner?.hasHandlers("session_shutdown")) {
       await runner.emit({ type: "session_shutdown" });

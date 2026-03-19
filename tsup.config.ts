@@ -3,6 +3,7 @@ import { defineConfig } from "tsup";
 export default defineConfig({
   entry: {
     loader: "src/loader.ts",
+    "worker/cli-entry": "src/worker/cli-entry.ts",
     "worker/entry": "src/worker/entry.ts",
     "worker/safety-ext": "src/worker/safety-ext.ts",
   },
