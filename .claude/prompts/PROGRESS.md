@@ -1,5 +1,22 @@
 # PanCode Build Progress
 
+## v0.1.6: Observability + Resilience (COMPLETE, 2026-03-19)
+
+113 TypeScript source files. Commit `4a89caf`. Structured audit trail, 8-probe
+health diagnostics, per-provider backoff, and provider resilience tracking.
+
+### What shipped in v0.1.6
+
+- dispatch/backoff.ts: exponential backoff with jitter, circuit breaker (3 failures), 429 support
+- dispatch/resilience.ts: sliding window (10 attempts) provider health tracking (healthy >=70%, degraded 30-70%, unhealthy <30%)
+- observability/telemetry.ts: in-memory ring buffer audit trail (1000 entries), domain/severity filtering
+- observability/health.ts: 8-probe diagnostic checklist (runtime dir, orphan workers, stale runs, provider health, board.json, context.json, session size, budget)
+- /audit command: structured table with TIME/SEV/DOMAIN/EVENT/DETAIL, filterable by domain or severity
+- /doctor command: pass/warn/fail health report, gathers inputs from dispatch and scheduling domains via dynamic import
+- Audit trail auto-records session_start, run-finished, warnings, session-reset, compaction events
+
+---
+
 ## v0.1.5: Shadow Agents (COMPLETE, 2026-03-19)
 
 109 TypeScript source files. Commit `ddd6ae0`. Shadow explore tool for
