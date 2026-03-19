@@ -6,8 +6,8 @@ import { agentRegistry } from "../agents";
 import { RunLedger, createRunEnvelope } from "./state";
 import { evaluateRules, DEFAULT_DISPATCH_RULES, type DispatchRule } from "./rules";
 import { resolveWorkerRouting } from "./routing";
-import { stopAllWorkers, spawnWorker } from "./worker-spawn";
-import { runParallel } from "./primitives";
+import { stopAllWorkers, spawnWorker, liveWorkerProcesses } from "./worker-spawn";
+import { runParallel, dispatchChain } from "./primitives";
 import { batchTracker } from "./batch-tracker";
 import { createWorktreeIsolation, mergeDeltaPatches, cleanupAllWorktrees } from "./isolation";
 import { shutdownCoordinator } from "../../core/termination";
@@ -338,6 +338,324 @@ export const extension = defineExtension((pi) => {
       summaryLines.push(`Completed: ${batchState?.completedCount ?? 0}/${tasks.length} | Failed: ${batchState?.failedCount ?? 0} | Cost: $${totalCost.toFixed(4)}`);
 
       return textResult(summaryLines.join("\n"));
+    },
+  });
+
+  pi.registerTool({
+    name: "dispatch_chain",
+    label: "Chain Dispatch",
+    description:
+      "Execute a sequential pipeline of agent tasks. Each step receives the previous step's output via $INPUT and the original task via $ORIGINAL. Steps run sequentially; a failure at any step stops the chain.",
+    parameters: Type.Object({
+      steps: Type.Array(
+        Type.Object({
+          task: Type.String({ description: "Task for this step. Use $INPUT for previous output, $ORIGINAL for the original task." }),
+          agent: Type.Optional(Type.String({ description: "Agent for this step. Defaults to 'dev'." })),
+        }),
+        { minItems: 1, maxItems: 10 },
+      ),
+      originalTask: Type.String({ description: "The original high-level task description." }),
+    }),
+    async execute(_toolCallId, params, signal, onUpdate, ctx) {
+      const defaultAgent = process.env.PANCODE_DEFAULT_AGENT ?? "dev";
+
+      // Mode gating
+      const mode = getModeDefinition();
+      if (!mode.dispatchEnabled) {
+        return textResult(`Chain dispatch is disabled in ${mode.name} mode. Switch to Build mode.`);
+      }
+
+      if (draining) {
+        return textResult("Chain dispatch blocked: system is shutting down.");
+      }
+
+      // Pre-flight
+      const preflight = runPreFlightChecks({
+        task: params.originalTask,
+        agent: defaultAgent,
+        model: resolveWorkerRouting(defaultAgent).model,
+      });
+      if (!preflight.admit) {
+        return textResult(`Chain dispatch blocked: ${preflight.reason}`);
+      }
+
+      if (onUpdate) {
+        onUpdate(textResult(`Dispatching chain of ${params.steps.length} steps...`));
+      }
+
+      const chainResult = await dispatchChain(
+        params.steps.map((s) => ({ task: s.task, agent: s.agent })),
+        params.originalTask,
+        defaultAgent,
+        async (task, agent) => {
+          const routing = resolveWorkerRouting(agent);
+          const run = createRunEnvelope(task, agent, ctx.cwd);
+          run.model = routing.model;
+          run.status = "running";
+          ledger?.add(run);
+          sharedBus.emit("pancode:run-started", { runId: run.id, task, agent, model: routing.model });
+
+          const result = await spawnWorker({
+            task,
+            tools: routing.tools,
+            model: routing.model,
+            systemPrompt: routing.systemPrompt,
+            cwd: ctx.cwd,
+            agentName: agent,
+            sampling: routing.sampling,
+            signal: signal ?? undefined,
+            runId: run.id,
+          });
+
+          run.status = result.exitCode === 0 && !result.error ? "done" : "error";
+          run.result = result.result;
+          run.error = result.error;
+          run.usage = result.usage;
+          run.model = result.model ?? run.model;
+          run.completedAt = new Date().toISOString();
+          ledger?.update(run.id, run);
+
+          sharedBus.emit("pancode:run-finished", {
+            runId: run.id,
+            agent: run.agent,
+            status: run.status,
+            usage: run.usage,
+            startedAt: run.startedAt,
+            completedAt: run.completedAt ?? new Date().toISOString(),
+          });
+
+          return result;
+        },
+        ctx.cwd,
+        signal ?? undefined,
+      );
+
+      // Build summary
+      const lines: string[] = [`Chain: ${params.steps.length} steps, ${chainResult.success ? "SUCCESS" : "FAILED"}`, ""];
+      for (const step of chainResult.steps) {
+        const statusStr = step.result.exitCode === 0 && !step.result.error ? "OK" : "FAIL";
+        const costStr = step.result.usage.cost > 0 ? ` $${step.result.usage.cost.toFixed(4)}` : "";
+        const durStr = ` ${(step.durationMs / 1000).toFixed(1)}s`;
+        const truncatedTask = step.task.length > 50 ? `${step.task.slice(0, 47)}...` : step.task;
+        lines.push(`  Step ${step.stepIndex + 1}: [${statusStr}] ${step.agent} ${truncatedTask}${costStr}${durStr}`);
+        if (step.validation && !step.validation.valid) {
+          for (const check of step.validation.checks.filter((c) => !c.passed)) {
+            lines.push(`    FAIL: ${check.kind} ${check.target}${check.detail ? ` (${check.detail})` : ""}`);
+          }
+        }
+      }
+
+      if (!chainResult.success && chainResult.failedAtStep !== undefined) {
+        lines.push("");
+        lines.push(`Chain stopped at step ${chainResult.failedAtStep + 1}.`);
+      }
+
+      lines.push("");
+      lines.push(`Final output:\n${chainResult.finalOutput.slice(0, 1000)}`);
+
+      return textResult(lines.join("\n"));
+    },
+  });
+
+  // === Commands ===
+
+  pi.registerCommand("stoprun", {
+    description: "Stop a running dispatch by run ID",
+    async handler(args, ctx) {
+      const query = args.trim();
+      if (!query) {
+        ctx.ui.notify("Usage: /stoprun <run-id>", "error");
+        return;
+      }
+
+      if (!ledger) {
+        ctx.ui.notify("Dispatch ledger not initialized.", "error");
+        return;
+      }
+
+      // Find run by ID prefix match
+      const active = ledger.getActive();
+      const match = active.find((r) => r.id === query || r.id.startsWith(query));
+      if (!match) {
+        ctx.ui.notify(`No active run found matching: ${query}`, "error");
+        return;
+      }
+
+      // Kill worker process
+      let killed = false;
+      for (const proc of liveWorkerProcesses) {
+        // Worker processes are matched by liveness. Kill the first one matching the run.
+        try {
+          proc.kill("SIGTERM");
+          killed = true;
+          break;
+        } catch {
+          // process already dead
+        }
+      }
+
+      match.status = "cancelled";
+      match.completedAt = new Date().toISOString();
+      ledger.update(match.id, match);
+
+      sharedBus.emit("pancode:run-finished", {
+        runId: match.id,
+        agent: match.agent,
+        status: "cancelled",
+        usage: match.usage,
+        startedAt: match.startedAt,
+        completedAt: match.completedAt,
+      });
+
+      ctx.ui.notify(`Run ${match.id} cancelled.${killed ? " Worker process terminated." : ""}`, "info");
+    },
+  });
+
+  pi.registerCommand("cost", {
+    description: "Show per-run cost breakdown",
+    async handler(_args, _ctx) {
+      if (!ledger) {
+        pi.sendMessage({
+          customType: "pancode-panel",
+          content: "Dispatch ledger not initialized.",
+          display: true,
+          details: { title: "PanCode Cost" },
+        });
+        return;
+      }
+
+      const allRuns = ledger.getAll();
+      if (allRuns.length === 0) {
+        pi.sendMessage({
+          customType: "pancode-panel",
+          content: "No runs recorded.",
+          display: true,
+          details: { title: "PanCode Cost" },
+        });
+        return;
+      }
+
+      let totalCost = 0;
+      const byAgent = new Map<string, { runs: number; cost: number }>();
+      const byModel = new Map<string, { runs: number; cost: number }>();
+
+      for (const run of allRuns) {
+        totalCost += run.usage.cost;
+
+        const agentStats = byAgent.get(run.agent) ?? { runs: 0, cost: 0 };
+        agentStats.runs++;
+        agentStats.cost += run.usage.cost;
+        byAgent.set(run.agent, agentStats);
+
+        const modelKey = run.model ?? "(unresolved)";
+        const modelStats = byModel.get(modelKey) ?? { runs: 0, cost: 0 };
+        modelStats.runs++;
+        modelStats.cost += run.usage.cost;
+        byModel.set(modelKey, modelStats);
+      }
+
+      const lines: string[] = [
+        `Total: ${allRuns.length} runs, $${totalCost.toFixed(4)}`,
+        "",
+        "By agent:",
+      ];
+
+      for (const [agent, stats] of [...byAgent.entries()].sort((a, b) => b[1].cost - a[1].cost)) {
+        lines.push(`  ${agent.padEnd(12)} ${String(stats.runs).padEnd(6)} $${stats.cost.toFixed(4)}`);
+      }
+
+      lines.push("", "By model:");
+      for (const [model, stats] of [...byModel.entries()].sort((a, b) => b[1].cost - a[1].cost)) {
+        const shortModel = model.length > 40 ? `${model.slice(0, 37)}...` : model;
+        lines.push(`  ${shortModel.padEnd(42)} ${String(stats.runs).padEnd(6)} $${stats.cost.toFixed(4)}`);
+      }
+
+      pi.sendMessage({
+        customType: "pancode-panel",
+        content: lines.join("\n"),
+        display: true,
+        details: { title: "PanCode Cost" },
+      });
+    },
+  });
+
+  pi.registerCommand("dispatch-insights", {
+    description: "Show dispatch analytics and rule evaluation",
+    async handler(_args, _ctx) {
+      if (!ledger) {
+        pi.sendMessage({
+          customType: "pancode-panel",
+          content: "Dispatch ledger not initialized.",
+          display: true,
+          details: { title: "PanCode Dispatch Insights" },
+        });
+        return;
+      }
+
+      const allRuns = ledger.getAll();
+      if (allRuns.length === 0) {
+        pi.sendMessage({
+          customType: "pancode-panel",
+          content: "No dispatch history.",
+          display: true,
+          details: { title: "PanCode Dispatch Insights" },
+        });
+        return;
+      }
+
+      // Aggregate stats
+      const byAgent = new Map<string, { runs: number; ok: number; errored: number; totalMs: number }>();
+      for (const run of allRuns) {
+        const stats = byAgent.get(run.agent) ?? { runs: 0, ok: 0, errored: 0, totalMs: 0 };
+        stats.runs++;
+        if (run.status === "done") stats.ok++;
+        if (run.status === "error") stats.errored++;
+        if (run.completedAt && run.startedAt) {
+          stats.totalMs += new Date(run.completedAt).getTime() - new Date(run.startedAt).getTime();
+        }
+        byAgent.set(run.agent, stats);
+      }
+
+      const lines: string[] = [
+        `Dispatch Insights (${allRuns.length} total runs)`,
+        "",
+        `${"AGENT".padEnd(12)} ${"RUNS".padEnd(6)} ${"OK".padEnd(6)} ${"ERR".padEnd(6)} ${"ERR%".padEnd(8)} AVG TIME`,
+        `${"-----".padEnd(12)} ${"----".padEnd(6)} ${"--".padEnd(6)} ${"---".padEnd(6)} ${"----".padEnd(8)} --------`,
+      ];
+
+      for (const [agent, stats] of [...byAgent.entries()].sort((a, b) => b[1].runs - a[1].runs)) {
+        const errPct = stats.runs > 0 ? ((stats.errored / stats.runs) * 100).toFixed(0) : "0";
+        const avgMs = stats.runs > 0 ? stats.totalMs / stats.runs : 0;
+        const avgStr = avgMs > 60000 ? `${(avgMs / 60000).toFixed(1)}m` : `${(avgMs / 1000).toFixed(1)}s`;
+        lines.push(
+          `${agent.padEnd(12)} ${String(stats.runs).padEnd(6)} ${String(stats.ok).padEnd(6)} ${String(stats.errored).padEnd(6)} ${(errPct + "%").padEnd(8)} ${avgStr}`,
+        );
+      }
+
+      // Recent runs
+      const recent = allRuns.slice(-5);
+      lines.push("", "Last 5 dispatches:");
+      for (const run of recent) {
+        const durationMs = run.completedAt && run.startedAt
+          ? new Date(run.completedAt).getTime() - new Date(run.startedAt).getTime()
+          : 0;
+        const durStr = durationMs > 0 ? ` ${(durationMs / 1000).toFixed(1)}s` : "";
+        const truncatedTask = run.task.length > 40 ? `${run.task.slice(0, 37)}...` : run.task;
+        lines.push(`  [${run.id}] ${run.status.padEnd(9)} ${run.agent.padEnd(8)} ${truncatedTask}${durStr}`);
+      }
+
+      // Active dispatch rules
+      lines.push("", `Active dispatch rules: ${dispatchRules.length}`);
+      for (const rule of dispatchRules.slice(0, 5)) {
+        lines.push(`  ${rule.name}`);
+      }
+
+      pi.sendMessage({
+        customType: "pancode-panel",
+        content: lines.join("\n"),
+        display: true,
+        details: { title: "PanCode Dispatch Insights" },
+      });
     },
   });
 

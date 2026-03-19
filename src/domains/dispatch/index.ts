@@ -4,4 +4,6 @@ export { RunLedger, type RunEnvelope, type RunStatus, type RunUsage } from "./st
 export { registerPreFlightCheck, type PreFlightContext, type PreFlightResult } from "./admission";
 export { initTaskStore, taskWrite, taskCheck, taskUpdate, taskList, taskGet, linkTaskToRun } from "./task-tools";
 export type { PanCodeTask } from "./task-tools";
+export { validateOutput, type OutputContract, type ValidationResult, type ValidationCheck } from "./validation";
+export { dispatchChain, type ChainStep, type ChainResult, type ChainStepResult } from "./primitives";
 
