@@ -17,6 +17,7 @@ interface RunFinishedEvent {
     cacheReadTokens: number;
     cacheWriteTokens: number;
   };
+  runtime: string;
   startedAt: string;
   completedAt: string;
 }
@@ -64,6 +65,7 @@ export const extension = defineExtension((pi) => {
         runId: event.runId,
         agent: event.agent,
         status: event.status,
+        runtime: event.runtime ?? "pi",
         inputTokens: event.usage.inputTokens,
         outputTokens: event.usage.outputTokens,
         cacheReadTokens: event.usage.cacheReadTokens,

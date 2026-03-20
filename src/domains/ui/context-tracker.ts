@@ -1,20 +1,23 @@
 /**
  * Orchestrator context window tracking.
  *
- * Module-level state that records cumulative input token usage from the
- * orchestrator's own message lifecycle events. The footer render function
- * reads getContextPercent() on each repaint to show a live context bar.
+ * Module-level state that records context fill percentage from the Pi SDK's
+ * getContextUsage() API. The footer render function reads getContextPercent()
+ * on each repaint to show a live context bar.
  *
- * The orchestrator's Pi coding agent fires "message_end" events after each
- * assistant turn. Each event's usage.input reflects the cumulative input
- * tokens for that turn (prompt + conversation history). We store the latest
- * value and divide by the model's contextWindow to produce a fill percentage.
+ * Two update paths exist:
+ * 1. recordContextFromSdk(): called from the message_end handler using
+ *    ctx.getContextUsage() which returns { tokens, contextWindow, percent }.
+ *    This is the authoritative source when available.
+ * 2. recordContextUsage(): fallback that accepts raw input tokens and model
+ *    context window. Used when the SDK's getContextUsage() returns undefined.
  */
 
 // ---------------------------------------------------------------------------
 // Module-level state
 // ---------------------------------------------------------------------------
 
+let contextPercent = 0;
 let contextTokens = 0;
 let contextWindow = 0;
 
@@ -23,23 +26,45 @@ let contextWindow = 0;
 // ---------------------------------------------------------------------------
 
 /**
+ * Record context usage from the Pi SDK's getContextUsage() API.
+ * This is the preferred path since the SDK computes the estimate internally.
+ */
+export function recordContextFromSdk(usage: {
+  tokens: number | null;
+  contextWindow: number;
+  percent: number | null;
+}): void {
+  if (usage.percent !== null) {
+    contextPercent = Math.min(100, Math.round(usage.percent));
+  }
+  if (usage.tokens !== null) {
+    contextTokens = usage.tokens;
+  }
+  if (usage.contextWindow > 0) {
+    contextWindow = usage.contextWindow;
+  }
+}
+
+/**
  * Record the latest orchestrator input token count and model context window.
- * Called from the UI extension's "message_end" handler.
+ * Fallback path when ctx.getContextUsage() is not available.
  */
 export function recordContextUsage(inputTokens: number, modelContextWindow: number): void {
   contextTokens = inputTokens;
   if (modelContextWindow > 0) {
     contextWindow = modelContextWindow;
   }
+  if (contextWindow > 0) {
+    contextPercent = Math.min(100, Math.round((contextTokens / contextWindow) * 100));
+  }
 }
 
 /**
  * Get the current context fill percentage (0-100).
- * Returns 0 if the model's context window is unknown.
+ * Returns 0 if context usage is unknown.
  */
 export function getContextPercent(): number {
-  if (contextWindow <= 0) return 0;
-  return Math.min(100, Math.round((contextTokens / contextWindow) * 100));
+  return contextPercent;
 }
 
 /**
@@ -48,4 +73,5 @@ export function getContextPercent(): number {
  */
 export function resetContextTracker(): void {
   contextTokens = 0;
+  contextPercent = 0;
 }

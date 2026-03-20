@@ -125,7 +125,7 @@ export const extension = defineExtension((pi) => {
       }
 
       const routing = resolveWorkerRouting(dispatchAction.agent);
-      const run = createRunEnvelope(task, dispatchAction.agent, ctx.cwd);
+      const run = createRunEnvelope(task, dispatchAction.agent, ctx.cwd, undefined, routing.runtime);
       run.model = routing.model;
       run.status = "running";
       ledger?.add(run);
@@ -207,6 +207,7 @@ export const extension = defineExtension((pi) => {
         agent: run.agent,
         status: run.status,
         usage: run.usage,
+        runtime: run.runtime,
         startedAt: run.startedAt,
         completedAt: run.completedAt ?? new Date().toISOString(),
       });
@@ -289,7 +290,7 @@ export const extension = defineExtension((pi) => {
       const routing = resolveWorkerRouting(agentName);
       const batch = batchTracker.create(tasks.length);
       const runs = tasks.map((task) => {
-        const run = createRunEnvelope(task, agentName, ctx.cwd, batch.id);
+        const run = createRunEnvelope(task, agentName, ctx.cwd, batch.id, routing.runtime);
         run.model = routing.model;
         run.status = "running";
         ledger?.add(run);
@@ -350,6 +351,7 @@ export const extension = defineExtension((pi) => {
           agent: run.agent,
           status: run.status,
           usage: run.usage,
+          runtime: run.runtime,
           startedAt: run.startedAt,
           completedAt: run.completedAt,
         });
@@ -428,7 +430,7 @@ export const extension = defineExtension((pi) => {
         defaultAgent,
         async (task, agent) => {
           const routing = resolveWorkerRouting(agent);
-          const run = createRunEnvelope(task, agent, ctx.cwd);
+          const run = createRunEnvelope(task, agent, ctx.cwd, undefined, routing.runtime);
           run.model = routing.model;
           run.status = "running";
           ledger?.add(run);
@@ -468,6 +470,7 @@ export const extension = defineExtension((pi) => {
             agent: run.agent,
             status: run.status,
             usage: run.usage,
+            runtime: run.runtime,
             startedAt: run.startedAt,
             completedAt: run.completedAt ?? new Date().toISOString(),
           });
@@ -554,6 +557,7 @@ export const extension = defineExtension((pi) => {
         agent: match.agent,
         status: "cancelled",
         usage: match.usage,
+        runtime: match.runtime,
         startedAt: match.startedAt,
         completedAt: match.completedAt,
       });
@@ -589,6 +593,7 @@ export const extension = defineExtension((pi) => {
       let totalCost = 0;
       const byAgent = new Map<string, { runs: number; cost: number }>();
       const byModel = new Map<string, { runs: number; cost: number }>();
+      const byRuntime = new Map<string, { runs: number; cost: number; hasCosts: boolean }>();
 
       for (const run of allRuns) {
         totalCost += run.usage.cost;
@@ -603,10 +608,28 @@ export const extension = defineExtension((pi) => {
         modelStats.runs++;
         modelStats.cost += run.usage.cost;
         byModel.set(modelKey, modelStats);
+
+        const runtimeKey = run.runtime ?? "pi";
+        const runtimeStats = byRuntime.get(runtimeKey) ?? { runs: 0, cost: 0, hasCosts: false };
+        runtimeStats.runs++;
+        runtimeStats.cost += run.usage.cost;
+        if (run.usage.cost > 0) runtimeStats.hasCosts = true;
+        byRuntime.set(runtimeKey, runtimeStats);
       }
 
-      const lines: string[] = [`Total: ${allRuns.length} runs, $${totalCost.toFixed(4)}`, "", "By agent:"];
+      const lines: string[] = [`Total: ${allRuns.length} runs, $${totalCost.toFixed(4)}`, ""];
 
+      lines.push(
+        `${"RUNTIME".padEnd(20)} ${"RUNS".padEnd(6)} COST`,
+        `${"-------".padEnd(20)} ${"----".padEnd(6)} ----`,
+      );
+      for (const [runtime, stats] of [...byRuntime.entries()].sort((a, b) => b[1].cost - a[1].cost)) {
+        // Show real cost for runtimes that report it; show "--" for those that do not
+        const costStr = stats.hasCosts ? `$${stats.cost.toFixed(4)}` : "\u2014";
+        lines.push(`  ${runtime.padEnd(18)} ${String(stats.runs).padEnd(6)} ${costStr}`);
+      }
+
+      lines.push("", "By agent:");
       for (const [agent, stats] of [...byAgent.entries()].sort((a, b) => b[1].cost - a[1].cost)) {
         lines.push(`  ${agent.padEnd(12)} ${String(stats.runs).padEnd(6)} $${stats.cost.toFixed(4)}`);
       }
@@ -615,6 +638,12 @@ export const extension = defineExtension((pi) => {
       for (const [model, stats] of [...byModel.entries()].sort((a, b) => b[1].cost - a[1].cost)) {
         const shortModel = model.length > 40 ? `${model.slice(0, 37)}...` : model;
         lines.push(`  ${shortModel.padEnd(42)} ${String(stats.runs).padEnd(6)} $${stats.cost.toFixed(4)}`);
+      }
+
+      // Note about CLI runtimes that do not report costs
+      const unreported = [...byRuntime.entries()].filter(([_, s]) => !s.hasCosts);
+      if (unreported.length > 0) {
+        lines.push("", "CLI runtimes with \u2014 do not report costs.");
       }
 
       pi.sendMessage({
@@ -650,17 +679,28 @@ export const extension = defineExtension((pi) => {
         return;
       }
 
-      // Aggregate stats
+      // Aggregate stats by agent and runtime
       const byAgent = new Map<string, { runs: number; ok: number; errored: number; totalMs: number }>();
+      const byRuntime = new Map<string, { runs: number; cost: number; totalMs: number; hasCosts: boolean }>();
       for (const run of allRuns) {
-        const stats = byAgent.get(run.agent) ?? { runs: 0, ok: 0, errored: 0, totalMs: 0 };
-        stats.runs++;
-        if (run.status === "done") stats.ok++;
-        if (run.status === "error") stats.errored++;
-        if (run.completedAt && run.startedAt) {
-          stats.totalMs += new Date(run.completedAt).getTime() - new Date(run.startedAt).getTime();
-        }
-        byAgent.set(run.agent, stats);
+        const agentStats = byAgent.get(run.agent) ?? { runs: 0, ok: 0, errored: 0, totalMs: 0 };
+        agentStats.runs++;
+        if (run.status === "done") agentStats.ok++;
+        if (run.status === "error") agentStats.errored++;
+        const dMs =
+          run.completedAt && run.startedAt
+            ? new Date(run.completedAt).getTime() - new Date(run.startedAt).getTime()
+            : 0;
+        agentStats.totalMs += dMs;
+        byAgent.set(run.agent, agentStats);
+
+        const runtimeKey = run.runtime ?? "pi";
+        const rtStats = byRuntime.get(runtimeKey) ?? { runs: 0, cost: 0, totalMs: 0, hasCosts: false };
+        rtStats.runs++;
+        rtStats.cost += run.usage.cost;
+        rtStats.totalMs += dMs;
+        if (run.usage.cost > 0) rtStats.hasCosts = true;
+        byRuntime.set(runtimeKey, rtStats);
       }
 
       const lines: string[] = [
@@ -677,6 +717,18 @@ export const extension = defineExtension((pi) => {
         lines.push(
           `${agent.padEnd(12)} ${String(stats.runs).padEnd(6)} ${String(stats.ok).padEnd(6)} ${String(stats.errored).padEnd(6)} ${`${errPct}%`.padEnd(8)} ${avgStr}`,
         );
+      }
+
+      // Runtime breakdown
+      if (byRuntime.size > 0) {
+        lines.push("", "RUNTIME BREAKDOWN");
+        for (const [runtime, stats] of [...byRuntime.entries()].sort((a, b) => b[1].runs - a[1].runs)) {
+          const runsLabel = stats.runs === 1 ? "1 run " : `${stats.runs} runs`;
+          const costStr = stats.hasCosts ? `$${stats.cost.toFixed(2)}` : "\u2014".padEnd(5);
+          const avgMs = stats.runs > 0 ? stats.totalMs / stats.runs : 0;
+          const avgStr = avgMs > 60000 ? `avg ${(avgMs / 60000).toFixed(1)}m` : `avg ${(avgMs / 1000).toFixed(1)}s`;
+          lines.push(`  ${runtime.padEnd(16)} ${runsLabel.padEnd(8)} ${costStr.padEnd(8)} ${avgStr}`);
+        }
       }
 
       // Recent runs
@@ -735,8 +787,11 @@ export const extension = defineExtension((pi) => {
       } else {
         for (const run of runs) {
           const costStr = run.usage.cost > 0 ? ` $${run.usage.cost.toFixed(4)}` : "";
-          const truncatedTask = run.task.length > 60 ? `${run.task.slice(0, 57)}...` : run.task;
-          lines.push(`[${run.id}] ${run.status.padEnd(9)} ${run.agent.padEnd(10)} ${truncatedTask}${costStr}`);
+          const runtimeLabel = (run.runtime ?? "pi").padEnd(16);
+          const truncatedTask = run.task.length > 50 ? `${run.task.slice(0, 47)}...` : run.task;
+          lines.push(
+            `[${run.id}] ${run.status.padEnd(9)} ${run.agent.padEnd(10)} ${runtimeLabel} ${truncatedTask}${costStr}`,
+          );
         }
       }
 

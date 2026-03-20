@@ -5,6 +5,7 @@ export interface RunMetric {
   runId: string;
   agent: string;
   status: string;
+  runtime: string; // Runtime ID: "pi", "cli:claude-code", "cli:codex", etc.
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;

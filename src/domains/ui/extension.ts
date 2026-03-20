@@ -18,7 +18,7 @@ import { getRunLedger } from "../dispatch";
 import { getMetricsLedger } from "../observability";
 import { type MergedModelProfile, getModelProfileCache } from "../providers";
 import { getBudgetTracker } from "../scheduling";
-import { getContextPercent, recordContextUsage } from "./context-tracker";
+import { getContextPercent, recordContextFromSdk, recordContextUsage } from "./context-tracker";
 import { renderDispatchBoard } from "./dispatch-board";
 import type { AgentStat, BoardColorizer, DispatchCardData } from "./dispatch-board";
 import { renderRunBoard } from "./renderers";
@@ -896,14 +896,20 @@ export const extension = defineExtension((pi) => {
       },
     }));
 
-    // Track orchestrator context window usage from Pi message lifecycle events.
-    // Each "message_end" event from the orchestrator includes cumulative input
-    // token usage. Dividing by the model's contextWindow yields fill percentage.
-    // Only assistant messages carry usage data (UserMessage and ToolResultMessage do not).
+    // Track orchestrator context window usage from Pi SDK's getContextUsage().
+    // Each "message_end" event triggers a read of the SDK's context estimate.
+    // The SDK internally tracks cumulative token usage and model context window.
+    // Falls back to raw message usage if getContextUsage() is unavailable.
     pi.on("message_end", (event, msgCtx) => {
-      const msg = event.message;
-      if (msg && "usage" in msg && msg.role === "assistant" && msgCtx.model?.contextWindow) {
-        recordContextUsage(msg.usage.input ?? 0, msgCtx.model.contextWindow);
+      const sdkUsage = msgCtx.getContextUsage();
+      if (sdkUsage) {
+        recordContextFromSdk(sdkUsage);
+      } else {
+        // Fallback: use raw message usage data
+        const msg = event.message;
+        if (msg && "usage" in msg && msg.role === "assistant" && msgCtx.model?.contextWindow) {
+          recordContextUsage(msg.usage.input ?? 0, msgCtx.model.contextWindow);
+        }
       }
     });
 

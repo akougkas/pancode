@@ -12,6 +12,7 @@ export interface RunEnvelope {
   task: string;
   agent: string;
   model: string | null;
+  runtime: string; // Runtime ID: "pi", "cli:claude-code", "cli:codex", etc.
   status: RunStatus;
   result: string;
   error: string;
@@ -22,12 +23,19 @@ export interface RunEnvelope {
   cwd: string;
 }
 
-export function createRunEnvelope(task: string, agent: string, cwd: string, batchId?: string): RunEnvelope {
+export function createRunEnvelope(
+  task: string,
+  agent: string,
+  cwd: string,
+  batchId?: string,
+  runtime?: string,
+): RunEnvelope {
   return {
     id: randomUUID().slice(0, 8),
     task,
     agent,
     model: null,
+    runtime: runtime ?? "pi",
     status: "pending",
     result: "",
     error: "",

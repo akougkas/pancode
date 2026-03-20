@@ -14,6 +14,7 @@ interface RunFinishedEvent {
     inputTokens: number;
     outputTokens: number;
   };
+  runtime: string;
 }
 
 let budgetTracker: BudgetTracker | null = null;
