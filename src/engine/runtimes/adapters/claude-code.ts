@@ -1,6 +1,9 @@
 import { CliRuntime } from "../cli-base";
 import type { RuntimeResult, RuntimeTaskConfig, SpawnConfig } from "../types";
 
+/** Default maximum agent turns before Claude Code stops. Prevents runaway workers. */
+const DEFAULT_MAX_TURNS = 30;
+
 // ---------------------------------------------------------------------------
 // Claude Code JSON response types
 // ---------------------------------------------------------------------------
@@ -109,9 +112,9 @@ export class ClaudeCodeRuntime extends CliRuntime {
     }
 
     // Turn limit for bounded execution. Prevents runaway workers.
-    // Default: 30 turns. Can be overridden via runtimeArgs.
+    // Can be overridden via runtimeArgs: ["--max-turns", "50"].
     if (!config.runtimeArgs.includes("--max-turns")) {
-      args.push("--max-turns", "30");
+      args.push("--max-turns", String(DEFAULT_MAX_TURNS));
     }
 
     // Pass through any extra runtime args from agent spec

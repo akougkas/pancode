@@ -19,13 +19,14 @@ import {
   resolveThinkingLevelForPreference,
 } from "../../core/thinking";
 import { type ExtensionContext, defineExtension } from "../../engine/extensions";
-import { Container, Text, truncateToWidth, visibleWidth } from "../../engine/tui";
+import { Container, Text, type ThemeColor, truncateToWidth, visibleWidth } from "../../engine/tui";
 import type { Api, Model } from "../../engine/types";
 import { getRunLedger } from "../dispatch";
 import { getMetricsLedger } from "../observability";
 import { type MergedModelProfile, getModelProfileCache } from "../providers";
 import { getBudgetTracker } from "../scheduling";
 import { getContextPercent, recordContextFromSdk, recordContextUsage } from "./context-tracker";
+import { PanCodeEditor } from "./pancode-editor";
 import { renderDispatchBoard } from "./dispatch-board";
 import type { AgentStat, BoardColorizer, DispatchCardData } from "./dispatch-board";
 import { synthesizeOrchestratorPrompt } from "./system-prompt";
@@ -387,6 +388,19 @@ export const extension = defineExtension((pi) => {
   let currentThemeName = process.env.PANCODE_THEME?.trim() || "pancode-dark";
   let currentReasoningPreference = readReasoningPreference();
   let welcomeShown = false;
+  let pancodeEditor: PanCodeEditor | null = null;
+  // Theme reference, captured from ctx.ui.theme during session_start.
+  // Used by updateEditorDisplay() to color mode labels with the proper theme.
+  let themeRef: { fg: (color: ThemeColor, text: string) => string } | null = null;
+
+  function updateEditorDisplay(): void {
+    if (!pancodeEditor || !themeRef) return;
+    const mode = getModeDefinition();
+    const safety = process.env.PANCODE_SAFETY ?? "auto-edit";
+    const color = modeThemeColor(mode);
+    pancodeEditor.setModeDisplay(mode.name, (s) => themeRef!.fg(color, s));
+    pancodeEditor.setSafetyDisplay(safety);
+  }
 
   const emitPanel = (title: string, body: string) => {
     pi.sendMessage({
@@ -430,6 +444,9 @@ export const extension = defineExtension((pi) => {
     persistSettings({ theme: request }, (message, level) => ctx.ui.notify(message, level));
     ctx.ui.setStatus("theme", `Theme: ${request}`);
     ctx.ui.notify(`Theme set to ${request}`, "info");
+    // Refresh theme reference since setTheme creates a new Theme instance.
+    themeRef = ctx.ui.theme;
+    updateEditorDisplay();
   };
 
   const handleModelsCommand = async (args: string, ctx: ExtensionContext) => {
@@ -593,6 +610,7 @@ export const extension = defineExtension((pi) => {
         process.env.PANCODE_SAFETY = value;
         persistSettings({ safetyMode: value }, (message, level) => ctx.ui.notify(message, level));
         ctx.ui.notify(`Safety mode set to ${value}`, "info");
+        updateEditorDisplay();
         return;
       }
       case "worker-model": {
@@ -676,6 +694,7 @@ export const extension = defineExtension((pi) => {
     currentModelLabel = ctx.model ? modelRef(ctx.model) : "no model";
     currentThemeName = ctx.ui.theme.name ?? currentThemeName;
     currentReasoningPreference = readReasoningPreference();
+    themeRef = ctx.ui.theme;
 
     // Surface cross-domain warnings from dispatch and other subsystems in the shell.
     sharedBus.on("pancode:warning", (payload) => {
@@ -912,6 +931,13 @@ export const extension = defineExtension((pi) => {
     ctx.ui.setStatus("mode", `[${initMode.name}]`);
     pi.setActiveTools(getToolsetForMode(initMode.id));
 
+    // Register PanCode custom editor with mode/safety border labels.
+    ctx.ui.setEditorComponent((tui, editorTheme, keybindings) => {
+      pancodeEditor = new PanCodeEditor(tui, editorTheme, keybindings);
+      updateEditorDisplay();
+      return pancodeEditor;
+    });
+
     if (!welcomeShown) {
       welcomeShown = true;
       sendPanel(
@@ -956,6 +982,7 @@ export const extension = defineExtension((pi) => {
       const def = getModeDefinition(newMode);
       ctx.ui.setStatus("mode", `[${def.name}]`);
       ctx.ui.notify(`Mode: ${def.name} -- ${def.description}`, "info");
+      updateEditorDisplay();
     },
   });
 
@@ -1053,6 +1080,7 @@ export const extension = defineExtension((pi) => {
       pi.setActiveTools(getToolsetForMode(target.id));
       ctx.ui.setStatus("mode", `[${target.name}]`);
       ctx.ui.notify(`Mode: ${target.name} -- ${target.description}`, "info");
+      updateEditorDisplay();
     },
   });
 
