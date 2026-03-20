@@ -81,6 +81,35 @@ export function cycleMode(direction: 1 | -1 = 1): OrchestratorMode {
   return currentMode;
 }
 
+/**
+ * Returns the tool names that should be active for a given mode.
+ * Called by the UI extension when mode changes to gate tool visibility.
+ *
+ * Built-in tools: read, bash, grep, find, ls, edit, write
+ * Extension tools: shadow_explore, dispatch_agent, batch_dispatch,
+ *   dispatch_chain, task_write, task_check, task_update, task_list
+ */
+export function getToolsetForMode(mode: OrchestratorMode): string[] {
+  const readonly = ["read", "bash", "grep", "find", "ls"];
+  const mutable = [...readonly, "edit", "write"];
+  const shadow = ["shadow_explore"];
+  const tasks = ["task_write", "task_check", "task_update", "task_list"];
+  const dispatch = ["dispatch_agent", "batch_dispatch", "dispatch_chain"];
+
+  switch (mode) {
+    case "capture":
+      return [...shadow, ...tasks];
+    case "plan":
+      return [...readonly, ...shadow, ...tasks];
+    case "build":
+      return [...mutable, ...shadow, ...tasks, ...dispatch];
+    case "ask":
+      return [...readonly, ...shadow];
+    case "review":
+      return [...readonly, ...shadow, ...dispatch];
+  }
+}
+
 export function getModeDefinition(mode?: OrchestratorMode): ModeDefinition {
   const target = mode ?? currentMode;
   const definition = MODE_DEFINITIONS.find((m) => m.id === target);

@@ -1,5 +1,12 @@
 import { DEFAULT_REASONING_PREFERENCE } from "../../core/defaults";
-import { MODE_DEFINITIONS, type ModeDefinition, cycleMode, getModeDefinition, setCurrentMode } from "../../core/modes";
+import {
+  MODE_DEFINITIONS,
+  type ModeDefinition,
+  cycleMode,
+  getModeDefinition,
+  getToolsetForMode,
+  setCurrentMode,
+} from "../../core/modes";
 import { updatePanCodeSettings } from "../../core/settings-state";
 import { sharedBus } from "../../core/shared-bus";
 import { PANCODE_PRODUCT_NAME, formatCategorizedHelp } from "../../core/shell-metadata";
@@ -920,9 +927,10 @@ export const extension = defineExtension((pi) => {
       trackWorkerEnd(event.runId, event.status);
     });
 
-    // Set initial mode status
+    // Set initial mode status and gate tools to match the active mode.
     const initMode = getModeDefinition();
     ctx.ui.setStatus("mode", `[${initMode.name}]`);
+    pi.setActiveTools(getToolsetForMode(initMode.id));
 
     if (!welcomeShown) {
       welcomeShown = true;
@@ -964,6 +972,7 @@ export const extension = defineExtension((pi) => {
     description: "Cycle orchestrator mode",
     handler: async (ctx) => {
       const newMode = cycleMode();
+      pi.setActiveTools(getToolsetForMode(newMode));
       const def = getModeDefinition(newMode);
       ctx.ui.setStatus("mode", `[${def.name}]`);
       ctx.ui.notify(`Mode: ${def.name} -- ${def.description}`, "info");
@@ -1076,6 +1085,7 @@ export const extension = defineExtension((pi) => {
       }
 
       setCurrentMode(target.id);
+      pi.setActiveTools(getToolsetForMode(target.id));
       ctx.ui.setStatus("mode", `[${target.name}]`);
       ctx.ui.notify(`Mode: ${target.name} -- ${target.description}`, "info");
     },
