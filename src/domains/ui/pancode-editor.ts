@@ -1,16 +1,18 @@
-import { CustomEditor, visibleWidth } from "../../engine/tui";
+import { CustomEditor, truncateToWidth, visibleWidth } from "../../engine/tui";
 
 /** Minimum terminal width for label injection. Below this, plain borders are used. */
 const MIN_LABEL_WIDTH = 40;
 
 /**
- * PanCode custom editor that displays mode and safety labels on the border lines.
+ * PanCode custom editor with mode and safety labels on border lines.
+ *
+ * Follows the Pi SDK modal-editor pattern: call super.render(), then minimally
+ * modify the first and last lines by truncating from the right and appending
+ * labels. This preserves the editor's internal ANSI styling, scroll indicators,
+ * cursor markers, and accessibility properties.
  *
  * Top border:  ───────────────────────────────── Build ──
- * Bottom border: ── auto-edit ────────────────── shift+tab ──
- *
- * Border color follows the active mode's theme color. Labels update
- * dynamically on mode switch, safety change, and theme change.
+ * Bottom border: ──────────────────── auto-edit  shift+tab ──
  */
 export class PanCodeEditor extends CustomEditor {
   private modeLabel = "Build";
@@ -20,72 +22,33 @@ export class PanCodeEditor extends CustomEditor {
   setModeDisplay(label: string, colorFn: (s: string) => string): void {
     this.modeLabel = label;
     this.modeColorFn = colorFn;
-    this.invalidate();
   }
 
   setSafetyDisplay(label: string): void {
     this.safetyLabel = label;
-    this.invalidate();
   }
 
   render(width: number): string[] {
     const lines = super.render(width);
-    // Need at least 2 lines (top border + bottom border) to inject labels.
-    // Skip label injection for very narrow terminals.
     if (lines.length < 2 || width < MIN_LABEL_WIDTH) return lines;
 
-    lines[0] = this.buildTopBorder(width);
-    lines[lines.length - 1] = this.buildBottomBorder(width);
+    // Top border: truncate existing border from right, append mode label.
+    // Preserves scroll indicators ("─── ↑ 3 more") on the left side.
+    const modeTag = ` ${this.modeColorFn(` ${this.modeLabel} `)}${this.borderColor("──")}`;
+    const modeTagWidth = visibleWidth(` ${this.modeLabel} `) + 2;
+    if (visibleWidth(lines[0]) >= modeTagWidth) {
+      lines[0] = truncateToWidth(lines[0], width - modeTagWidth, "") + modeTag;
+    }
+
+    // Bottom border: truncate existing border from right, append safety + hint.
+    // Preserves scroll indicators ("─── ↓ 5 more") on the left side.
+    const bottomIdx = lines.length - 1;
+    const safetyTag = ` ${this.modeColorFn(this.safetyLabel)}  ${this.borderColor("shift+tab ──")}`;
+    const safetyTagWidth = visibleWidth(this.safetyLabel) + visibleWidth("  shift+tab ──") + 1;
+    if (visibleWidth(lines[bottomIdx]) >= safetyTagWidth) {
+      lines[bottomIdx] = truncateToWidth(lines[bottomIdx], width - safetyTagWidth, "") + safetyTag;
+    }
 
     return lines;
-  }
-
-  /**
-   * Build top border with mode label on the right.
-   * Format: ───────────────────────────────── Build ──
-   *
-   * All border characters are colored via this.borderColor (from the EditorTheme).
-   * The mode label is colored via the mode's theme color function.
-   */
-  private buildTopBorder(width: number): string {
-    const label = ` ${this.modeLabel} `;
-    const labelVisible = visibleWidth(label);
-    const suffixStr = "──";
-    const suffixLen = 2;
-    const fillLen = Math.max(0, width - labelVisible - suffixLen);
-
-    // Build the fill as a single string of box-drawing chars, then color once.
-    // Do NOT repeat a pre-colored string (which would duplicate ANSI escapes).
-    const fill = this.borderColor("─".repeat(fillLen));
-    const coloredLabel = this.modeColorFn(label);
-    const suffix = this.borderColor(suffixStr);
-
-    return `${fill}${coloredLabel}${suffix}`;
-  }
-
-  /**
-   * Build bottom border with safety label left and key hint right.
-   * Format: ── auto-edit ────────────────── shift+tab ──
-   */
-  private buildBottomBorder(width: number): string {
-    const prefixStr = "── ";
-    const prefixLen = 3;
-    const safetyText = `${this.safetyLabel} `;
-    const safetyVisible = visibleWidth(safetyText);
-    const hintStr = " shift+tab ";
-    const hintVisible = visibleWidth(hintStr);
-    const suffixStr = "──";
-    const suffixLen = 2;
-
-    const usedWidth = prefixLen + safetyVisible + hintVisible + suffixLen;
-    const fillLen = Math.max(0, width - usedWidth);
-
-    const prefix = this.borderColor(prefixStr);
-    const coloredSafety = this.modeColorFn(safetyText);
-    const fill = this.borderColor("─".repeat(fillLen));
-    const hint = this.borderColor(hintStr);
-    const suffix = this.borderColor(suffixStr);
-
-    return `${prefix}${coloredSafety}${fill}${hint}${suffix}`;
   }
 }
