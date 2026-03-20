@@ -1,8 +1,12 @@
+import type { SafetyLevel } from "../../core/config";
 import { isSafetyLevel } from "../../core/config-validator";
 import { DEFAULT_REASONING_PREFERENCE, DEFAULT_SAFETY, DEFAULT_THEME } from "../../core/defaults";
 import {
   MODE_DEFINITIONS,
+  MODE_ORDER,
   type ModeDefinition,
+  type OrchestratorMode,
+  getCurrentMode,
   getModeDefinition,
   getToolsetForMode,
   setCurrentMode,
@@ -19,15 +23,16 @@ import {
   resolveThinkingLevelForPreference,
 } from "../../core/thinking";
 import { type ExtensionContext, defineExtension } from "../../engine/extensions";
-import { Container, Text, truncateToWidth, visibleWidth } from "../../engine/tui";
+import { Container, Text, type ThemeColor, truncateToWidth, visibleWidth } from "../../engine/tui";
 import type { Api, Model } from "../../engine/types";
-import { getRunLedger } from "../dispatch";
+import { getRunLedger, taskList } from "../dispatch";
 import { getMetricsLedger } from "../observability";
 import { type MergedModelProfile, getModelProfileCache } from "../providers";
 import { getBudgetTracker } from "../scheduling";
 import { getContextPercent, recordContextFromSdk, recordContextUsage } from "./context-tracker";
 import { renderDispatchBoard } from "./dispatch-board";
 import type { AgentStat, BoardColorizer, DispatchCardData } from "./dispatch-board";
+import { PanCodeEditor } from "./pancode-editor";
 import { synthesizeOrchestratorPrompt } from "./system-prompt";
 import { extractResultSummary } from "./widget-utils";
 import {
@@ -386,6 +391,37 @@ export const extension = defineExtension((pi) => {
   let currentThemeName = process.env.PANCODE_THEME?.trim() || DEFAULT_THEME;
   let currentReasoningPreference = readReasoningPreference();
   let welcomeShown = false;
+  let pancodeEditor: PanCodeEditor | null = null;
+  let themeFg: (color: ThemeColor, text: string) => string = (_c, t) => t;
+
+  const SAFETY_CYCLE: SafetyLevel[] = ["suggest", "auto-edit", "full-auto"];
+
+  function cycleSafety(): SafetyLevel {
+    const current = (process.env.PANCODE_SAFETY ?? DEFAULT_SAFETY) as SafetyLevel;
+    const idx = SAFETY_CYCLE.indexOf(current);
+    return SAFETY_CYCLE[(idx + 1) % SAFETY_CYCLE.length];
+  }
+
+  function cycleModeTo(): ModeDefinition {
+    const current = getCurrentMode();
+    const idx = MODE_ORDER.indexOf(current);
+    const next = MODE_ORDER[(idx + 1) % MODE_ORDER.length];
+    setCurrentMode(next);
+    pi.setActiveTools(getToolsetForMode(next));
+    return getModeDefinition(next);
+  }
+
+  function syncEditorDisplay(): void {
+    if (!pancodeEditor) return;
+    const mode = getModeDefinition();
+    const safety = process.env.PANCODE_SAFETY ?? DEFAULT_SAFETY;
+    const color = modeThemeColor(mode);
+    pancodeEditor.setModeDisplay(mode.name, (s) => themeFg(color, s));
+    pancodeEditor.setSafetyDisplay(safety);
+    pancodeEditor.setModelDisplay(currentModelLabel);
+    pancodeEditor.setReasoningDisplay(pi.getThinkingLevel() || "off");
+  }
+
   const emitPanel = (title: string, body: string) => {
     pi.sendMessage({
       customType: "pancode-panel",
@@ -428,6 +464,8 @@ export const extension = defineExtension((pi) => {
     persistSettings({ theme: request }, (message, level) => ctx.ui.notify(message, level));
     ctx.ui.setStatus("theme", `Theme: ${request}`);
     ctx.ui.notify(`Theme set to ${request}`, "info");
+    themeFg = (color, text) => ctx.ui.theme.fg(color, text);
+    syncEditorDisplay();
   };
 
   const handleModelsCommand = async (args: string, ctx: ExtensionContext) => {
@@ -821,55 +859,88 @@ export const extension = defineExtension((pi) => {
       };
     });
 
-    // Dispatch-aware footer with selective coloring for visual hierarchy.
-    // Suppresses zero-value data to keep the footer clean for local models.
+    // Three-section footer: path/git | context/memory | dispatch/tasks
+    // Uses Unicode symbols for density. Mode color accents key indicators.
+    let cachedGitBranch = "";
+    try {
+      const { execSync } = require("node:child_process");
+      cachedGitBranch = execSync("git rev-parse --abbrev-ref HEAD 2>/dev/null", {
+        cwd: ctx.cwd,
+        encoding: "utf-8",
+        timeout: 1000,
+      }).trim();
+    } catch {
+      cachedGitBranch = "";
+    }
+    const shortCwd = ctx.cwd.replace(process.env.HOME ?? "", "~");
+
     ctx.ui.setFooter((_tui, theme, _footerData) => ({
       invalidate() {},
       render(width) {
+        const modeInfo = getModeDefinition();
+        const mc = modeThemeColor(modeInfo);
+        const sep = theme.fg("dim", " \u2502 ");
+        const sepW = 3;
+
+        // === LEFT: path + git branch ===
+        const branchIcon = cachedGitBranch ? theme.fg("muted", `\u16B4 ${cachedGitBranch}`) : "";
+        const branchW = cachedGitBranch ? cachedGitBranch.length + 2 : 0;
+        const pathBudget = Math.max(8, Math.floor(width * 0.3) - branchW - sepW);
+        const pathStr = theme.fg("dim", truncateToWidth(shortCwd, pathBudget, "\u2026"));
+        const leftParts = [pathStr];
+        if (branchIcon) leftParts.push(branchIcon);
+        const left = leftParts.join(theme.fg("dim", " "));
+
+        // === MIDDLE: context gauge + token stats ===
+        const contextPercent = getContextPercent();
+        const pct = Math.round(contextPercent);
+        // Quarter-block gauge: \u2591 light, \u2593 dark
+        const gaugeLen = 8;
+        const filled = Math.round((pct / 100) * gaugeLen);
+        const gauge = theme.fg(mc, "\u2593".repeat(filled)) + theme.fg("dim", "\u2591".repeat(gaugeLen - filled));
+        const ctxLabel = pct > 0 ? theme.fg("muted", ` ${pct}%`) : theme.fg("dim", " 0%");
+        const mid = gauge + ctxLabel;
+
+        // === RIGHT: activity + runs + tasks + cost ===
         const liveWorkers = getLiveWorkers();
         const activeCount = liveWorkers.filter((w) => w.status === "running").length;
-        const budget = getBudgetTracker();
-        const budgetState = budget?.getState();
         const ledger = getRunLedger();
-        const contextPercent = getContextPercent();
+        const budget = getBudgetTracker();
         const totalRuns = ledger?.getAll().length ?? 0;
-        const totalCost = budgetState?.totalCost ?? 0;
-        const ceiling = budgetState?.ceiling ?? null;
+        const totalCost = budget?.getState().totalCost ?? 0;
+        const allTasks = taskList();
+        const doneTasks = allTasks.filter((t) => t.status === "done").length;
 
-        // Left: mode (colored) + model (accent) + reasoning (dim) + activity
-        const modeInfo = getModeDefinition();
-        const modePart = theme.fg(modeThemeColor(modeInfo), `[${modeInfo.name}]`);
-        const modelPart = theme.fg("accent", ` ${currentModelLabel}`);
-        const thinkingLevel = pi.getThinkingLevel();
-        const reasoningPart = thinkingLevel === "off" ? "" : theme.fg("dim", ` ${thinkingLevel}`);
-        const activityIcon = activeCount > 0 ? theme.fg("accent", " \u25CF") : theme.fg("dim", " \u25CB");
-        const activityText = activeCount > 0 ? theme.fg("muted", ` ${activeCount} active`) : theme.fg("dim", " idle");
-        const left = modePart + modelPart + reasoningPart + activityIcon + activityText;
-
-        // Right: build conditionally, suppress zero-value noise
         const rightParts: string[] = [];
-        if (totalRuns > 0) rightParts.push(theme.fg("muted", `${totalRuns} runs`));
-        if (totalCost > 0) {
-          const budgetStr =
-            ceiling !== null ? `$${totalCost.toFixed(2)}/$${ceiling.toFixed(2)}` : `$${totalCost.toFixed(2)}`;
-          rightParts.push(theme.fg("muted", budgetStr));
+        // Activity: filled circle when active, empty when idle
+        if (activeCount > 0) {
+          rightParts.push(theme.fg(mc, `\u25CF ${activeCount}`));
+        } else {
+          rightParts.push(theme.fg("dim", "\u25CB"));
         }
-        if (contextPercent > 0) {
-          const ctxFilled = Math.round(contextPercent / 10);
-          const ctxBar =
-            theme.fg("dim", "[") +
-            theme.fg("accent", "#".repeat(ctxFilled)) +
-            theme.fg("dim", "-".repeat(10 - ctxFilled)) +
-            theme.fg("dim", "]") +
-            theme.fg("muted", ` ${Math.round(contextPercent)}%`);
-          rightParts.push(ctxBar);
-        }
+        if (totalRuns > 0) rightParts.push(theme.fg("muted", `${totalRuns}r`));
+        if (allTasks.length > 0) rightParts.push(theme.fg("muted", `t:${doneTasks}/${allTasks.length}`));
+        if (totalCost > 0) rightParts.push(theme.fg("muted", `$${totalCost.toFixed(2)}`));
+        const right = rightParts.join(theme.fg("dim", " "));
 
-        const right = rightParts.length > 0 ? `${rightParts.join(theme.fg("dim", "  "))} ` : "";
+        // Compose: left | middle | right
         const leftW = visibleWidth(left);
+        const midW = visibleWidth(mid);
         const rightW = visibleWidth(right);
-        const pad = " ".repeat(Math.max(1, width - leftW - rightW));
-        return [truncateToWidth(left + pad + right, width)];
+        const totalContentW = leftW + midW + rightW + sepW * 2;
+
+        if (totalContentW + 2 <= width) {
+          // Full three-section layout
+          const slack = width - totalContentW;
+          const padL = " ".repeat(Math.floor(slack / 2));
+          const padR = " ".repeat(slack - Math.floor(slack / 2));
+          return [truncateToWidth(left + sep + padL + mid + padR + sep + right, width)];
+        }
+        // Narrow fallback: just mode + activity
+        const narrow =
+          theme.fg(mc, `[${modeInfo.name}]`) +
+          (activeCount > 0 ? theme.fg(mc, ` \u25CF ${activeCount}`) : theme.fg("dim", " \u25CB idle"));
+        return [truncateToWidth(narrow, width)];
       },
     }));
 
@@ -911,6 +982,28 @@ export const extension = defineExtension((pi) => {
     ctx.ui.setStatus("mode", `[${initMode.name}]`);
     pi.setActiveTools(getToolsetForMode(initMode.id));
 
+    // Register PanCode editor. Extends Pi SDK's default editor with mode/safety
+    // labels on the border lines. After Pi SDK copies action handlers to our editor,
+    // remove cycleThinkingLevel so shift+tab is exclusively for PanCode mode cycling.
+    themeFg = (color, text) => ctx.ui.theme.fg(color, text);
+    ctx.ui.setEditorComponent((tui, editorTheme, keybindings) => {
+      pancodeEditor = new PanCodeEditor(tui, editorTheme, keybindings);
+      return pancodeEditor;
+    });
+    if (pancodeEditor) {
+      // Replace Pi SDK's shift+tab (cycleThinkingLevel) with PanCode mode cycling.
+      // The actionHandlers map is keyed by AppAction strings. We replace the handler
+      // rather than delete it, so shift+tab still routes through the keybinding system.
+      const handlers = pancodeEditor.actionHandlers as Map<string, () => void>;
+      handlers.set("cycleThinkingLevel", () => {
+        const def = cycleModeTo();
+        ctx.ui.setStatus("mode", `[${def.name}]`);
+        ctx.ui.notify(`Mode: ${def.name} -- ${def.description}`, "info");
+        syncEditorDisplay();
+      });
+    }
+    syncEditorDisplay();
+
     if (!welcomeShown) {
       welcomeShown = true;
       sendPanel(
@@ -944,6 +1037,23 @@ export const extension = defineExtension((pi) => {
       },
       (message, level) => ctx.ui.notify(message, level),
     );
+    syncEditorDisplay();
+  });
+
+  // === PanCode keyboard shortcuts ===
+  // shift+tab: mode cycling is handled via editor actionHandlers replacement
+  // in session_start above (replaces Pi SDK's cycleThinkingLevel handler).
+
+  // ctrl+y: cycle safety level (suggest, auto-edit, full-auto).
+  pi.registerShortcut("ctrl+y", {
+    description: "Cycle safety level (suggest, auto-edit, full-auto)",
+    handler: async (ctx) => {
+      const next = cycleSafety();
+      process.env.PANCODE_SAFETY = next;
+      persistSettings({ safetyMode: next }, (message, level) => ctx.ui.notify(message, level));
+      ctx.ui.notify(`Safety: ${next}`, "info");
+      syncEditorDisplay();
+    },
   });
 
   // === Orchestrator identity and mode behavior via system prompt synthesis ===
@@ -1040,6 +1150,7 @@ export const extension = defineExtension((pi) => {
       pi.setActiveTools(getToolsetForMode(target.id));
       ctx.ui.setStatus("mode", `[${target.name}]`);
       ctx.ui.notify(`Mode: ${target.name} -- ${target.description}`, "info");
+      syncEditorDisplay();
     },
   });
 
