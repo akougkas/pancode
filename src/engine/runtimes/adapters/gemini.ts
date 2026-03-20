@@ -2,14 +2,23 @@ import { CliRuntime } from "../cli-base";
 import type { RuntimeTaskConfig } from "../types";
 
 /**
- * Gemini CLI runtime adapter.
+ * Gemini CLI runtime adapter (Bronze Tier).
  *
  * Invocation: gemini -p "task"
+ *
+ * Bronze tier: plain text output only. No structured JSON output, no usage
+ * tracking. Result text is extracted from stdout; token counts and cost are
+ * reported as zeros.
  *
  * Features:
  * - --yolo for write-capable agents (suppresses confirmation prompts)
  * - Plain text output by default
  * - No tool restriction API
+ *
+ * TODO: Gemini CLI does not currently expose a --output-format json or --json
+ * flag for structured output. When structured output support is added upstream,
+ * upgrade this adapter to silver tier by parsing token usage and cost from the
+ * JSON response. Check `gemini --help` for new flags periodically.
  */
 export class GeminiRuntime extends CliRuntime {
   readonly id = "cli:gemini";
