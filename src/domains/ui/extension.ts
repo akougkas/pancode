@@ -27,9 +27,9 @@ import { getMetricsLedger } from "../observability";
 import { type MergedModelProfile, getModelProfileCache } from "../providers";
 import { getBudgetTracker } from "../scheduling";
 import { getContextPercent, recordContextFromSdk, recordContextUsage } from "./context-tracker";
-import { PanCodeEditor } from "./pancode-editor";
 import { renderDispatchBoard } from "./dispatch-board";
 import type { AgentStat, BoardColorizer, DispatchCardData } from "./dispatch-board";
+import { PanCodeEditor } from "./pancode-editor";
 import { synthesizeOrchestratorPrompt } from "./system-prompt";
 import { extractResultSummary } from "./widget-utils";
 import {
@@ -383,7 +383,6 @@ function modeThemeColor(mode: ModeDefinition): "accent" | "success" | "warning" 
   }
 }
 
-
 export const extension = defineExtension((pi) => {
   let currentModelLabel = "no model";
   let currentThemeName = process.env.PANCODE_THEME?.trim() || DEFAULT_THEME;
@@ -399,7 +398,7 @@ export const extension = defineExtension((pi) => {
     const mode = getModeDefinition();
     const safety = process.env.PANCODE_SAFETY ?? DEFAULT_SAFETY;
     const color = modeThemeColor(mode);
-    pancodeEditor.setModeDisplay(mode.name, (s) => themeRef!.fg(color, s));
+    pancodeEditor.setModeDisplay(mode.name, (s) => themeRef?.fg(color, s) ?? s);
     pancodeEditor.setSafetyDisplay(safety);
   }
 

@@ -90,7 +90,10 @@ export class GeminiRuntime extends CliRuntime {
     if (config.readonly) {
       // Read-only agents: allow only read-oriented tools without confirmation.
       // ShellTool with read-only patterns avoids accidental writes.
-      args.push("--allowed-tools", "ReadFile,ListDirectory,SearchFile,ShellTool(git status),ShellTool(git diff),ShellTool(git log)");
+      args.push(
+        "--allowed-tools",
+        "ReadFile,ListDirectory,SearchFile,ShellTool(git status),ShellTool(git diff),ShellTool(git log)",
+      );
     } else {
       args.push("--yolo");
     }
