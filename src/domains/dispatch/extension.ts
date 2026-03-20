@@ -419,6 +419,19 @@ export const extension = defineExtension((pi) => {
         return textResult(`Chain dispatch is disabled in ${mode.name} mode. Switch to Build mode.`);
       }
 
+      // In modes without mutations, verify all chain steps use readonly agents
+      if (!mode.mutationsAllowed) {
+        for (const step of params.steps) {
+          const stepAgent = step.agent || defaultAgent;
+          const spec = agentRegistry.get(stepAgent);
+          if (spec && !spec.readonly) {
+            return textResult(
+              `Agent "${stepAgent}" is not readonly. ${mode.name} mode only allows readonly agents. Use reviewer.`,
+            );
+          }
+        }
+      }
+
       if (draining) {
         return textResult("Chain dispatch blocked: system is shutting down.");
       }
