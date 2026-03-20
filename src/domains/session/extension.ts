@@ -61,9 +61,11 @@ export const extension = defineExtension((pi) => {
     // Sync board to pick up entries left by workers from a previous session.
     sharedBoard.sync();
 
-    console.error(
-      `[pancode:session] Coordination ready. Context: ${contextRegistry.size()} entries, Board: ${sharedBoard.size()} entries`,
-    );
+    if (process.env.PANCODE_VERBOSE) {
+      console.error(
+        `[pancode:session] Coordination ready. Context: ${contextRegistry.size()} entries, Board: ${sharedBoard.size()} entries`,
+      );
+    }
 
     // Listen for session reset events from shell-overrides (/new command).
     sharedBus.on("pancode:session-reset", () => {
@@ -89,7 +91,9 @@ export const extension = defineExtension((pi) => {
 
   pi.on("session_shutdown", async () => {
     if (sharedBoard) sharedBoard.persist();
-    console.error("[pancode:session] Session shutdown. Board persisted.");
+    if (process.env.PANCODE_VERBOSE) {
+      console.error("[pancode:session] Session shutdown. Board persisted.");
+    }
   });
 
   // === /session: Show Pi session info + PanCode domain state summary ===

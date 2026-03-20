@@ -43,11 +43,13 @@ export const extension = defineExtension((pi) => {
     // Load YAML safety rules (Layer 2)
     const packageRoot = process.env.PANCODE_PACKAGE_ROOT ?? process.cwd();
     yamlRules = loadSafetyRules(packageRoot);
-    console.error(
-      `[pancode:safety] Mode: ${autonomyMode}. YAML rules: ${yamlRules.bashPatterns.length} bash patterns, ` +
-        `${yamlRules.zeroAccessPaths.length} zero-access, ${yamlRules.readOnlyPaths.length} read-only, ` +
-        `${yamlRules.noDeletePaths.length} no-delete paths.`,
-    );
+    if (process.env.PANCODE_VERBOSE) {
+      console.error(
+        `[pancode:safety] Mode: ${autonomyMode}. YAML rules: ${yamlRules.bashPatterns.length} bash patterns, ` +
+          `${yamlRules.zeroAccessPaths.length} zero-access, ${yamlRules.readOnlyPaths.length} read-only, ` +
+          `${yamlRules.noDeletePaths.length} no-delete paths.`,
+      );
+    }
 
     // Subscribe to run-finished events for loop detection
     sharedBus.on("pancode:run-finished", (raw: unknown) => {

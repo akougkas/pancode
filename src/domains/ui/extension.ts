@@ -21,8 +21,7 @@ import { getBudgetTracker } from "../scheduling";
 import { getContextPercent, recordContextFromSdk, recordContextUsage } from "./context-tracker";
 import { renderDispatchBoard } from "./dispatch-board";
 import type { AgentStat, BoardColorizer, DispatchCardData } from "./dispatch-board";
-import { renderRunBoard } from "./renderers";
-import { buildTaskWidget, renderTaskWidget } from "./tasks";
+import { extractResultSummary } from "./widget-utils";
 import {
   getLiveWorkers,
   resetAll as resetLiveWorkers,
@@ -59,17 +58,11 @@ function buildDashboardLines(input: {
   modeName?: string;
   modeDescription?: string;
 }): string[] {
-  const modeStr = input.modeName ? `Mode: ${input.modeName} (${input.modeDescription ?? ""})` : null;
+  const mode = input.modeName ?? "Build";
   return [
-    `${PANCODE_PRODUCT_NAME} shell is active.`,
-    ...(modeStr ? [modeStr] : []),
-    `Model: ${input.modelLabel}`,
-    `Reasoning: ${input.reasoningPreference} | capability: ${input.reasoningCapability} | applied: ${input.effectiveThinkingLevel}`,
-    `Theme: ${input.themeName}`,
-    `Working directory: ${input.workingDirectory}`,
-    `Tools: ${input.tools.join(", ") || "(none)"}`,
+    `${mode}  ${input.modelLabel}  ${input.workingDirectory}`,
     "",
-    "Type /help for all commands.",
+    "  /help  /models  /mode  /settings  /reasoning",
   ];
 }
 
@@ -662,42 +655,25 @@ export const extension = defineExtension((pi) => {
         modeName: dashMode.name,
         modeDescription: dashMode.description,
       }),
-      "",
-      `Safety: ${process.env.PANCODE_SAFETY ?? "auto-edit"}`,
-      `Domains: ${process.env.PANCODE_ENABLED_DOMAINS ?? "unknown"}`,
     ];
 
-    // Wire run board
+    // Compact session summary: runs, cost (if nonzero), active count
     const ledger = getRunLedger();
-    if (ledger) {
-      const recentRuns = ledger.getRecent(5);
-      if (recentRuns.length > 0) {
-        lines.push("", "Recent runs:");
-        lines.push(...renderRunBoard(recentRuns));
-      }
-
-      const widget = buildTaskWidget(ledger.getAll());
-      const widgetLines = renderTaskWidget(widget);
-      if (widget.activeRuns.length > 0 || widget.completedRuns > 0) {
-        lines.push("", "Tasks:");
-        lines.push(...widgetLines);
-      }
-    }
-
-    // Wire metrics
     const metrics = getMetricsLedger();
-    if (metrics) {
-      const summary = metrics.getSummary();
-      if (summary.totalRuns > 0) {
-        lines.push("", `Session cost: $${summary.totalCost.toFixed(4)} across ${summary.totalRuns} dispatches`);
-      }
-    }
-
-    // Wire budget
     const budget = getBudgetTracker();
-    if (budget) {
-      const state = budget.getState();
-      lines.push(`Budget: $${state.totalCost.toFixed(4)} / $${state.ceiling.toFixed(2)}`);
+    const summary = metrics?.getSummary();
+    const allRuns = ledger?.getAll() ?? [];
+    const activeCount = allRuns.filter((r) => r.status === "running").length;
+
+    if (allRuns.length > 0) {
+      const parts: string[] = [`${allRuns.length} dispatches`];
+      if (activeCount > 0) parts.push(`${activeCount} active`);
+      if (summary && summary.totalCost > 0) parts.push(`$${summary.totalCost.toFixed(4)} spent`);
+      if (budget) {
+        const state = budget.getState();
+        if (state.totalCost > 0) parts.push(`$${state.ceiling.toFixed(2)} ceiling`);
+      }
+      lines.push("", `Session: ${parts.join("  ")}`);
     }
 
     sendPanel(emitPanel, `${PANCODE_PRODUCT_NAME} Dashboard`, lines);
@@ -722,7 +698,8 @@ export const extension = defineExtension((pi) => {
       invalidate() {},
       render(width) {
         const left = `${theme.fg("accent", PANCODE_PRODUCT_NAME)} ${theme.fg("muted", process.env.PANCODE_PROFILE ?? "standard")}`;
-        const right = theme.fg("dim", process.env.PANCODE_SAFETY ?? "auto-edit");
+        const modeInfo = getModeDefinition();
+        const right = `${theme.fg("dim", process.env.PANCODE_SAFETY ?? "auto-edit")}  ${theme.fg(modeThemeColor(modeInfo), modeInfo.name)}`;
         return [composeSingleLine(left, right, width)];
       },
     }));
@@ -790,6 +767,7 @@ export const extension = defineExtension((pi) => {
               elapsedMs: r.completedAt ? new Date(r.completedAt).getTime() - new Date(r.startedAt).getTime() : 0,
               model: r.model,
               taskPreview: r.task,
+              resultPreview: r.result ? extractResultSummary(r.result) : undefined,
               runId: r.id,
               batchId: r.batchId,
               cost: r.usage.cost > 0 ? r.usage.cost : undefined,
@@ -854,8 +832,7 @@ export const extension = defineExtension((pi) => {
     });
 
     // Dispatch-aware footer with selective coloring for visual hierarchy.
-    // Model label in accent, activity dot uses accent/dim, stats are muted,
-    // context bar uses accent for filled portions and dim for empty.
+    // Suppresses zero-value data to keep the footer clean for local models.
     ctx.ui.setFooter((_tui, theme, _footerData) => ({
       invalidate() {},
       render(width) {
@@ -877,18 +854,26 @@ export const extension = defineExtension((pi) => {
         const activityText = activeCount > 0 ? theme.fg("muted", ` ${activeCount} active`) : theme.fg("dim", " idle");
         const left = modePart + modelPart + activityIcon + activityText;
 
-        // Right: runs, budget, context bar
-        const ctxFilled = Math.round(contextPercent / 10);
-        const ctxBar = theme.fg("accent", "#".repeat(ctxFilled)) + theme.fg("dim", "-".repeat(10 - ctxFilled));
-        const budgetStr =
-          ceiling !== null ? `$${totalCost.toFixed(2)}/$${ceiling.toFixed(2)}` : `$${totalCost.toFixed(2)}`;
-        const right =
-          theme.fg("muted", `Runs: ${totalRuns}  ${budgetStr}  `) +
-          theme.fg("dim", "[") +
-          ctxBar +
-          theme.fg("dim", "]") +
-          theme.fg("muted", ` ${Math.round(contextPercent)}% `);
+        // Right: build conditionally, suppress zero-value noise
+        const rightParts: string[] = [];
+        if (totalRuns > 0) rightParts.push(theme.fg("muted", `${totalRuns} runs`));
+        if (totalCost > 0) {
+          const budgetStr =
+            ceiling !== null ? `$${totalCost.toFixed(2)}/$${ceiling.toFixed(2)}` : `$${totalCost.toFixed(2)}`;
+          rightParts.push(theme.fg("muted", budgetStr));
+        }
+        if (contextPercent > 0) {
+          const ctxFilled = Math.round(contextPercent / 10);
+          const ctxBar =
+            theme.fg("dim", "[") +
+            theme.fg("accent", "#".repeat(ctxFilled)) +
+            theme.fg("dim", "-".repeat(10 - ctxFilled)) +
+            theme.fg("dim", "]") +
+            theme.fg("muted", ` ${Math.round(contextPercent)}%`);
+          rightParts.push(ctxBar);
+        }
 
+        const right = rightParts.length > 0 ? `${rightParts.join(theme.fg("dim", "  "))} ` : "";
         const leftW = visibleWidth(left);
         const rightW = visibleWidth(right);
         const pad = " ".repeat(Math.max(1, width - leftW - rightW));

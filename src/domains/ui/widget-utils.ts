@@ -32,3 +32,35 @@ export function formatTokenCount(count: number): string {
   if (count < 1000000) return `${Math.round(count / 1000)}k`;
   return `${(count / 1000000).toFixed(1)}M`;
 }
+
+/**
+ * Extract a compact one-line summary from a worker result string.
+ *
+ * Workers return multi-line text. This extracts the first non-empty line,
+ * strips common boilerplate prefixes, and returns a clean summary suitable
+ * for display in the RECENT section of the dispatch board.
+ *
+ * Returns empty string if the input is empty or only whitespace.
+ */
+export function extractResultSummary(result: string): string {
+  if (!result) return "";
+
+  const lines = result.split("\n");
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    // Strip common boilerplate prefixes from worker output.
+    let cleaned = trimmed;
+    for (const prefix of ["Worker completed:", "Result:", "Done.", "Done:"]) {
+      if (cleaned.startsWith(prefix)) {
+        cleaned = cleaned.slice(prefix.length).trim();
+        break;
+      }
+    }
+
+    if (cleaned) return cleaned;
+  }
+
+  return "";
+}
