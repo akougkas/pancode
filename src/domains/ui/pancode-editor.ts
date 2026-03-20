@@ -11,8 +11,8 @@ const MIN_LABEL_WIDTH = 40;
  * labels. This preserves the editor's internal ANSI styling, scroll indicators,
  * cursor markers, and accessibility properties.
  *
- * Top border:  ───────────────────────────────── Build ──
- * Bottom border: ──────────────────── auto-edit  shift+tab ──
+ * Top border:  ──────────────────────────────── Build ──
+ * Bottom border: ─────────────────── auto-edit  shift+tab ──
  */
 export class PanCodeEditor extends CustomEditor {
   private modeLabel = "Build";
@@ -33,19 +33,20 @@ export class PanCodeEditor extends CustomEditor {
     if (lines.length < 2 || width < MIN_LABEL_WIDTH) return lines;
 
     // Top border: truncate existing border from right, append mode label.
-    // Preserves scroll indicators ("─── ↑ 3 more") on the left side.
-    const modeTag = ` ${this.modeColorFn(` ${this.modeLabel} `)}${this.borderColor("──")}`;
-    const modeTagWidth = visibleWidth(` ${this.modeLabel} `) + 2;
-    if (visibleWidth(lines[0]) >= modeTagWidth) {
+    // Build the tag first, then measure it with visibleWidth() to get the
+    // exact visible character count including all spaces. Never compute
+    // width manually; always measure the actual constructed string.
+    const modeTag = this.modeColorFn(` ${this.modeLabel} `) + this.borderColor("──");
+    const modeTagWidth = visibleWidth(modeTag);
+    if (visibleWidth(lines[0]) >= modeTagWidth + 4) {
       lines[0] = truncateToWidth(lines[0], width - modeTagWidth, "") + modeTag;
     }
 
     // Bottom border: truncate existing border from right, append safety + hint.
-    // Preserves scroll indicators ("─── ↓ 5 more") on the left side.
     const bottomIdx = lines.length - 1;
-    const safetyTag = ` ${this.modeColorFn(this.safetyLabel)}  ${this.borderColor("shift+tab ──")}`;
-    const safetyTagWidth = visibleWidth(this.safetyLabel) + visibleWidth("  shift+tab ──") + 1;
-    if (visibleWidth(lines[bottomIdx]) >= safetyTagWidth) {
+    const safetyTag = this.modeColorFn(this.safetyLabel) + this.borderColor("  shift+tab ──");
+    const safetyTagWidth = visibleWidth(safetyTag);
+    if (visibleWidth(lines[bottomIdx]) >= safetyTagWidth + 4) {
       lines[bottomIdx] = truncateToWidth(lines[bottomIdx], width - safetyTagWidth, "") + safetyTag;
     }
 
