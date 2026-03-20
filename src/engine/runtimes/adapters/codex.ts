@@ -41,7 +41,7 @@ interface CodexJsonEvent {
 /**
  * Codex CLI runtime adapter (Silver Tier).
  *
- * Invocation: codex exec "task" --json
+ * Invocation: codex exec "task" --json --model <model> --cd <cwd>
  *
  * Silver tier: parses JSON Lines output for both result text and usage data.
  * Aggregates tokens and cost across all events. Falls back to text when
@@ -51,6 +51,9 @@ interface CodexJsonEvent {
  * - --full-auto for write-capable agents, default sandbox for readonly
  * - JSON Lines output format with usage extraction
  * - Token and cost aggregation across events
+ * - Model passthrough via --model flag
+ * - Working directory via --cd flag
+ * - System prompt prepended to task text (no native --system-prompt flag)
  */
 export class CodexRuntime extends CliRuntime {
   readonly id = "cli:codex";
@@ -58,10 +61,22 @@ export class CodexRuntime extends CliRuntime {
   readonly binaryName = "codex";
 
   buildCliArgs(config: RuntimeTaskConfig): string[] {
-    // TODO: Codex CLI does not support --system-prompt or equivalent.
-    // When upstream adds system prompt support, pass config.systemPrompt through.
-    // Currently the system prompt is lost for Codex workers.
-    const args = ["exec", config.task, "--json"];
+    // Build the task message. Codex does not have a --system-prompt flag,
+    // so prepend system instructions to the task text.
+    let message = config.task;
+    if (config.systemPrompt.trim()) {
+      message = `[System Instructions]\n${config.systemPrompt.trim()}\n\n[Task]\n${config.task}`;
+    }
+
+    const args = ["exec", message, "--json"];
+
+    // Working directory
+    args.push("--cd", config.cwd);
+
+    // Model passthrough
+    if (config.model) {
+      args.push("--model", config.model);
+    }
 
     if (!config.readonly) {
       args.push("--full-auto");

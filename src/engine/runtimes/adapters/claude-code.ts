@@ -43,16 +43,19 @@ interface ClaudeCodeJsonResponse {
 /**
  * Claude Code CLI runtime adapter (Gold Tier).
  *
- * Invocation: claude -p "task" --output-format json --allowedTools "..."
+ * Invocation: claude -p "task" --output-format json --tools "..." --model <model>
  *
  * Gold tier: fully structured JSON output with reliable extraction of tokens,
  * cost, model, turns, and session ID. Robust JSON parsing handles subprocess
  * wrapper noise and multi-line output.
  *
  * Features:
- * - Tool restriction via --allowedTools
+ * - Tool restriction via --tools (restricts tool availability)
+ * - Tool auto-approval via --allowedTools (pattern-based permission rules)
  * - JSON output for structured parsing
- * - System prompt override via --system-prompt
+ * - System prompt via --append-system-prompt (preserves built-in capabilities)
+ * - Model selection via --model (aliases or full model names)
+ * - Turn limits via --max-turns for bounded execution
  * - Session continuity via --resume (not used in dispatch, each task is fresh)
  * - Full usage tracking: input/output tokens, cache tokens, cost, turns
  */
@@ -64,9 +67,17 @@ export class ClaudeCodeRuntime extends CliRuntime {
   buildCliArgs(config: RuntimeTaskConfig): string[] {
     const args = ["-p", config.task, "--output-format", "json"];
 
-    // Map PanCode tool CSV to Claude Code --allowedTools format
-    if (config.tools && config.readonly) {
-      // Read-only agents get restricted tools
+    // Model selection. Supports aliases (sonnet, opus) or full model names.
+    if (config.model) {
+      args.push("--model", config.model);
+    }
+
+    // Tool restriction via --tools (controls tool availability) and
+    // --allowedTools (controls which tools auto-approve without prompting).
+    // --tools restricts what the model can see; --allowedTools controls permissions.
+    if (config.readonly) {
+      // Read-only agents: restrict available tools to read-only set
+      args.push("--tools", "Read,Grep,Glob");
       args.push("--allowedTools", "Read,Grep,Glob");
     } else if (config.tools) {
       // Map PanCode tool names to Claude Code tool names
@@ -83,14 +94,24 @@ export class ClaudeCodeRuntime extends CliRuntime {
         .split(",")
         .map((t) => toolMap[t.trim()])
         .filter(Boolean);
-      if (mapped.length > 0) {
-        args.push("--allowedTools", [...new Set(mapped)].join(","));
+      const deduped = [...new Set(mapped)].join(",");
+      if (deduped) {
+        args.push("--tools", deduped);
+        args.push("--allowedTools", deduped);
       }
     }
 
-    // System prompt
+    // System prompt: use --append-system-prompt to preserve Claude Code's
+    // built-in capabilities (tool descriptions, guidelines) while adding
+    // PanCode worker instructions on top.
     if (config.systemPrompt) {
-      args.push("--system-prompt", config.systemPrompt);
+      args.push("--append-system-prompt", config.systemPrompt);
+    }
+
+    // Turn limit for bounded execution. Prevents runaway workers.
+    // Default: 30 turns. Can be overridden via runtimeArgs.
+    if (!config.runtimeArgs.includes("--max-turns")) {
+      args.push("--max-turns", "30");
     }
 
     // Pass through any extra runtime args from agent spec

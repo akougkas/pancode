@@ -76,7 +76,7 @@ export class OpencodeRuntime extends CliRuntime {
       message = `[System Instructions]\n${config.systemPrompt.trim()}\n\n[Task]\n${config.task}`;
     }
 
-    const args = ["run", "--format", "json", "--agent", agent, "--dir", config.cwd];
+    const args = ["run", "--format", "json", "--quiet", "--agent", agent, "--dir", config.cwd];
 
     // Model passthrough. opencode uses provider/model format natively.
     if (config.model) {
