@@ -28,6 +28,7 @@ import { getBudgetTracker } from "../scheduling";
 import { getContextPercent, recordContextFromSdk, recordContextUsage } from "./context-tracker";
 import { renderDispatchBoard } from "./dispatch-board";
 import type { AgentStat, BoardColorizer, DispatchCardData } from "./dispatch-board";
+import { synthesizeOrchestratorPrompt } from "./system-prompt";
 import { extractResultSummary } from "./widget-utils";
 import {
   getLiveWorkers,
@@ -380,27 +381,6 @@ function modeThemeColor(mode: ModeDefinition): "accent" | "success" | "warning" 
   }
 }
 
-// Shared instruction appended to every mode. Tool results and dispatch outputs
-// are already rendered in the TUI before the model responds. Without this
-// guidance, local models repeat the full tool output verbatim, doubling the
-// response length with no added value.
-const TOOL_OUTPUT_GUIDANCE =
-  " Tool results and dispatch outputs are already visible to the user. Do not repeat or reformat them. Add a brief interpretation or next-step suggestion only.";
-
-function buildModeInstructions(mode: ModeDefinition): string {
-  switch (mode.id) {
-    case "capture":
-      return `You are in CAPTURE mode. Log tasks using task_write. Do NOT dispatch workers. Do NOT write code. Only capture ideas, TODOs, and requirements.${TOOL_OUTPUT_GUIDANCE}`;
-    case "plan":
-      return `You are in PLAN mode. Analyze the request and build a plan. Create tasks with task_write. Do NOT dispatch workers yet. Present a plan for approval.${TOOL_OUTPUT_GUIDANCE}`;
-    case "build":
-      return `You are in BUILD mode. You have full dispatch capability. Use task_write to track work items. Dispatch workers for implementation via dispatch_agent or batch_dispatch. Monitor progress and verify results.${TOOL_OUTPUT_GUIDANCE}`;
-    case "ask":
-      return `You are in ASK mode. Answer questions and explore. You may dispatch READONLY agents (reviewer) but NOT mutable agents (dev). Do not modify files.${TOOL_OUTPUT_GUIDANCE}`;
-    case "review":
-      return `You are in REVIEW mode. Dispatch readonly reviewers to analyze code quality. Do NOT dispatch mutable agents. Focus on quality checks, test coverage, and code review.${TOOL_OUTPUT_GUIDANCE}`;
-  }
-}
 
 export const extension = defineExtension((pi) => {
   let currentModelLabel = "no model";
@@ -979,42 +959,27 @@ export const extension = defineExtension((pi) => {
     },
   });
 
-  // === Mode-specific instructions injected before each agent turn ===
-  pi.on("before_agent_start", async () => {
+  // === Orchestrator identity and mode behavior via system prompt synthesis ===
+  // Replaces the Pi SDK's default identity with PanCode's orchestrator identity,
+  // injects the current mode's behavioral instructions, removes Pi documentation
+  // references, and adds tool output deduplication guidance.
+  pi.on("before_agent_start", async (event) => {
     const mode = getModeDefinition();
-    return {
-      message: {
-        customType: "pancode-mode-context",
-        content: `[${mode.name.toUpperCase()} MODE] ${buildModeInstructions(mode)}`,
-        display: false,
-      },
-    };
+    const synthesized = synthesizeOrchestratorPrompt(event.systemPrompt, mode);
+    return { systemPrompt: synthesized };
   });
 
-  // Filter UI-only messages from the LLM context.
-  // 1. pancode-panel messages (dashboard, /models, /help output) are visual UI
-  //    for the user. Including them confuses local models: the dashboard text
-  //    "Build mini-llamacpp/Qwen35..." gets interpreted as a build instruction.
-  // 2. pancode-mode-context messages: keep only the most recent one since each
-  //    turn injects fresh mode context via before_agent_start.
+  // Filter UI-only panel messages from LLM context.
+  // pancode-panel messages (dashboard, /models, /help output) are visual UI
+  // for the user. Including them confuses local models: the dashboard text
+  // "Build mini-llamacpp/Qwen35..." gets interpreted as a build instruction.
   pi.on("context", async (event) => {
     type MsgWithCustomType = (typeof event.messages)[number] & { customType?: string };
 
-    let lastModeIndex = -1;
-    for (let i = event.messages.length - 1; i >= 0; i--) {
-      if ((event.messages[i] as MsgWithCustomType).customType === "pancode-mode-context") {
-        lastModeIndex = i;
-        break;
-      }
-    }
-
     return {
-      messages: event.messages.filter((m, i) => {
+      messages: event.messages.filter((m) => {
         const ct = (m as MsgWithCustomType).customType;
-        // Strip all panel messages from context
         if (ct === "pancode-panel") return false;
-        // Keep only the most recent mode-context message
-        if (ct === "pancode-mode-context") return lastModeIndex < 0 || i === lastModeIndex;
         return true;
       }),
     };
