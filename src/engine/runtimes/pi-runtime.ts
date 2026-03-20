@@ -117,6 +117,17 @@ export class PiRuntime implements AgentRuntime {
         if (typeof resultData.assistantError === "string" && resultData.assistantError) {
           result.error = resultData.assistantError;
         }
+        if (resultData.usage && typeof resultData.usage === "object") {
+          const u = resultData.usage;
+          result.usage = {
+            inputTokens: u.inputTokens ?? 0,
+            outputTokens: u.outputTokens ?? 0,
+            cacheReadTokens: u.cacheReadTokens ?? 0,
+            cacheWriteTokens: u.cacheWriteTokens ?? 0,
+            cost: u.cost ?? 0,
+            turns: u.turns ?? 0,
+          };
+        }
       } catch {
         // Fall back to stdout-parsed result if result file is malformed
       }

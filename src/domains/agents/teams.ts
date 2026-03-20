@@ -14,8 +14,8 @@ export const BUILTIN_TEAMS: TeamDefinition[] = [
   },
   {
     name: "research-dev",
-    description: "Scout explores codebase, developer implements",
-    agents: ["scout", "dev"],
+    description: "Reviewer explores codebase, developer implements",
+    agents: ["reviewer", "dev"],
     workflow: "sequential",
   },
 ];

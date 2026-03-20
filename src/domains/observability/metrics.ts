@@ -1,6 +1,8 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
+export const MAX_METRIC_ENTRIES = 1000;
+
 export interface RunMetric {
   runId: string;
   agent: string;
@@ -16,6 +18,18 @@ export interface RunMetric {
   timestamp: string;
 }
 
+export interface SessionBoundary {
+  type: "session_start" | "session_end";
+  timestamp: string;
+  sessionId: string;
+}
+
+export type MetricLedgerEntry = RunMetric | SessionBoundary;
+
+function isSessionBoundary(entry: MetricLedgerEntry): entry is SessionBoundary {
+  return "type" in entry && (entry.type === "session_start" || entry.type === "session_end");
+}
+
 export interface SessionMetrics {
   totalRuns: number;
   totalCost: number;
@@ -25,64 +39,92 @@ export interface SessionMetrics {
 }
 
 export class MetricsLedger {
-  private metrics: RunMetric[] = [];
+  private entries: MetricLedgerEntry[] = [];
   private readonly persistPath: string;
 
   constructor(runtimeRoot: string) {
     this.persistPath = join(runtimeRoot, "metrics.json");
     this.load();
+    this.trim();
   }
 
   private load(): void {
     if (!existsSync(this.persistPath)) return;
     try {
       const raw = readFileSync(this.persistPath, "utf8");
-      this.metrics = JSON.parse(raw) as RunMetric[];
+      this.entries = JSON.parse(raw) as MetricLedgerEntry[];
     } catch {
-      this.metrics = [];
+      this.entries = [];
     }
+  }
+
+  private trim(): void {
+    const metrics = this.getMetrics();
+    if (metrics.length <= MAX_METRIC_ENTRIES) return;
+
+    let toRemove = metrics.length - MAX_METRIC_ENTRIES;
+    this.entries = this.entries.filter((entry) => {
+      if (isSessionBoundary(entry)) return true;
+      if (toRemove > 0) {
+        toRemove--;
+        return false;
+      }
+      return true;
+    });
   }
 
   persist(): void {
     const dir = dirname(this.persistPath);
     mkdirSync(dir, { recursive: true });
-    writeFileSync(this.persistPath, JSON.stringify(this.metrics, null, 2), "utf8");
+    writeFileSync(this.persistPath, JSON.stringify(this.entries, null, 2), "utf8");
   }
 
   record(metric: RunMetric): void {
-    this.metrics.push(metric);
+    this.entries.push(metric);
+    this.trim();
     this.persist();
   }
 
+  addSessionMarker(marker: SessionBoundary): void {
+    this.entries.push(marker);
+    this.persist();
+  }
+
+  private getMetrics(): RunMetric[] {
+    return this.entries.filter((e): e is RunMetric => !isSessionBoundary(e));
+  }
+
   getSummary(): SessionMetrics {
+    const metrics = this.getMetrics();
     let totalCost = 0;
     let totalInputTokens = 0;
     let totalOutputTokens = 0;
 
-    for (const m of this.metrics) {
+    for (const m of metrics) {
       totalCost += m.cost;
       totalInputTokens += m.inputTokens;
       totalOutputTokens += m.outputTokens;
     }
 
     return {
-      totalRuns: this.metrics.length,
+      totalRuns: metrics.length,
       totalCost,
       totalInputTokens,
       totalOutputTokens,
-      runs: [...this.metrics],
+      runs: [...metrics],
     };
   }
 
   getRecent(count: number): RunMetric[] {
-    return this.metrics.slice(-count);
+    return this.getMetrics().slice(-count);
   }
 
   serialize(): RunMetric[] {
-    return [...this.metrics];
+    return [...this.getMetrics()];
   }
 
   deserialize(data: RunMetric[]): void {
-    this.metrics = data;
+    const markers = this.entries.filter(isSessionBoundary);
+    this.entries = [...markers, ...data];
   }
 }

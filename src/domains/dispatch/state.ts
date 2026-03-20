@@ -3,6 +3,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { RuntimeUsage } from "../../engine/runtimes";
 
+export const MAX_RUN_ENTRIES = 500;
+
 export type RunStatus = "pending" | "running" | "done" | "error" | "timeout" | "cancelled" | "interrupted";
 
 export type RunUsage = RuntimeUsage;
@@ -21,6 +23,18 @@ export interface RunEnvelope {
   completedAt: string | null;
   batchId: string | null;
   cwd: string;
+}
+
+export interface SessionBoundary {
+  type: "session_start" | "session_end";
+  timestamp: string;
+  sessionId: string;
+}
+
+export type LedgerEntry = RunEnvelope | SessionBoundary;
+
+export function isSessionBoundary(entry: LedgerEntry): entry is SessionBoundary {
+  return "type" in entry && (entry.type === "session_start" || entry.type === "session_end");
 }
 
 export function createRunEnvelope(
@@ -48,29 +62,45 @@ export function createRunEnvelope(
 }
 
 export class RunLedger {
-  private runs: RunEnvelope[] = [];
+  private entries: LedgerEntry[] = [];
   private readonly persistPath: string;
 
   constructor(runtimeRoot: string) {
     this.persistPath = join(runtimeRoot, "runs.json");
     this.load();
+    this.trim();
   }
 
   private load(): void {
     if (!existsSync(this.persistPath)) return;
     try {
       const raw = readFileSync(this.persistPath, "utf8");
-      this.runs = JSON.parse(raw) as RunEnvelope[];
+      this.entries = JSON.parse(raw) as LedgerEntry[];
     } catch {
-      this.runs = [];
+      this.entries = [];
     }
+  }
+
+  private trim(): void {
+    const runs = this.getRuns();
+    if (runs.length <= MAX_RUN_ENTRIES) return;
+
+    const activeRuns = runs.filter((r) => r.status === "running" || r.status === "pending");
+    const completedRuns = runs.filter((r) => r.status !== "running" && r.status !== "pending");
+    const completedSlots = Math.max(0, MAX_RUN_ENTRIES - activeRuns.length);
+    const keepIds = new Set([...activeRuns.map((r) => r.id), ...completedRuns.slice(-completedSlots).map((r) => r.id)]);
+
+    this.entries = this.entries.filter((entry) => {
+      if (isSessionBoundary(entry)) return true;
+      return keepIds.has((entry as RunEnvelope).id);
+    });
   }
 
   persist(): void {
     const dir = dirname(this.persistPath);
     try {
       mkdirSync(dir, { recursive: true });
-      writeFileSync(this.persistPath, JSON.stringify(this.runs, null, 2), "utf8");
+      writeFileSync(this.persistPath, JSON.stringify(this.entries, null, 2), "utf8");
     } catch (err) {
       console.error(
         `[pancode:dispatch] Failed to persist run ledger: ${err instanceof Error ? err.message : String(err)}`,
@@ -79,12 +109,22 @@ export class RunLedger {
   }
 
   add(run: RunEnvelope): void {
-    this.runs.push(run);
+    this.entries.push(run);
+    this.trim();
     this.persist();
   }
 
+  addSessionMarker(marker: SessionBoundary): void {
+    this.entries.push(marker);
+    this.persist();
+  }
+
+  private getRuns(): RunEnvelope[] {
+    return this.entries.filter((e): e is RunEnvelope => !isSessionBoundary(e));
+  }
+
   update(id: string, patch: Partial<RunEnvelope>): void {
-    const run = this.runs.find((r) => r.id === id);
+    const run = this.getRuns().find((r) => r.id === id);
     if (run) {
       Object.assign(run, patch);
       this.persist();
@@ -92,36 +132,38 @@ export class RunLedger {
   }
 
   get(id: string): RunEnvelope | undefined {
-    return this.runs.find((r) => r.id === id);
+    return this.getRuns().find((r) => r.id === id);
   }
 
   getAll(): RunEnvelope[] {
-    return [...this.runs];
+    return [...this.getRuns()];
   }
 
   getActive(): RunEnvelope[] {
-    return this.runs.filter((r) => r.status === "running" || r.status === "pending");
+    return this.getRuns().filter((r) => r.status === "running" || r.status === "pending");
   }
 
   getRecent(count: number): RunEnvelope[] {
-    return this.runs.slice(-count);
+    return this.getRuns().slice(-count);
   }
 
   markInterrupted(): void {
-    for (const run of this.runs) {
-      if (run.status === "running" || run.status === "pending") {
-        run.status = "interrupted";
-        run.completedAt = new Date().toISOString();
+    for (const entry of this.entries) {
+      if (isSessionBoundary(entry)) continue;
+      if (entry.status === "running" || entry.status === "pending") {
+        entry.status = "interrupted";
+        entry.completedAt = new Date().toISOString();
       }
     }
     this.persist();
   }
 
   toJSON(): RunEnvelope[] {
-    return this.runs;
+    return this.getRuns();
   }
 
   fromJSON(data: RunEnvelope[]): void {
-    this.runs = data;
+    const markers = this.entries.filter(isSessionBoundary);
+    this.entries = [...markers, ...data];
   }
 }

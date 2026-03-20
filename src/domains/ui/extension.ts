@@ -253,7 +253,8 @@ function formatProviderModelLines(
   models: ReadonlyArray<Model<Api>>,
   profiles: MergedModelProfile[],
 ): string[] {
-  const sorted = [...models].sort((a, b) => a.id.localeCompare(b.id));
+  const chatModels = models.filter((m) => isChatModel(m.id));
+  const sorted = [...chatModels].sort((a, b) => a.id.localeCompare(b.id));
   const lines: string[] = [`${providerName} (${sorted.length} models):`];
 
   for (const model of sorted) {
@@ -275,10 +276,9 @@ function formatAllAvailableLines(
   models: ReadonlyArray<Model<Api>>,
   profiles: MergedModelProfile[],
 ): string[] {
-  const chatModels = models.filter((m) => isChatModel(m.id));
-  if (chatModels.length === 0) return ["No available models found."];
+  if (models.length === 0) return ["No available models found."];
 
-  const sorted = [...chatModels].sort((a, b) => {
+  const sorted = [...models].sort((a, b) => {
     const providerDiff = a.provider.localeCompare(b.provider);
     if (providerDiff !== 0) return providerDiff;
     return a.id.localeCompare(b.id);
@@ -373,18 +373,25 @@ function modeThemeColor(mode: ModeDefinition): "accent" | "success" | "warning" 
   }
 }
 
+// Shared instruction appended to every mode. Tool results and dispatch outputs
+// are already rendered in the TUI before the model responds. Without this
+// guidance, local models repeat the full tool output verbatim, doubling the
+// response length with no added value.
+const TOOL_OUTPUT_GUIDANCE =
+  " Tool results and dispatch outputs are already visible to the user. Do not repeat or reformat them. Add a brief interpretation or next-step suggestion only.";
+
 function buildModeInstructions(mode: ModeDefinition): string {
   switch (mode.id) {
     case "capture":
-      return "You are in CAPTURE mode. Log tasks using task_write. Do NOT dispatch workers. Do NOT write code. Only capture ideas, TODOs, and requirements.";
+      return `You are in CAPTURE mode. Log tasks using task_write. Do NOT dispatch workers. Do NOT write code. Only capture ideas, TODOs, and requirements.${TOOL_OUTPUT_GUIDANCE}`;
     case "plan":
-      return "You are in PLAN mode. Analyze the request and build a plan. Create tasks with task_write. Do NOT dispatch workers yet. Present a plan for approval.";
+      return `You are in PLAN mode. Analyze the request and build a plan. Create tasks with task_write. Do NOT dispatch workers yet. Present a plan for approval.${TOOL_OUTPUT_GUIDANCE}`;
     case "build":
-      return "You are in BUILD mode. You have full dispatch capability. Use task_write to track work items. Dispatch workers for implementation via dispatch_agent or batch_dispatch. Monitor progress and verify results.";
+      return `You are in BUILD mode. You have full dispatch capability. Use task_write to track work items. Dispatch workers for implementation via dispatch_agent or batch_dispatch. Monitor progress and verify results.${TOOL_OUTPUT_GUIDANCE}`;
     case "ask":
-      return "You are in ASK mode. Answer questions and explore. You may dispatch READONLY agents (scout, reviewer) but NOT mutable agents (dev). Do not modify files.";
+      return `You are in ASK mode. Answer questions and explore. You may dispatch READONLY agents (reviewer) but NOT mutable agents (dev). Do not modify files.${TOOL_OUTPUT_GUIDANCE}`;
     case "review":
-      return "You are in REVIEW mode. Dispatch readonly reviewers to analyze code quality. Do NOT dispatch mutable agents. Focus on quality checks, test coverage, and code review.";
+      return `You are in REVIEW mode. Dispatch readonly reviewers to analyze code quality. Do NOT dispatch mutable agents. Focus on quality checks, test coverage, and code review.${TOOL_OUTPUT_GUIDANCE}`;
   }
 }
 
@@ -459,10 +466,9 @@ export const extension = defineExtension((pi) => {
 
     // /models all: full list of every available chat model grouped by provider
     if (request === "all") {
-      const chatCount = registry.available.filter((m) => isChatModel(m.id)).length;
       sendPanel(emitPanel, `${PANCODE_PRODUCT_NAME} Models`, [
         `Current: ${currentRef}`,
-        `Total available: ${chatCount}`,
+        `Total available: ${registry.available.length} (including embeddings)`,
         "",
         ...formatAllAvailableLines(currentRef, registry.available, profiles),
       ]);
@@ -976,12 +982,15 @@ export const extension = defineExtension((pi) => {
     };
   });
 
-  // Filter stale mode context messages from conversation history.
-  // Each turn injects a fresh mode context via before_agent_start, so prior
-  // mode messages are noise (and may contradict the current mode after a switch).
-  // Keep only the most recent pancode-mode-context message.
+  // Filter UI-only messages from the LLM context.
+  // 1. pancode-panel messages (dashboard, /models, /help output) are visual UI
+  //    for the user. Including them confuses local models: the dashboard text
+  //    "Build mini-llamacpp/Qwen35..." gets interpreted as a build instruction.
+  // 2. pancode-mode-context messages: keep only the most recent one since each
+  //    turn injects fresh mode context via before_agent_start.
   pi.on("context", async (event) => {
     type MsgWithCustomType = (typeof event.messages)[number] & { customType?: string };
+
     let lastModeIndex = -1;
     for (let i = event.messages.length - 1; i >= 0; i--) {
       if ((event.messages[i] as MsgWithCustomType).customType === "pancode-mode-context") {
@@ -989,12 +998,15 @@ export const extension = defineExtension((pi) => {
         break;
       }
     }
-    if (lastModeIndex < 0) return;
 
     return {
       messages: event.messages.filter((m, i) => {
-        if ((m as MsgWithCustomType).customType !== "pancode-mode-context") return true;
-        return i === lastModeIndex;
+        const ct = (m as MsgWithCustomType).customType;
+        // Strip all panel messages from context
+        if (ct === "pancode-panel") return false;
+        // Keep only the most recent mode-context message
+        if (ct === "pancode-mode-context") return lastModeIndex < 0 || i === lastModeIndex;
+        return true;
       }),
     };
   });

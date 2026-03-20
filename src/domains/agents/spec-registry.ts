@@ -79,14 +79,9 @@ agents:
     sampling: general
     readonly: true
     system_prompt: "You are a code reviewer. Analyze the code for bugs, security issues, and improvements. Do not modify any files. Report findings clearly."
-  # PANCODE_SCOUT_MODEL: fast small model for exploration (default: falls back to PANCODE_WORKER_MODEL)
-  scout:
-    description: "Research and exploration"
-    model: \${PANCODE_SCOUT_MODEL}
-    tools: [read, grep, find, ls]
-    sampling: general
-    readonly: true
-    system_prompt: "You are a research scout. Explore the codebase to answer questions and gather information. Do not modify any files. Summarize findings concisely."
+  # Scout is NOT a dispatchable agent. It runs as a shadow tool (shadow_explore)
+  # inside the orchestrator process using PANCODE_SCOUT_MODEL. Users cannot
+  # dispatch scouts. See src/engine/shadow.ts for the scout engine.
 
   # --- External agent examples (uncomment if installed) ---
   # claude-reviewer:

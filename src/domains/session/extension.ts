@@ -6,6 +6,18 @@ import { createContextRegistry } from "./context-registry";
 import { createSessionMemory } from "./memory";
 import { createSharedBoard } from "./shared-board";
 
+// Pi SDK session JSONL files (~/.pi/agent/sessions/<encoded-cwd>/*.jsonl):
+// The SDK has context compaction (auto-triggers when context window fills) that
+// appends a CompactionEntry with a summary and firstKeptEntryId pointer. On
+// reload, old messages are skipped via the summary. However, the physical JSONL
+// file is append-only; compaction never removes entries from disk.
+// Config: ~/.pi/agent/settings.json { compaction: { enabled, reserveTokens, keepRecentTokens } }
+// controls when compaction triggers but does not affect file size.
+// TODO: Implement periodic cleanup of old session files. Worker sessions are
+// ephemeral and can be deleted after result extraction. Orchestrator sessions
+// can be pruned by age (>7 days) or size. Use SessionManager.list() for
+// enumeration. PI_CODING_AGENT_DIR overrides the default ~/.pi base path.
+
 // Module-level singletons accessible by other domains via barrel export.
 let contextRegistry: ReturnType<typeof createContextRegistry> | null = null;
 let sharedBoard: ReturnType<typeof createSharedBoard> | null = null;

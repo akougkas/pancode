@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { Type } from "@sinclair/typebox";
 import { getModeDefinition } from "../../core/modes";
 import { sharedBus } from "../../core/shared-bus";
@@ -38,6 +39,11 @@ export const extension = defineExtension((pi) => {
     ledger = new RunLedger(runtimeRoot);
     initTaskStore(runtimeRoot);
     draining = false;
+
+    // Session boundary marker
+    const sessionId = randomUUID().slice(0, 8);
+    process.env.PANCODE_SESSION_ID = sessionId;
+    ledger.addSessionMarker({ type: "session_start", timestamp: new Date().toISOString(), sessionId });
     registerSafetyPreFlightChecks(registerPreFlightCheck);
 
     // Listen for session reset events (/new command). Clear task store.
@@ -61,11 +67,16 @@ export const extension = defineExtension((pi) => {
     });
   });
 
+  pi.on("session_shutdown", async () => {
+    const sessionId = process.env.PANCODE_SESSION_ID ?? "unknown";
+    ledger?.addSessionMarker({ type: "session_end", timestamp: new Date().toISOString(), sessionId });
+  });
+
   pi.registerTool({
     name: "dispatch_agent",
     label: "Dispatch Agent",
     description:
-      "Delegate a task to a specialized PanCode worker agent. The worker runs as a separate subprocess with its own context window. Use this to parallelize work or delegate to specialized agents (dev, reviewer, scout).",
+      "Delegate a task to a specialized PanCode worker agent. The worker runs as a separate subprocess with its own context window. Use this to parallelize work or delegate to specialized agents (dev, reviewer).",
     parameters: Type.Object({
       task: Type.String({ description: "The task description to send to the worker agent" }),
       agent: Type.Optional(Type.String({ description: "Agent spec name (default: dev)", default: "dev" })),
@@ -92,7 +103,7 @@ export const extension = defineExtension((pi) => {
         const spec = agentRegistry.get(agentName);
         if (spec && !spec.readonly) {
           return textResult(
-            `Agent "${agentName}" is not readonly. ${mode.name} mode only allows readonly agents. Use scout or reviewer.`,
+            `Agent "${agentName}" is not readonly. ${mode.name} mode only allows readonly agents. Use reviewer.`,
           );
         }
       }
@@ -265,7 +276,7 @@ export const extension = defineExtension((pi) => {
         const spec = agentRegistry.get(agentName);
         if (spec && !spec.readonly) {
           return textResult(
-            `Agent "${agentName}" is not readonly. ${batchMode.name} mode only allows readonly agents. Use scout or reviewer.`,
+            `Agent "${agentName}" is not readonly. ${batchMode.name} mode only allows readonly agents. Use reviewer.`,
           );
         }
       }

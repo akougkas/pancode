@@ -13,6 +13,9 @@ export default defineConfig({
   sourcemap: true,
   clean: true,
   outDir: "dist",
+  banner: {
+    js: "#!/usr/bin/env node",
+  },
   // Do not bundle workspace packages; they install as dependencies
   external: [
     "@pancode/pi-coding-agent",

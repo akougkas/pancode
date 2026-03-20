@@ -37,8 +37,8 @@ interface ParsedArgs {
 
 function printUsage(): void {
   console.log(`Usage:
-  npm start
-  npm start -- --model anthropic/claude-opus-4-5
+  pancode
+  pancode --model openai-codex/gpt-5.4
 
 Options:
   --cwd <path>         Working directory for the session

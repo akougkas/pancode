@@ -23,7 +23,14 @@ import type { RuntimeResult, RuntimeTaskConfig, SpawnConfig } from "../types";
  *
  *   Plan mode (-p) vs Act mode (-a)
  *     PanCode maps: readonly=true -> plan mode, readonly=false -> act mode
- *     Plan mode in CLI with -y auto-switches to act after planning (quirk)
+ *
+ *     Known bug (plan_mode_respond): When plan mode (-p) is combined with
+ *     auto-approve (-y), Cline's CLI auto-switches to act mode after
+ *     generating a plan. The plan_mode_respond handler does not wait for
+ *     user approval when -y is set, so plan mode effectively becomes
+ *     "plan then act." PanCode works around this by defaulting non-readonly
+ *     agents to act mode (-a) and accepting that readonly agents dispatched
+ *     with -p will still execute mutations after planning.
  *
  *   Model passthrough (-m provider:model-id)
  *     Routes through the configured provider's base URL
@@ -58,7 +65,9 @@ export class ClineRuntime extends CliRuntime {
 
     const args = ["-y", "--json"];
 
-    // Map PanCode readonly to Cline Plan/Act mode
+    // Map PanCode readonly to Cline Plan/Act mode.
+    // Note: -p with -y triggers the plan_mode_respond bug where Cline
+    // auto-switches to act after planning. See header comment.
     if (config.readonly) {
       args.push("-p");
     } else {

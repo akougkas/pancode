@@ -8,7 +8,7 @@ import type { DispatchPlan, Intent } from "./contracts";
 const AGENT_MAP: Record<string, string> = {
   coding: "dev",
   review: "reviewer",
-  research: "scout",
+  research: "dev",
   testing: "dev",
   refactoring: "dev",
   unknown: "dev",

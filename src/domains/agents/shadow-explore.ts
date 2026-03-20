@@ -1,44 +1,53 @@
 /**
- * Shadow explore: orchestrator-internal tool for pre-dispatch codebase intelligence.
+ * Shadow explore: orchestrator-internal tool for concurrent codebase reconnaissance.
  *
- * Registers shadow_explore as a tool the orchestrator can call to gather information
- * before making dispatch decisions. Runs in-process with a cheap/fast model and
- * readonly tools. Not visible to workers or users.
+ * Registers shadow_explore as a tool the orchestrator can call to gather
+ * intelligence before dispatch decisions. Spawns 1-4 concurrent in-process
+ * scout agents on a fast model. Results are returned in memory as structured
+ * data. Not visible to workers or users.
  */
 
 import { Type } from "@sinclair/typebox";
-import { type ShadowQueryResult, runShadowQuery } from "../../engine/shadow";
+import { type ScoutResult, runScouts } from "../../engine/shadow";
 import type { AgentToolResult, ExtensionContext } from "../../engine/types";
 
 function textResult(text: string): AgentToolResult<unknown> {
   return { content: [{ type: "text", text }], details: undefined };
 }
 
-const SHADOW_SYSTEM_CONTEXT = [
-  "You are a codebase exploration agent. Your job is to investigate the project",
-  "structure, find relevant files, read key configurations, and return structured",
-  "findings. Be concise and factual. Focus on what is relevant to the query.",
-  "Do not suggest changes or make judgments. Report what you find.",
-].join(" ");
+// System prompt tuned for small models. Explicit tool-use strategy,
+// structured output format, no ambiguity.
+const SCOUT_SYSTEM_PROMPT = [
+  "You are a code scout. Locate files and extract specific information from a codebase.",
+  "",
+  "Tools: read, grep, find, ls",
+  "",
+  "Strategy:",
+  "1. Use find or ls FIRST to locate relevant files and directories.",
+  "2. Use grep to search for specific patterns, symbols, or keywords.",
+  "3. Use read to examine file contents when you know the exact path.",
+  "",
+  "Output rules:",
+  "- Report exact file paths and line numbers: path/to/file.ts:42",
+  "- Be concise. Facts only. No opinions, no suggestions, no commentary.",
+  "- If you cannot find what was asked, say so explicitly.",
+].join("\n");
 
 /**
- * Resolve the shadow model from configuration or fall back to the orchestrator model.
- * Prefers PANCODE_SHADOW_MODEL env var, then looks for cheap local models in the
- * model registry, then falls back to the current orchestrator model.
+ * Resolve the scout model from environment configuration.
+ * Priority: PANCODE_SHADOW_MODEL > PANCODE_SCOUT_MODEL > orchestrator model.
  */
-function resolveShadowModel(ctx: ExtensionContext): { provider: string; id: string } | null {
-  const shadowModelEnv = process.env.PANCODE_SHADOW_MODEL;
-  if (shadowModelEnv?.includes("/")) {
-    const [provider, ...rest] = shadowModelEnv.split("/");
-    return { provider, id: rest.join("/") };
+function resolveScoutModel(ctx: ExtensionContext) {
+  for (const envVar of ["PANCODE_SHADOW_MODEL", "PANCODE_SCOUT_MODEL"]) {
+    const value = process.env[envVar];
+    if (value?.includes("/")) {
+      const [provider, ...rest] = value.split("/");
+      const id = rest.join("/");
+      const found = ctx.modelRegistry.getAll().find((m) => m.provider === provider && m.id === id);
+      if (found) return found;
+    }
   }
-
-  // Fall back to orchestrator model
-  if (ctx.model) {
-    return { provider: ctx.model.provider, id: ctx.model.id };
-  }
-
-  return null;
+  return ctx.model ?? undefined;
 }
 
 export function registerShadowExplore(
@@ -49,7 +58,7 @@ export function registerShadowExplore(
     parameters: ReturnType<typeof Type.Object>;
     execute: (
       toolCallId: string,
-      params: { query: string },
+      params: { queries: string[] },
       signal: AbortSignal | undefined,
       onUpdate: ((result: AgentToolResult<unknown>) => void) | undefined,
       ctx: ExtensionContext,
@@ -59,57 +68,74 @@ export function registerShadowExplore(
   registerTool({
     name: "shadow_explore",
     label: "Shadow Explore",
-    description:
-      "Explore the codebase to gather intelligence before dispatching work. Use this to understand file structure, find relevant code, and orient yourself before planning dispatch. Runs in-process with a lightweight model.",
+    description: [
+      "Internal codebase reconnaissance before complex dispatch decisions.",
+      "Spawns 1-4 concurrent scout agents to explore in parallel.",
+      "Call ONLY when you need to understand project structure, locate files,",
+      "or read configurations before deciding how to dispatch workers.",
+      "Do NOT call for greetings, simple questions, conversations, or tasks you",
+      "can answer directly. Do NOT call when the user already told you what to",
+      "dispatch. Each query runs on a separate fast scout agent concurrently.",
+    ].join(" "),
     parameters: Type.Object({
-      query: Type.String({ description: "What to explore or investigate in the codebase" }),
+      queries: Type.Array(Type.String({ description: "Specific codebase question for one scout" }), {
+        description: "1-4 concurrent scout queries. Each runs on a separate agent in parallel.",
+        minItems: 1,
+        maxItems: 4,
+      }),
     }),
-    async execute(_toolCallId, params, _signal, onUpdate, ctx) {
-      const { query } = params;
+    async execute(_toolCallId, params, signal, onUpdate, ctx) {
+      const { queries } = params;
 
-      if (!query?.trim()) {
-        return textResult("Error: empty query");
+      if (!queries || queries.length === 0) {
+        return textResult("Error: no queries provided");
       }
 
+      const scoutCount = Math.min(queries.length, 4);
       if (onUpdate) {
-        onUpdate(textResult("Exploring codebase..."));
+        onUpdate(textResult(`researching internally... (${scoutCount} scout${scoutCount > 1 ? "s" : ""})`));
       }
 
-      const shadowModel = resolveShadowModel(ctx);
+      const model = resolveScoutModel(ctx);
+      const startTime = Date.now();
 
-      // Build full query with system context
-      const fullQuery = `${SHADOW_SYSTEM_CONTEXT}\n\nExplore: ${query}`;
-
-      let result: ShadowQueryResult;
+      let results: ScoutResult[];
       try {
-        result = await runShadowQuery({
-          query: fullQuery,
+        results = await runScouts(queries, {
           cwd: ctx.cwd,
-          model: shadowModel && ctx.model ? ctx.model : undefined,
-          modelRegistry: ctx.modelRegistry as Parameters<typeof runShadowQuery>[0]["modelRegistry"],
-          timeoutMs: 30000,
+          model,
+          modelRegistry: ctx.modelRegistry as Parameters<typeof runScouts>[1]["modelRegistry"],
+          systemPrompt: SCOUT_SYSTEM_PROMPT,
+          signal: signal ?? undefined,
         });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        console.error(`[pancode:shadow] Explore failed: ${msg}`);
+        console.error(`[pancode:shadow] Scout run failed: ${msg}`);
         return textResult(`Shadow explore failed: ${msg}`);
       }
 
-      if (result.error) {
-        console.error(`[pancode:shadow] Explore error: ${result.error}`);
-        return textResult(`Shadow explore error: ${result.error}`);
+      const wallMs = Date.now() - startTime;
+      const totalToolCalls = results.reduce((sum, r) => sum + r.toolCalls, 0);
+      const errors = results.filter((r) => r.error);
+
+      console.error(
+        `[pancode:shadow] ${results.length} scouts completed in ${(wallMs / 1000).toFixed(1)}s (${totalToolCalls} tool calls${errors.length > 0 ? `, ${errors.length} errors` : ""})`,
+      );
+
+      // Build structured result for the orchestrator's context.
+      // Each scout's findings are labeled so the orchestrator can synthesize.
+      const sections: string[] = [];
+      for (const r of results) {
+        if (r.error) {
+          sections.push(`[Scout: ${r.query}]\nError: ${r.error}`);
+        } else {
+          sections.push(`[Scout: ${r.query}]\n${r.response || "(no findings)"}`);
+        }
       }
 
-      const durStr = (result.durationMs / 1000).toFixed(1);
-      console.error(`[pancode:shadow] Explore completed in ${durStr}s, ${result.toolCalls} tool calls`);
+      const header = `${results.length} scout${results.length > 1 ? "s" : ""} completed in ${(wallMs / 1000).toFixed(1)}s (${totalToolCalls} tool calls)`;
 
-      const summary = [
-        `Shadow explore completed (${durStr}s, ${result.toolCalls} tool calls)`,
-        "",
-        result.response || "(no response)",
-      ].join("\n");
-
-      return textResult(summary);
+      return textResult(`${header}\n\n${sections.join("\n\n")}`);
     },
   });
 }

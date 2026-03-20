@@ -154,7 +154,7 @@ function formatOption(flag: string, description: string): string {
 export function formatPanCodeCliUsage(target: "orchestrator" | "worker" = "orchestrator"): string {
   if (target === "worker") {
     return `Usage:
-  npm run worker -- --prompt "list files" --result-file result.json
+  pancode --worker --prompt "list files" --result-file result.json
 
 Options:
 ${formatOption("--prompt <text>", "Prompt to send to the worker")}
@@ -169,8 +169,8 @@ ${formatOption("--version", "Show PanCode version")}`;
   }
 
   return `Usage:
-  npm start
-  npm start -- --model anthropic/claude-opus-4-5
+  pancode
+  pancode --model openai-codex/gpt-5.4
 
 Options:
 ${formatOption("--cwd <path>", "Working directory for the session")}

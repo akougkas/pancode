@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { sharedBus } from "../../core/shared-bus";
 import { defineExtension } from "../../engine/extensions";
 import { getRunLedger } from "../dispatch";
@@ -43,6 +44,10 @@ export const extension = defineExtension((pi) => {
     const runtimeRoot = packageRoot ? `${packageRoot}/.pancode` : ".pancode";
     metricsLedger = new MetricsLedger(runtimeRoot);
     auditTrail = createAuditTrail(1000);
+
+    // Session boundary marker
+    const sessionId = process.env.PANCODE_SESSION_ID ?? randomUUID().slice(0, 8);
+    metricsLedger.addSessionMarker({ type: "session_start", timestamp: new Date().toISOString(), sessionId });
     budgetSnapshot = {
       totalCost: 0,
       ceiling: Number.parseFloat(process.env.PANCODE_BUDGET_CEILING ?? "10.0") || 10,
@@ -122,6 +127,11 @@ export const extension = defineExtension((pi) => {
         ceiling: event.ceiling,
       };
     });
+  });
+
+  pi.on("session_shutdown", async () => {
+    const sessionId = process.env.PANCODE_SESSION_ID ?? "unknown";
+    metricsLedger?.addSessionMarker({ type: "session_end", timestamp: new Date().toISOString(), sessionId });
   });
 
   // === /metrics ===

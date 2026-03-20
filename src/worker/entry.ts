@@ -19,11 +19,21 @@ interface WorkerArgs {
   help: boolean;
 }
 
+interface WorkerUsage {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  cost: number;
+  turns: number;
+}
+
 interface AssistantState {
   assistantText: string;
   assistantError: string;
   stdoutNoise: string[];
   eventsCount: number;
+  usage: WorkerUsage;
 }
 
 interface PiRunResult {
@@ -32,6 +42,7 @@ interface PiRunResult {
   timedOut: boolean;
   assistantText: string;
   assistantError: string;
+  usage: WorkerUsage;
   stdoutNoise: string;
   stderr: string;
   eventsCount: number;
@@ -151,8 +162,19 @@ function collectAssistantStateFromEvent(event: any, state: AssistantState): void
       state.assistantText = text;
       state.assistantError = "";
     }
-    if (message?.role === "assistant" && message.stopReason === "error" && typeof message.errorMessage === "string") {
-      state.assistantError = message.errorMessage;
+    if (message?.role === "assistant") {
+      state.usage.turns++;
+      const usage = message.usage;
+      if (usage) {
+        state.usage.inputTokens += usage.input ?? 0;
+        state.usage.outputTokens += usage.output ?? 0;
+        state.usage.cacheReadTokens += usage.cacheRead ?? 0;
+        state.usage.cacheWriteTokens += usage.cacheWrite ?? 0;
+        state.usage.cost += usage.cost?.total ?? 0;
+      }
+      if (message.stopReason === "error" && typeof message.errorMessage === "string") {
+        state.assistantError = message.errorMessage;
+      }
     }
     return;
   }
@@ -175,7 +197,13 @@ function collectAssistantStateFromEvent(event: any, state: AssistantState): void
 }
 
 function parseCapturedStdout(stdoutText: string): AssistantState {
-  const state: AssistantState = { assistantText: "", assistantError: "", stdoutNoise: [], eventsCount: 0 };
+  const state: AssistantState = {
+    assistantText: "",
+    assistantError: "",
+    stdoutNoise: [],
+    eventsCount: 0,
+    usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, cost: 0, turns: 0 },
+  };
   for (const line of stdoutText.split("\n")) {
     const trimmed = line.trim();
     if (!trimmed) continue;
@@ -321,6 +349,7 @@ async function runPi(config: FullWorkerConfig): Promise<PiRunResult> {
         timedOut,
         assistantText: parsed.assistantText,
         assistantError: parsed.assistantError,
+        usage: parsed.usage,
         stdoutNoise: parsed.stdoutNoise.join(""),
         stderr: stderrText,
         eventsCount: parsed.eventsCount,
@@ -383,6 +412,7 @@ async function main(): Promise<void> {
       eventsCount: result.eventsCount,
       assistantText: result.assistantText,
       assistantError: result.assistantError,
+      usage: result.usage,
       stdoutNoise: result.stdoutNoise,
       stderr: result.stderr,
       stdoutPath: result.stdoutPath,

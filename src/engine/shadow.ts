@@ -1,8 +1,10 @@
 /**
- * Shadow agent: lightweight in-process agent for orchestrator-internal exploration.
+ * Shadow Scout Engine: concurrent in-process agents for orchestrator reconnaissance.
  *
- * Creates a minimal Pi agent session with readonly tools and a cheap model.
- * Runs the query, collects the response, and tears down. No session persistence.
+ * Spawns 1-4 lightweight Pi SDK sessions in parallel, each running on a fast
+ * model (PANCODE_SCOUT_MODEL) with readonly tools. Results are returned as
+ * structured objects directly in memory. No file I/O, no dispatch ledger,
+ * no session persistence. Pure IPC between orchestrator and scouts.
  */
 
 import type { Api, Model } from "@pancode/pi-ai";
@@ -15,24 +17,48 @@ import {
   createReadOnlyTools,
 } from "@pancode/pi-coding-agent";
 
-export interface ShadowQueryOptions {
-  query: string;
-  cwd: string;
-  model?: Model<Api>;
-  modelRegistry?: InstanceType<typeof ModelRegistry>;
-  timeoutMs?: number;
-}
+export const MAX_CONCURRENT_SCOUTS = 4;
 
-export interface ShadowQueryResult {
+export interface ScoutResult {
+  query: string;
   response: string;
   toolCalls: number;
   durationMs: number;
   error?: string;
 }
 
-export async function runShadowQuery(options: ShadowQueryOptions): Promise<ShadowQueryResult> {
+export interface ScoutRunOptions {
+  cwd: string;
+  model?: Model<Api>;
+  modelRegistry?: InstanceType<typeof ModelRegistry>;
+  systemPrompt: string;
+  signal?: AbortSignal;
+}
+
+/**
+ * Run 1-N scout queries concurrently. Each query gets its own in-process
+ * Pi session with readonly tools. Queries beyond MAX_CONCURRENT_SCOUTS
+ * are silently dropped.
+ */
+export async function runScouts(queries: string[], options: ScoutRunOptions): Promise<ScoutResult[]> {
+  const limited = queries.slice(0, MAX_CONCURRENT_SCOUTS);
+  const settled = await Promise.allSettled(limited.map((query) => runSingleScout(query, options)));
+
+  return settled.map((outcome, i) => {
+    if (outcome.status === "fulfilled") return outcome.value;
+    return {
+      query: limited[i],
+      response: "",
+      toolCalls: 0,
+      durationMs: 0,
+      error: outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason),
+    };
+  });
+}
+
+async function runSingleScout(query: string, options: ScoutRunOptions): Promise<ScoutResult> {
   const startTime = Date.now();
-  const timeout = options.timeoutMs ?? 30000;
+  let session: Awaited<ReturnType<typeof createAgentSession>>["session"] | null = null;
 
   try {
     const tools = createReadOnlyTools(options.cwd);
@@ -53,14 +79,12 @@ export async function runShadowQuery(options: ShadowQueryOptions): Promise<Shado
       sessionOptions.modelRegistry = options.modelRegistry;
     }
 
-    const { session } = await createAgentSession(sessionOptions);
+    const created = await createAgentSession(sessionOptions);
+    session = created.session;
 
     let response = "";
     let toolCalls = 0;
 
-    // Subscribe to events to collect response and tool call count.
-    // message_end with an assistant message carries the final text content.
-    // tool_execution_end events track tool call count.
     const unsubscribe = session.subscribe((event) => {
       if (event.type === "message_end" && "message" in event && event.message?.role === "assistant") {
         const msg = event.message;
@@ -77,22 +101,34 @@ export async function runShadowQuery(options: ShadowQueryOptions): Promise<Shado
       }
     });
 
-    // Run query with timeout
-    const timeoutPromise = new Promise<never>((_resolve, reject) => {
-      setTimeout(() => reject(new Error("Shadow query timed out")), timeout);
-    });
+    // Forward external abort signal to session
+    const abortHandler = () => {
+      session?.abort().catch(() => {});
+    };
+    options.signal?.addEventListener("abort", abortHandler, { once: true });
 
-    await Promise.race([session.prompt(options.query), timeoutPromise]);
+    const fullPrompt = `${options.systemPrompt}\n\n${query}`;
+
+    try {
+      await session.prompt(fullPrompt);
+    } finally {
+      options.signal?.removeEventListener("abort", abortHandler);
+    }
 
     unsubscribe();
 
     return {
+      query,
       response,
       toolCalls,
       durationMs: Date.now() - startTime,
     };
   } catch (err) {
+    if (session) {
+      session.abort().catch(() => {});
+    }
     return {
+      query,
       response: "",
       toolCalls: 0,
       durationMs: Date.now() - startTime,
