@@ -26,6 +26,9 @@ export class GeminiRuntime extends CliRuntime {
   readonly binaryName = "gemini";
 
   buildCliArgs(config: RuntimeTaskConfig): string[] {
+    // TODO: Gemini CLI does not support --system-prompt or equivalent.
+    // When upstream adds system prompt support, pass config.systemPrompt through.
+    // Currently the system prompt is lost for Gemini workers.
     const args = ["-p", config.task];
 
     if (!config.readonly) {

@@ -58,6 +58,9 @@ export class CodexRuntime extends CliRuntime {
   readonly binaryName = "codex";
 
   buildCliArgs(config: RuntimeTaskConfig): string[] {
+    // TODO: Codex CLI does not support --system-prompt or equivalent.
+    // When upstream adds system prompt support, pass config.systemPrompt through.
+    // Currently the system prompt is lost for Codex workers.
     const args = ["exec", config.task, "--json"];
 
     if (!config.readonly) {

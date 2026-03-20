@@ -26,9 +26,11 @@ const SCOUT_SYSTEM_PROMPT = [
   "1. Use find or ls FIRST to locate relevant files and directories.",
   "2. Use grep to search for specific patterns, symbols, or keywords.",
   "3. Use read to examine file contents when you know the exact path.",
+  "4. Limit to 3-5 tool calls per query. Report what you found and stop.",
   "",
   "Output rules:",
   "- Report exact file paths and line numbers: path/to/file.ts:42",
+  "- Structure findings as: FOUND: path/file.ts:line — description",
   "- Be concise. Facts only. No opinions, no suggestions, no commentary.",
   "- If you cannot find what was asked, say so explicitly.",
 ].join("\n");
@@ -55,6 +57,8 @@ export function registerShadowExplore(
     name: string;
     label: string;
     description: string;
+    promptSnippet?: string;
+    promptGuidelines?: string[];
     parameters: ReturnType<typeof Type.Object>;
     execute: (
       toolCallId: string,
@@ -68,6 +72,13 @@ export function registerShadowExplore(
   registerTool({
     name: "shadow_explore",
     label: "Shadow Explore",
+    promptSnippet:
+      "Concurrent codebase reconnaissance. Spawns 1-4 scout agents to explore in parallel before dispatch decisions.",
+    promptGuidelines: [
+      "Use shadow_explore for open-ended codebase questions (project structure, locating files, understanding architecture). It spawns parallel scouts on a fast model.",
+      "Use read/grep/find/ls for targeted single-file operations (user asks to read a specific file, check a known path).",
+      "Before dispatching workers, use shadow_explore to gather context about the relevant code areas.",
+    ],
     description: [
       "Internal codebase reconnaissance before complex dispatch decisions.",
       "Spawns 1-4 concurrent scout agents to explore in parallel.",
