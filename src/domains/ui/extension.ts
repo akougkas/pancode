@@ -1,4 +1,5 @@
-import { DEFAULT_REASONING_PREFERENCE } from "../../core/defaults";
+import { isSafetyLevel } from "../../core/config-validator";
+import { DEFAULT_REASONING_PREFERENCE, DEFAULT_SAFETY, DEFAULT_THEME } from "../../core/defaults";
 import {
   MODE_DEFINITIONS,
   type ModeDefinition,
@@ -385,7 +386,7 @@ function modeThemeColor(mode: ModeDefinition): "accent" | "success" | "warning" 
 
 export const extension = defineExtension((pi) => {
   let currentModelLabel = "no model";
-  let currentThemeName = process.env.PANCODE_THEME?.trim() || "pancode-dark";
+  let currentThemeName = process.env.PANCODE_THEME?.trim() || DEFAULT_THEME;
   let currentReasoningPreference = readReasoningPreference();
   let welcomeShown = false;
   let pancodeEditor: PanCodeEditor | null = null;
@@ -396,7 +397,7 @@ export const extension = defineExtension((pi) => {
   function updateEditorDisplay(): void {
     if (!pancodeEditor || !themeRef) return;
     const mode = getModeDefinition();
-    const safety = process.env.PANCODE_SAFETY ?? "auto-edit";
+    const safety = process.env.PANCODE_SAFETY ?? DEFAULT_SAFETY;
     const color = modeThemeColor(mode);
     pancodeEditor.setModeDisplay(mode.name, (s) => themeRef!.fg(color, s));
     pancodeEditor.setSafetyDisplay(safety);
@@ -566,7 +567,7 @@ export const extension = defineExtension((pi) => {
 
       sendPanel(emitPanel, `${PANCODE_PRODUCT_NAME} Settings`, [
         "Configuration:",
-        `  Safety mode:           ${process.env.PANCODE_SAFETY ?? "auto-edit"}`,
+        `  Safety mode:           ${process.env.PANCODE_SAFETY ?? DEFAULT_SAFETY}`,
         `  Orchestrator model:    ${ctx.model ? modelRef(ctx.model) : "unresolved"}`,
         `  Worker model:          ${process.env.PANCODE_WORKER_MODEL ?? "(inherit from routing)"}`,
         `  Reasoning:             ${currentReasoningPreference}`,
@@ -602,9 +603,8 @@ export const extension = defineExtension((pi) => {
         await handleModelsCommand(value, ctx);
         return;
       case "safety": {
-        const validLevels = ["suggest", "auto-edit", "full-auto"];
-        if (!value || !validLevels.includes(value)) {
-          ctx.ui.notify(`Invalid safety level. Use: ${validLevels.join(", ")}`, "error");
+        if (!value || !isSafetyLevel(value)) {
+          ctx.ui.notify("Invalid safety level. Use: suggest, auto-edit, full-auto", "error");
           return;
         }
         process.env.PANCODE_SAFETY = value;
@@ -711,7 +711,7 @@ export const extension = defineExtension((pi) => {
       render(width) {
         const left = `${theme.fg("accent", PANCODE_PRODUCT_NAME)} ${theme.fg("muted", process.env.PANCODE_PROFILE ?? "standard")}`;
         const modeInfo = getModeDefinition();
-        const right = `${theme.fg("dim", process.env.PANCODE_SAFETY ?? "auto-edit")}  ${theme.fg(modeThemeColor(modeInfo), modeInfo.name)}`;
+        const right = `${theme.fg("dim", process.env.PANCODE_SAFETY ?? DEFAULT_SAFETY)}  ${theme.fg(modeThemeColor(modeInfo), modeInfo.name)}`;
         return [composeSingleLine(left, right, width)];
       },
     }));

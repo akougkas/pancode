@@ -12,7 +12,7 @@ export interface ConfigValidationResult<T> {
   value?: T;
 }
 
-function isSafetyLevel(value: unknown): value is SafetyLevel {
+export function isSafetyLevel(value: unknown): value is SafetyLevel {
   return value === "suggest" || value === "auto-edit" || value === "full-auto";
 }
 
