@@ -1,15 +1,18 @@
 /**
  * Shadow explore: orchestrator-internal tool for concurrent codebase reconnaissance.
  *
- * Registers shadow_explore as a tool the orchestrator can call to gather
- * intelligence before dispatch decisions. Spawns 1-4 concurrent in-process
- * scout agents on a fast model. Results are returned in memory as structured
- * data. Not visible to workers or users.
+ * The orchestrator calls shadow_explore to gather intelligence before dispatch
+ * decisions. It controls exploration depth and return budget per invocation.
+ * Scouts accumulate context through tool calls, then compact their findings
+ * into structured reports the orchestrator can reference.
+ *
+ * Multi-round scouting is supported naturally: the orchestrator can call
+ * shadow_explore multiple times, refining queries based on prior results.
  */
 
 import { Type } from "@sinclair/typebox";
 import { ToolName } from "../../core/tool-names";
-import { type ScoutResult, runScouts } from "../../engine/shadow";
+import { type ScoutDepth, type ScoutResult, type ScoutReturnBudget, runScouts } from "../../engine/shadow";
 import type { AgentToolResult, ExtensionContext } from "../../engine/types";
 import { compileScoutPrompt } from "../prompts";
 import { findModelProfile } from "../providers";
@@ -35,7 +38,6 @@ function resolveScoutModel(ctx: ExtensionContext) {
         }
         return found;
       }
-      // Log when configured model is not in registry so the failure is visible.
       console.error(
         `[pancode:shadow] ${envVar}=${value} not found in model registry. ` +
           `Available providers: ${[...new Set(ctx.modelRegistry.getAll().map((m) => m.provider))].join(", ")}`,
@@ -59,7 +61,7 @@ export function registerShadowExplore(
     parameters: ReturnType<typeof Type.Object>;
     execute: (
       toolCallId: string,
-      params: { queries: string[] },
+      params: { queries: string[]; depth?: string; returnBudget?: string },
       signal: AbortSignal | undefined,
       onUpdate: ((result: AgentToolResult<unknown>) => void) | undefined,
       ctx: ExtensionContext,
@@ -70,20 +72,20 @@ export function registerShadowExplore(
     name: ToolName.SHADOW_EXPLORE,
     label: "Shadow Explore",
     promptSnippet:
-      "Concurrent codebase reconnaissance. Spawns 1-4 scout agents to explore in parallel before dispatch decisions.",
+      "Concurrent codebase reconnaissance. Spawns 1-4 scout agents on a fast model to explore in parallel.",
     promptGuidelines: [
-      "Use shadow_explore for open-ended codebase questions (project structure, locating files, understanding architecture). It spawns parallel scouts on a fast model.",
-      "Use read/grep/find/ls for targeted single-file operations (user asks to read a specific file, check a known path).",
-      "Before dispatching workers, use shadow_explore to gather context about the relevant code areas.",
+      "Use shadow_explore to gather codebase intelligence: project structure, file locations, dependency maps, git state, config discovery, import graphs.",
+      "Decompose broad questions into 2-4 targeted sub-queries. Each scout handles one specific question.",
+      "Control exploration with depth (shallow/medium/deep) and returnBudget (brief/standard/detailed).",
+      "Use read/grep/find/ls directly for simple single-file operations you can do yourself.",
+      "You can call shadow_explore multiple times. Refine queries based on prior scout results.",
     ],
     description: [
-      "Internal codebase reconnaissance before complex dispatch decisions.",
-      "Spawns 1-4 concurrent scout agents to explore in parallel.",
-      "Call ONLY when you need to understand project structure, locate files,",
-      "or read configurations before deciding how to dispatch workers.",
-      "Do NOT call for greetings, simple questions, conversations, or tasks you",
-      "can answer directly. Do NOT call when the user already told you what to",
-      "dispatch. Each query runs on a separate fast scout agent concurrently.",
+      "Codebase reconnaissance via 1-4 concurrent scout agents on a fast model.",
+      "Each scout explores independently, accumulates context, and returns structured findings.",
+      "Use depth to control exploration thoroughness (shallow=quick scan, deep=thorough analysis).",
+      "Use returnBudget to control output size (brief=key facts, detailed=full report with code).",
+      "Call multiple times to refine: first round maps territory, second round digs into specifics.",
     ].join(" "),
     parameters: Type.Object({
       queries: Type.Array(Type.String({ description: "Specific codebase question for one scout" }), {
@@ -91,23 +93,37 @@ export function registerShadowExplore(
         minItems: 1,
         maxItems: 4,
       }),
+      depth: Type.Optional(
+        Type.Union([Type.Literal("shallow"), Type.Literal("medium"), Type.Literal("deep")], {
+          description: "Exploration depth. shallow=directory scan(4 calls), medium=grep+read(12 calls), deep=thorough(20 calls). Default: medium.",
+        }),
+      ),
+      returnBudget: Type.Optional(
+        Type.Union([Type.Literal("brief"), Type.Literal("standard"), Type.Literal("detailed")], {
+          description: "Output size. brief=500tok key facts, standard=2K findings+summary, detailed=5K with code excerpts. Default: standard.",
+        }),
+      ),
     }),
     async execute(_toolCallId, params, signal, onUpdate, ctx) {
-      const { queries } = params;
+      const { queries, depth, returnBudget } = params;
 
       if (!queries || queries.length === 0) {
         return textResult("Error: no queries provided");
       }
 
       const scoutCount = Math.min(queries.length, 4);
+      const depthLabel = depth ?? "medium";
+      const budgetLabel = returnBudget ?? "standard";
+
       if (onUpdate) {
-        onUpdate(textResult(`researching internally... (${scoutCount} scout${scoutCount > 1 ? "s" : ""})`));
+        onUpdate(
+          textResult(`scouting... (${scoutCount} scout${scoutCount > 1 ? "s" : ""}, depth=${depthLabel}, return=${budgetLabel})`),
+        );
       }
 
       const model = resolveScoutModel(ctx);
       const startTime = Date.now();
 
-      // Compile scout prompt dynamically via PanPrompt engine.
       const scoutProfile = model ? (findModelProfile(model.provider, model.id) ?? null) : null;
       const scoutPrompt = compileScoutPrompt(scoutProfile);
 
@@ -119,6 +135,10 @@ export function registerShadowExplore(
           modelRegistry: ctx.modelRegistry as Parameters<typeof runScouts>[1]["modelRegistry"],
           systemPrompt: scoutPrompt,
           signal: signal ?? undefined,
+          queryOptions: {
+            depth: (depthLabel as ScoutDepth) ?? "medium",
+            returnBudget: (budgetLabel as ScoutReturnBudget) ?? "standard",
+          },
         });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -131,11 +151,12 @@ export function registerShadowExplore(
       const errors = results.filter((r) => r.error);
 
       console.error(
-        `[pancode:shadow] ${results.length} scouts completed in ${(wallMs / 1000).toFixed(1)}s (${totalToolCalls} tool calls${errors.length > 0 ? `, ${errors.length} errors` : ""})`,
+        `[pancode:shadow] ${results.length} scouts completed in ${(wallMs / 1000).toFixed(1)}s ` +
+          `(${totalToolCalls} tool calls, depth=${depthLabel}, return=${budgetLabel}` +
+          `${errors.length > 0 ? `, ${errors.length} errors` : ""})`,
       );
 
       // Build structured result for the orchestrator's context.
-      // Each scout's findings are labeled so the orchestrator can synthesize.
       const sections: string[] = [];
       for (const r of results) {
         if (r.error) {
@@ -145,7 +166,9 @@ export function registerShadowExplore(
         }
       }
 
-      const header = `${results.length} scout${results.length > 1 ? "s" : ""} completed in ${(wallMs / 1000).toFixed(1)}s (${totalToolCalls} tool calls)`;
+      const header =
+        `${results.length} scout${results.length > 1 ? "s" : ""} completed in ${(wallMs / 1000).toFixed(1)}s ` +
+        `(${totalToolCalls} tool calls, depth=${depthLabel})`;
 
       return textResult(`${header}\n\n${sections.join("\n\n")}`);
     },
