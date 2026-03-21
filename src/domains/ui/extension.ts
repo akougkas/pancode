@@ -439,6 +439,17 @@ export const extension = defineExtension((pi) => {
     return getModeDefinition(next);
   }
 
+  function emitModeTransition(mode: ModeDefinition): void {
+    const dispatch = mode.dispatchEnabled ? "Dispatch enabled." : "Dispatch disabled.";
+    const mutations = mode.mutationsAllowed ? "File mutations allowed." : "Read-only.";
+    pi.sendMessage({
+      customType: "pancode-mode-transition",
+      content: `[MODE SWITCH] Now in ${mode.name} mode. ${mode.description} ${dispatch} ${mutations} Previous mode instructions are superseded.`,
+      display: true,
+      details: { title: `Mode: ${mode.name}` },
+    });
+  }
+
   /**
    * Apply a reasoning level: update preference, env, engine, and persist.
    * Called on mode switch, manual /reasoning, and keyboard cycling.
@@ -484,6 +495,11 @@ export const extension = defineExtension((pi) => {
     const body = typeof message.content === "string" ? message.content : String(message.content ?? "");
     const text = `${theme.bold(theme.fg("accent", title))}\n${body}`;
     return new Text(text, 1, 0);
+  });
+
+  pi.registerMessageRenderer("pancode-mode-transition", (message, _options, theme) => {
+    const body = typeof message.content === "string" ? message.content : String(message.content ?? "");
+    return new Text(theme.fg("warning", `▸ ${body}`), 0, 0);
   });
 
   const handleThemeCommand = async (args: string, ctx: ExtensionContext) => {
@@ -1085,7 +1101,7 @@ export const extension = defineExtension((pi) => {
         const def = cycleModeTo();
         applyReasoningLevel(def.reasoningLevel, ctx.model, (m, l) => ctx.ui.notify(m, l));
         ctx.ui.setStatus("mode", `[${def.name}]`);
-        ctx.ui.notify(`Mode: ${def.name} (reasoning: ${def.reasoningLevel})`, "info");
+        emitModeTransition(def);
         syncEditorDisplay();
       });
     }
@@ -1240,7 +1256,7 @@ export const extension = defineExtension((pi) => {
       pi.setActiveTools(getToolsetForMode(target.id));
       applyReasoningLevel(target.reasoningLevel, ctx.model, (m, l) => ctx.ui.notify(m, l));
       ctx.ui.setStatus("mode", `[${target.name}]`);
-      ctx.ui.notify(`Mode: ${target.name} (reasoning: ${target.reasoningLevel})`, "info");
+      emitModeTransition(target);
       syncEditorDisplay();
     },
   });
@@ -1286,9 +1302,13 @@ export const extension = defineExtension((pi) => {
       process.env.PANCODE_PRESET = request;
       if (preset.workerModel) {
         process.env.PANCODE_WORKER_MODEL = preset.workerModel;
+      } else {
+        delete process.env.PANCODE_WORKER_MODEL;
       }
       if (preset.scoutModel) {
         process.env.PANCODE_SCOUT_MODEL = preset.scoutModel;
+      } else {
+        delete process.env.PANCODE_SCOUT_MODEL;
       }
       process.env.PANCODE_SAFETY = preset.safety;
       applyReasoningLevel(preset.reasoning, ctx.model, (m, l) => ctx.ui.notify(m, l));
@@ -1300,7 +1320,15 @@ export const extension = defineExtension((pi) => {
       }
 
       syncEditorDisplay();
-      ctx.ui.notify(`Preset applied: ${request} (${preset.description})`, "info");
+
+      const workerLabel = preset.workerModel ?? "(orchestrator model)";
+      const scoutLabel = preset.scoutModel ?? "(orchestrator model)";
+      pi.sendMessage({
+        customType: "pancode-mode-transition",
+        content: `[PRESET SWITCH] Now using ${request}. Orchestrator: ${preset.model}. Workers: ${workerLabel}. Scouts: ${scoutLabel}. Conversation preserved.`,
+        display: true,
+        details: { title: `Preset: ${request}` },
+      });
     },
   });
 

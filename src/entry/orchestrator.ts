@@ -176,13 +176,12 @@ export async function runOrchestratorEntry(): Promise<void> {
     theme: args.theme ?? undefined,
   });
 
-  // Apply preset worker model if no explicit override exists.
-  if (presetWorkerModel && !process.env.PANCODE_WORKER_MODEL) {
+  // Apply preset worker and scout models. When the user explicitly passes
+  // --preset, preset values override any .env defaults.
+  if (presetWorkerModel) {
     process.env.PANCODE_WORKER_MODEL = presetWorkerModel;
   }
-
-  // Apply preset scout model for shadow_explore if no explicit override exists.
-  if (presetScoutModel && !process.env.PANCODE_SCOUT_MODEL) {
+  if (presetScoutModel) {
     process.env.PANCODE_SCOUT_MODEL = presetScoutModel;
   }
 
