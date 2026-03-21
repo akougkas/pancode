@@ -1,23 +1,54 @@
 /**
- * Shadow Scout Engine: concurrent in-process agents for orchestrator reconnaissance.
+ * Shadow Scout Engine: lightweight in-process agents for orchestrator reconnaissance.
  *
- * Spawns 1-4 lightweight Pi SDK sessions in parallel, each running on a fast
- * model (PANCODE_SCOUT_MODEL) with readonly tools. Results are returned as
- * structured objects directly in memory. No file I/O, no dispatch ledger,
- * no session persistence. Pure IPC between orchestrator and scouts.
+ * Each scout is a bare Pi Agent (no session/resource/extension overhead) that
+ * accumulates context up to 100K tokens through tool calls, then compacts its
+ * findings into structured output for the orchestrator.
+ *
+ * The orchestrator controls two knobs per query:
+ *   - depth: shallow (4 calls) | medium (12) | deep (20) -- exploration thoroughness
+ *   - returnBudget: brief (500 tok) | standard (2K) | detailed (5K) -- output size
+ *
+ * Budget enforcement uses a two-phase approach:
+ *   1. Soft steer: at the depth limit, inject a user message telling the scout
+ *      to stop exploring and produce its structured report.
+ *   2. Hard abort: at 2x the depth limit, abort the agent as a safety net.
+ *      This only fires if the model ignores the steer entirely.
  */
 
+import { Agent } from "@pancode/pi-agent-core";
 import type { Api, Model } from "@pancode/pi-ai";
 import {
-  AuthStorage,
   type ModelRegistry,
-  SessionManager,
-  SettingsManager,
-  createAgentSession,
-  createReadOnlyTools,
+  createBashTool,
+  createFindTool,
+  createGrepTool,
+  createLsTool,
+  createReadTool,
 } from "@pancode/pi-coding-agent";
+import { getAgentProfile } from "../core/agent-profiles";
 
 export const MAX_CONCURRENT_SCOUTS = 4;
+
+const scoutProfile = getAgentProfile("scout");
+
+/** Exploration depth presets: tool call soft budget before the steer fires. */
+export type ScoutDepth = "shallow" | "medium" | "deep";
+
+const DEPTH_BUDGETS: Record<ScoutDepth, number> = {
+  shallow: 4,
+  medium: 12,
+  deep: 20,
+};
+
+/** Return budget labels that map to token guidance in the steer message. */
+export type ScoutReturnBudget = "brief" | "standard" | "detailed";
+
+const RETURN_BUDGET_GUIDANCE: Record<ScoutReturnBudget, string> = {
+  brief: "Produce a BRIEF report: key findings only, under 500 tokens. No code blocks.",
+  standard: "Produce a STANDARD report: findings with one-line descriptions, under 2000 tokens.",
+  detailed: "Produce a DETAILED report: findings with descriptions and short code excerpts, under 5000 tokens.",
+};
 
 export interface ScoutResult {
   query: string;
@@ -27,18 +58,23 @@ export interface ScoutResult {
   error?: string;
 }
 
+export interface ScoutQueryOptions {
+  depth?: ScoutDepth;
+  returnBudget?: ScoutReturnBudget;
+}
+
 export interface ScoutRunOptions {
   cwd: string;
   model?: Model<Api>;
   modelRegistry?: InstanceType<typeof ModelRegistry>;
   systemPrompt: string;
   signal?: AbortSignal;
+  queryOptions?: ScoutQueryOptions;
 }
 
 /**
- * Run 1-N scout queries concurrently. Each query gets its own in-process
- * Pi session with readonly tools. Queries beyond MAX_CONCURRENT_SCOUTS
- * are silently dropped.
+ * Run 1-N scout queries concurrently. Each query gets its own lightweight
+ * Pi Agent. Queries beyond MAX_CONCURRENT_SCOUTS are silently dropped.
  */
 export async function runScouts(queries: string[], options: ScoutRunOptions): Promise<ScoutResult[]> {
   const limited = queries.slice(0, MAX_CONCURRENT_SCOUTS);
@@ -58,75 +94,120 @@ export async function runScouts(queries: string[], options: ScoutRunOptions): Pr
 
 async function runSingleScout(query: string, options: ScoutRunOptions): Promise<ScoutResult> {
   const startTime = Date.now();
-  let session: Awaited<ReturnType<typeof createAgentSession>>["session"] | null = null;
 
   try {
-    const tools = createReadOnlyTools(options.cwd);
-
-    const sessionOptions: Parameters<typeof createAgentSession>[0] = {
-      cwd: options.cwd,
-      tools,
-      sessionManager: SessionManager.inMemory(options.cwd),
-      settingsManager: SettingsManager.inMemory(),
-      authStorage: AuthStorage.inMemory(),
-      thinkingLevel: "off",
-    };
-
-    if (options.model) {
-      sessionOptions.model = options.model;
-    }
-    if (options.modelRegistry) {
-      sessionOptions.modelRegistry = options.modelRegistry;
+    const model = options.model;
+    if (!model) {
+      return { query, response: "", toolCalls: 0, durationMs: Date.now() - startTime, error: "No scout model configured" };
     }
 
-    const created = await createAgentSession(sessionOptions);
-    session = created.session;
+    const registry = options.modelRegistry;
+    const apiKey = registry ? await registry.getApiKeyForProvider(model.provider) : undefined;
 
-    let response = "";
+    const tools = [
+      createReadTool(options.cwd),
+      createGrepTool(options.cwd),
+      createFindTool(options.cwd),
+      createLsTool(options.cwd),
+      createBashTool(options.cwd),
+    ];
+
+    const depth = options.queryOptions?.depth ?? "medium";
+    const returnBudget = options.queryOptions?.returnBudget ?? "standard";
+    const softBudget = DEPTH_BUDGETS[depth];
+    const hardCap = softBudget * 2;
+
     let toolCalls = 0;
+    let steered = false;
 
-    const unsubscribe = session.subscribe((event) => {
-      if (event.type === "message_end" && "message" in event && event.message?.role === "assistant") {
+    // Strip reasoning and thinking compat. Scout agents never reason.
+    const scoutCompat = model.compat ? { ...model.compat, thinkingFormat: undefined } : model.compat;
+    const scoutModel = { ...model, reasoning: false, compat: scoutCompat } as Model<Api>;
+
+    const agent = new Agent({
+      initialState: {
+        systemPrompt: options.systemPrompt,
+        model: scoutModel,
+        thinkingLevel: "off",
+        tools,
+      },
+      getApiKey: async () => apiKey,
+      onPayload: async (payload) => {
+        if (payload && typeof payload === "object") {
+          (payload as Record<string, unknown>).temperature = scoutProfile.temperature;
+          (payload as Record<string, unknown>).top_p = scoutProfile.topP;
+          (payload as Record<string, unknown>).top_k = scoutProfile.topK;
+          (payload as Record<string, unknown>).presence_penalty = scoutProfile.presencePenalty;
+        }
+        return payload;
+      },
+      afterToolCall: async () => {
+        toolCalls++;
+
+        // Soft budget: steer the scout to wrap up with return budget guidance.
+        if (toolCalls >= softBudget && !steered) {
+          steered = true;
+          agent.steer({
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: `BUDGET REACHED (${toolCalls} tool calls). Stop exploring. ${RETURN_BUDGET_GUIDANCE[returnBudget]} Write your REPORT: section now.`,
+              },
+            ],
+            timestamp: Date.now(),
+          });
+        }
+
+        // Hard safety cap: abort if the model ignores the steer entirely.
+        if (toolCalls >= hardCap) {
+          agent.abort();
+        }
+
+        return undefined;
+      },
+    });
+
+    const modelInfo = `${model.provider}/${model.id}`;
+    console.error(
+      `[pancode:shadow] Scout ready (model=${modelInfo}, depth=${depth}[${softBudget}/${hardCap}], return=${returnBudget})`,
+    );
+
+    // Collect ALL text responses across turns. The scout may produce partial
+    // observations between tool calls, plus a final structured report after steer.
+    const textParts: string[] = [];
+    agent.subscribe((event) => {
+      if (event.type === "message_end" && "message" in event) {
         const msg = event.message;
-        if (Array.isArray(msg.content)) {
+        if (msg?.role === "assistant" && Array.isArray(msg.content)) {
           for (const part of msg.content) {
             if (part && typeof part === "object" && "type" in part && part.type === "text" && "text" in part) {
-              response = String(part.text);
+              const text = String(part.text).trim();
+              if (text.length > 0) {
+                textParts.push(text);
+              }
             }
           }
         }
       }
-      if (event.type === "tool_execution_end") {
-        toolCalls++;
-      }
     });
 
-    // Forward external abort signal to session
-    const abortHandler = () => {
-      session?.abort().catch(() => {});
-    };
+    const abortHandler = () => agent.abort();
     options.signal?.addEventListener("abort", abortHandler, { once: true });
 
-    const fullPrompt = `${options.systemPrompt}\n\n${query}`;
-
     try {
-      await session.prompt(fullPrompt);
+      await agent.prompt(query);
     } finally {
       options.signal?.removeEventListener("abort", abortHandler);
     }
 
-    unsubscribe();
-
     return {
       query,
-      response,
+      response: textParts.join("\n\n"),
       toolCalls,
       durationMs: Date.now() - startTime,
     };
   } catch (err) {
-    if (session) {
-      session.abort().catch(() => {});
-    }
     return {
       query,
       response: "",
