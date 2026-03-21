@@ -67,6 +67,16 @@ export function getContextPercent(): number {
   return contextPercent;
 }
 
+/** Get the current absolute token count within the context window. */
+export function getContextTokens(): number {
+  return contextTokens;
+}
+
+/** Get the model's total context window size in tokens. */
+export function getContextWindow(): number {
+  return contextWindow;
+}
+
 /**
  * Reset token counter. Context window is preserved because the model
  * does not change when a session resets.

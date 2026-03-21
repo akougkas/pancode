@@ -2,6 +2,9 @@
 // Modes control what the orchestrator DOES with user input. They are orthogonal
 // to safety modes (suggest/auto-edit/full-auto) which control what is ALLOWED.
 
+import type { PanCodeThinkingLevel } from "./thinking";
+import { ToolName } from "./tool-names";
+
 export type OrchestratorMode = "capture" | "plan" | "build" | "ask" | "review";
 
 export interface ModeDefinition {
@@ -12,6 +15,8 @@ export interface ModeDefinition {
   dispatchEnabled: boolean;
   shadowEnabled: boolean;
   mutationsAllowed: boolean;
+  /** Preferred reasoning level for this mode. Clamped to model capabilities at runtime. */
+  reasoningLevel: PanCodeThinkingLevel;
 }
 
 export const MODE_DEFINITIONS: ModeDefinition[] = [
@@ -23,6 +28,7 @@ export const MODE_DEFINITIONS: ModeDefinition[] = [
     dispatchEnabled: false,
     shadowEnabled: false,
     mutationsAllowed: false,
+    reasoningLevel: "medium",
   },
   {
     id: "plan",
@@ -32,6 +38,7 @@ export const MODE_DEFINITIONS: ModeDefinition[] = [
     dispatchEnabled: false,
     shadowEnabled: true,
     mutationsAllowed: false,
+    reasoningLevel: "high",
   },
   {
     id: "build",
@@ -41,6 +48,7 @@ export const MODE_DEFINITIONS: ModeDefinition[] = [
     dispatchEnabled: true,
     shadowEnabled: true,
     mutationsAllowed: true,
+    reasoningLevel: "medium",
   },
   {
     id: "ask",
@@ -50,6 +58,7 @@ export const MODE_DEFINITIONS: ModeDefinition[] = [
     dispatchEnabled: true,
     shadowEnabled: true,
     mutationsAllowed: false,
+    reasoningLevel: "low",
   },
   {
     id: "review",
@@ -59,6 +68,7 @@ export const MODE_DEFINITIONS: ModeDefinition[] = [
     dispatchEnabled: true,
     shadowEnabled: true,
     mutationsAllowed: false,
+    reasoningLevel: "xhigh",
   },
 ];
 
@@ -90,11 +100,11 @@ export function cycleMode(direction: 1 | -1 = 1): OrchestratorMode {
  *   dispatch_chain, task_write, task_check, task_update, task_list
  */
 export function getToolsetForMode(mode: OrchestratorMode): string[] {
-  const readonly = ["read", "bash", "grep", "find", "ls"];
-  const mutable = [...readonly, "edit", "write"];
-  const shadow = ["shadow_explore"];
-  const tasks = ["task_write", "task_check", "task_update", "task_list"];
-  const dispatch = ["dispatch_agent", "batch_dispatch", "dispatch_chain"];
+  const readonly = [ToolName.READ, ToolName.BASH, ToolName.GREP, ToolName.FIND, ToolName.LS];
+  const mutable = [...readonly, ToolName.EDIT, ToolName.WRITE];
+  const shadow = [ToolName.SHADOW_EXPLORE];
+  const tasks = [ToolName.TASK_WRITE, ToolName.TASK_CHECK, ToolName.TASK_UPDATE, ToolName.TASK_LIST];
+  const dispatch = [ToolName.DISPATCH_AGENT, ToolName.BATCH_DISPATCH, ToolName.DISPATCH_CHAIN];
 
   switch (mode) {
     case "capture":

@@ -1,4 +1,5 @@
 import { type ChildProcess, spawn } from "node:child_process";
+import { BusChannel, type WorkerProgressEvent } from "../../core/bus-events";
 import { sharedBus } from "../../core/shared-bus";
 import { runtimeRegistry } from "../../engine/runtimes/registry";
 import type { AgentRuntime, RuntimeSamplingConfig, RuntimeTaskConfig, RuntimeUsage } from "../../engine/runtimes/types";
@@ -204,12 +205,13 @@ function spawnWorkerNdjsonPath(
       // Emit live progress so the UI can display per-worker token counts
       // on active cards during execution.
       if (options.runId) {
-        sharedBus.emit("pancode:worker-progress", {
+        const progress: WorkerProgressEvent = {
           runId: options.runId,
           inputTokens: result.usage.inputTokens,
           outputTokens: result.usage.outputTokens,
           turns: result.usage.turns,
-        });
+        };
+        sharedBus.emit(BusChannel.WORKER_PROGRESS, progress);
       }
 
       if (!result.model && msg.model) {

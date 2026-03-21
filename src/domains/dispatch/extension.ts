@@ -1,8 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { Type } from "@sinclair/typebox";
+import { BusChannel, type RunStartedEvent } from "../../core/bus-events";
 import { getModeDefinition } from "../../core/modes";
 import { sharedBus } from "../../core/shared-bus";
+import { ToolName } from "../../core/tool-names";
 import { shutdownCoordinator } from "../../core/termination";
+import { PiEvent } from "../../engine/events";
 import { defineExtension } from "../../engine/extensions";
 import type { AgentToolResult } from "../../engine/types";
 import { agentRegistry } from "../agents";
@@ -30,7 +33,7 @@ export function getRunLedger(): RunLedger | null {
 }
 
 export const extension = defineExtension((pi) => {
-  pi.on("session_start", (_event, ctx) => {
+  pi.on(PiEvent.SESSION_START, (_event, ctx) => {
     const packageRoot = process.env.PANCODE_PACKAGE_ROOT;
     if (!packageRoot) {
       console.error("[pancode:dispatch] PANCODE_PACKAGE_ROOT is not set. Domain state will not persist.");
@@ -47,7 +50,7 @@ export const extension = defineExtension((pi) => {
     registerSafetyPreFlightChecks(registerPreFlightCheck);
 
     // Listen for session reset events (/new command). Clear task store.
-    sharedBus.on("pancode:session-reset", () => {
+    sharedBus.on(BusChannel.SESSION_RESET, () => {
       initTaskStore(runtimeRoot);
       if (process.env.PANCODE_VERBOSE) {
         console.error("[pancode:dispatch] Task store reset for new session.");
@@ -57,7 +60,7 @@ export const extension = defineExtension((pi) => {
     // Register drain handler with shutdown coordinator
     shutdownCoordinator.onDrain(() => {
       draining = true;
-      sharedBus.emit("pancode:shutdown-draining", {});
+      sharedBus.emit(BusChannel.SHUTDOWN_DRAINING, {});
     });
 
     shutdownCoordinator.onTerminate(async () => {
@@ -67,13 +70,13 @@ export const extension = defineExtension((pi) => {
     });
   });
 
-  pi.on("session_shutdown", async () => {
+  pi.on(PiEvent.SESSION_SHUTDOWN, async () => {
     const sessionId = process.env.PANCODE_SESSION_ID ?? "unknown";
     ledger?.addSessionMarker({ type: "session_end", timestamp: new Date().toISOString(), sessionId });
   });
 
   pi.registerTool({
-    name: "dispatch_agent",
+    name: ToolName.DISPATCH_AGENT,
     label: "Dispatch Agent",
     description:
       "Delegate a task to a specialized PanCode worker agent. The worker runs as a separate subprocess with its own context window. Use this to parallelize work or delegate to specialized agents (dev, reviewer).",
@@ -143,7 +146,7 @@ export const extension = defineExtension((pi) => {
       run.status = "running";
       ledger?.add(run);
 
-      sharedBus.emit("pancode:run-started", {
+      sharedBus.emit(BusChannel.RUN_STARTED, {
         runId: run.id,
         task,
         agent: dispatchAction.agent,
@@ -215,7 +218,7 @@ export const extension = defineExtension((pi) => {
 
       // Spec originally defined separate run-completed and run-failed events.
       // Unified to run-finished with status field for simpler subscriber logic.
-      sharedBus.emit("pancode:run-finished", {
+      sharedBus.emit(BusChannel.RUN_FINISHED, {
         runId: run.id,
         agent: run.agent,
         status: run.status,
@@ -242,7 +245,7 @@ export const extension = defineExtension((pi) => {
   });
 
   pi.registerTool({
-    name: "batch_dispatch",
+    name: ToolName.BATCH_DISPATCH,
     label: "Batch Dispatch",
     description:
       "Dispatch multiple tasks in parallel to worker agents. Each task runs as a separate subprocess. Up to 4 workers run concurrently by default.",
@@ -308,7 +311,7 @@ export const extension = defineExtension((pi) => {
         run.status = "running";
         ledger?.add(run);
         batchTracker.addRun(batch.id, run.id);
-        sharedBus.emit("pancode:run-started", {
+        sharedBus.emit(BusChannel.RUN_STARTED, {
           runId: run.id,
           task,
           agent: agentName,
@@ -359,7 +362,7 @@ export const extension = defineExtension((pi) => {
         batchTracker.markCompleted(batch.id, run.status === "done");
         totalCost += workerResult.usage.cost;
 
-        sharedBus.emit("pancode:run-finished", {
+        sharedBus.emit(BusChannel.RUN_FINISHED, {
           runId: run.id,
           agent: run.agent,
           status: run.status,
@@ -394,7 +397,7 @@ export const extension = defineExtension((pi) => {
   });
 
   pi.registerTool({
-    name: "dispatch_chain",
+    name: ToolName.DISPATCH_CHAIN,
     label: "Chain Dispatch",
     description:
       "Execute a sequential pipeline of agent tasks. Each step receives the previous step's output via $INPUT and the original task via $ORIGINAL. Steps run sequentially; a failure at any step stops the chain.",
@@ -460,7 +463,7 @@ export const extension = defineExtension((pi) => {
           run.model = routing.model;
           run.status = "running";
           ledger?.add(run);
-          sharedBus.emit("pancode:run-started", {
+          sharedBus.emit(BusChannel.RUN_STARTED, {
             runId: run.id,
             task,
             agent,
@@ -491,7 +494,7 @@ export const extension = defineExtension((pi) => {
           run.completedAt = new Date().toISOString();
           ledger?.update(run.id, run);
 
-          sharedBus.emit("pancode:run-finished", {
+          sharedBus.emit(BusChannel.RUN_FINISHED, {
             runId: run.id,
             agent: run.agent,
             status: run.status,
@@ -578,7 +581,7 @@ export const extension = defineExtension((pi) => {
       match.completedAt = new Date().toISOString();
       ledger.update(match.id, match);
 
-      sharedBus.emit("pancode:run-finished", {
+      sharedBus.emit(BusChannel.RUN_FINISHED, {
         runId: match.id,
         agent: match.agent,
         status: "cancelled",
@@ -864,7 +867,7 @@ export const extension = defineExtension((pi) => {
   // === Task tracking tools ===
 
   pi.registerTool({
-    name: "task_write",
+    name: ToolName.TASK_WRITE,
     label: "Write Task",
     description: "Create a task in the PanCode task list. Use this to track work items, TODOs, and planned changes.",
     parameters: Type.Object({
@@ -878,7 +881,7 @@ export const extension = defineExtension((pi) => {
   });
 
   pi.registerTool({
-    name: "task_check",
+    name: ToolName.TASK_CHECK,
     label: "Check Task",
     description: "Mark a task as done in the PanCode task list.",
     parameters: Type.Object({
@@ -892,7 +895,7 @@ export const extension = defineExtension((pi) => {
   });
 
   pi.registerTool({
-    name: "task_update",
+    name: ToolName.TASK_UPDATE,
     label: "Update Task",
     description: "Update a task's title, description, or status.",
     parameters: Type.Object({
@@ -915,7 +918,7 @@ export const extension = defineExtension((pi) => {
   });
 
   pi.registerTool({
-    name: "task_list",
+    name: ToolName.TASK_LIST,
     label: "List Tasks",
     description: "List all tasks in the PanCode task list.",
     parameters: Type.Object({}),

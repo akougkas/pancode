@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import { type PanCodeConfig, type SafetyLevel, loadConfig } from "../core/config";
+import { ensurePresetsFile, loadPreset } from "../core/presets";
 import { collectDomainExtensions, resolveDomainOrder } from "../core/domain-loader";
 import { createSafeEventBus } from "../core/event-bus";
 import { ensureProjectRuntime } from "../core/init";
@@ -30,6 +31,7 @@ interface ParsedArgs {
   model: string | null;
   provider: string | null;
   profile: string | null;
+  preset: string | null;
   safety: SafetyLevel | null;
   theme: string | null;
   help: boolean;
@@ -38,16 +40,20 @@ interface ParsedArgs {
 function printUsage(): void {
   console.log(`Usage:
   pancode
+  pancode --preset openai
   pancode --model openai-codex/gpt-5.4
 
 Options:
+  --preset <name>      Boot preset (local, openai, openai-max, hybrid)
   --cwd <path>         Working directory for the session
   --provider <name>    Preferred provider for model resolution
   --model <id>         Model override, usually provider/model-id
   --profile <name>     Config profile name
   --safety <level>     suggest | auto-edit | full-auto
   --theme <name>       Pi TUI theme name
-  --help               Show this help`);
+  --help               Show this help
+
+Presets are defined in ~/.pancode/presets.yaml. Edit freely.`);
 }
 
 function parseSafetyLevel(value: string | undefined): SafetyLevel | null {
@@ -67,6 +73,7 @@ function parseArgs(argv: string[]): ParsedArgs {
     model: null,
     provider: null,
     profile: null,
+    preset: null,
     safety: null,
     theme: null,
     help: false,
@@ -93,6 +100,10 @@ function parseArgs(argv: string[]): ParsedArgs {
     }
     if (arg === "--profile") {
       parsed.profile = argv[++index] ?? null;
+      continue;
+    }
+    if (arg === "--preset") {
+      parsed.preset = argv[++index] ?? null;
       continue;
     }
     if (arg === "--theme") {
@@ -125,14 +136,55 @@ export async function runOrchestratorEntry(): Promise<void> {
 
   process.env.PI_SKIP_VERSION_CHECK = "1";
 
+  // Resolve preset before config so preset values feed into overrides.
+  // CLI flags (--model, --safety) take precedence over preset values.
+  let presetModel: string | null = null;
+  let presetSafety: SafetyLevel | undefined;
+  let presetReasoning: string | undefined;
+  let presetWorkerModel: string | null = null;
+  let presetScoutModel: string | null = null;
+
+  // Ensure presets.yaml exists (seeds defaults on first run).
+  // PANCODE_HOME is set by loader.ts before this entry point runs.
+  const pancodeHomeForPresets = process.env.PANCODE_HOME;
+  if (pancodeHomeForPresets) {
+    ensurePresetsFile(pancodeHomeForPresets);
+  }
+
+  if (args.preset && pancodeHomeForPresets) {
+    const preset = loadPreset(pancodeHomeForPresets, args.preset);
+    if (!preset) {
+      console.error(`[pancode] Unknown preset: ${args.preset}. Check ~/.pancode/presets.yaml`);
+      process.exit(1);
+    }
+    presetModel = preset.model;
+    presetSafety = preset.safety;
+    presetReasoning = preset.reasoning;
+    presetWorkerModel = preset.workerModel;
+    presetScoutModel = preset.scoutModel;
+    process.env.PANCODE_PRESET = args.preset;
+    console.log(`[pancode] Preset: ${args.preset} (${preset.description})`);
+  }
+
   const config = loadConfig({
     cwd: args.cwd ?? undefined,
     provider: args.provider,
-    model: args.model,
+    model: args.model ?? presetModel ?? undefined,
     profile: args.profile ?? undefined,
-    safety: args.safety ?? undefined,
+    safety: args.safety ?? presetSafety ?? undefined,
+    reasoningPreference: presetReasoning as any,
     theme: args.theme ?? undefined,
   });
+
+  // Apply preset worker model if no explicit override exists.
+  if (presetWorkerModel && !process.env.PANCODE_WORKER_MODEL) {
+    process.env.PANCODE_WORKER_MODEL = presetWorkerModel;
+  }
+
+  // Apply preset scout model for shadow_explore if no explicit override exists.
+  if (presetScoutModel && !process.env.PANCODE_SCOUT_MODEL) {
+    process.env.PANCODE_SCOUT_MODEL = presetScoutModel;
+  }
 
   process.env.PANCODE_PROFILE = config.profile;
   process.env.PANCODE_SAFETY = config.safety;

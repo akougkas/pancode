@@ -1,6 +1,8 @@
 import { join } from "node:path";
+import { BusChannel } from "../../core/bus-events";
 import { sharedBus } from "../../core/shared-bus";
 import { PANCODE_PRODUCT_NAME } from "../../core/shell-metadata";
+import { PiEvent } from "../../engine/events";
 import { defineExtension } from "../../engine/extensions";
 import { createContextRegistry } from "./context-registry";
 import { createSessionMemory } from "./memory";
@@ -62,7 +64,7 @@ export const extension = defineExtension((pi) => {
     });
   };
 
-  pi.on("session_start", (_event, _ctx) => {
+  pi.on(PiEvent.SESSION_START, (_event, _ctx) => {
     const runtimeRoot =
       process.env.PANCODE_RUNTIME_ROOT ??
       join(process.env.PANCODE_PACKAGE_ROOT ?? process.cwd(), ".pancode", "runtime");
@@ -80,12 +82,12 @@ export const extension = defineExtension((pi) => {
     }
 
     // Listen for session reset events from shell-overrides (/new command).
-    sharedBus.on("pancode:session-reset", () => {
+    sharedBus.on(BusChannel.SESSION_RESET, () => {
       resetCoordinationState();
     });
 
     // Listen for compaction events to prune stale context entries.
-    sharedBus.on("pancode:compaction-started", () => {
+    sharedBus.on(BusChannel.COMPACTION_STARTED, () => {
       if (contextRegistry && contextRegistry.size() > 0) {
         console.error(
           `[pancode:session] Compaction: context registry has ${contextRegistry.size()} entries (preserved).`,
@@ -94,14 +96,14 @@ export const extension = defineExtension((pi) => {
     });
 
     // Sync board after worker dispatch completes.
-    sharedBus.on("pancode:run-finished", () => {
+    sharedBus.on(BusChannel.RUN_FINISHED, () => {
       if (sharedBoard) {
         sharedBoard.sync();
       }
     });
   });
 
-  pi.on("session_shutdown", async () => {
+  pi.on(PiEvent.SESSION_SHUTDOWN, async () => {
     if (sharedBoard) sharedBoard.persist();
     if (process.env.PANCODE_VERBOSE) {
       console.error("[pancode:session] Session shutdown. Board persisted.");
@@ -344,7 +346,7 @@ export const extension = defineExtension((pi) => {
         }
 
         const cleared = resetCoordinationState();
-        sharedBus.emit("pancode:session-reset", {});
+        sharedBus.emit(BusChannel.SESSION_RESET, {});
         ctx.ui.notify(
           `All coordination state cleared. Context: ${cleared.contextCleared}, Board: ${cleared.boardCleared}, Memory: ${cleared.memoryCleared}`,
           "info",
@@ -357,7 +359,7 @@ export const extension = defineExtension((pi) => {
       const memCount = sessionMemory?.temporal.getAll().length ?? 0;
       sharedBoard?.clear();
       sessionMemory?.temporal.clear();
-      sharedBus.emit("pancode:session-reset", {});
+      sharedBus.emit(BusChannel.SESSION_RESET, {});
       ctx.ui.notify(
         `Board and temporal memory cleared. Board: ${boardCount}, Memory: ${memCount}. Context registry preserved (use /reset context or /reset all).`,
         "info",

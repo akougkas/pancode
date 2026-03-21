@@ -8,6 +8,7 @@
  */
 
 import { Type } from "@sinclair/typebox";
+import { ToolName } from "../../core/tool-names";
 import { type ScoutResult, runScouts } from "../../engine/shadow";
 import type { AgentToolResult, ExtensionContext } from "../../engine/types";
 
@@ -50,10 +51,24 @@ function resolveScoutModel(ctx: ExtensionContext) {
       const [provider, ...rest] = value.split("/");
       const id = rest.join("/");
       const found = ctx.modelRegistry.getAll().find((m) => m.provider === provider && m.id === id);
-      if (found) return found;
+      if (found) {
+        if (process.env.PANCODE_VERBOSE) {
+          console.error(`[pancode:shadow] Scout model resolved from ${envVar}: ${provider}/${id}`);
+        }
+        return found;
+      }
+      // Log when configured model is not in registry so the failure is visible.
+      console.error(
+        `[pancode:shadow] ${envVar}=${value} not found in model registry. ` +
+          `Available providers: ${[...new Set(ctx.modelRegistry.getAll().map((m) => m.provider))].join(", ")}`,
+      );
     }
   }
-  return ctx.model ?? undefined;
+  const fallback = ctx.model ?? undefined;
+  console.error(
+    `[pancode:shadow] Scout model falling back to orchestrator: ${fallback ? `${fallback.provider}/${fallback.id}` : "none"}`,
+  );
+  return fallback;
 }
 
 export function registerShadowExplore(
@@ -74,7 +89,7 @@ export function registerShadowExplore(
   }) => void,
 ): void {
   registerTool({
-    name: "shadow_explore",
+    name: ToolName.SHADOW_EXPLORE,
     label: "Shadow Explore",
     promptSnippet:
       "Concurrent codebase reconnaissance. Spawns 1-4 scout agents to explore in parallel before dispatch decisions.",

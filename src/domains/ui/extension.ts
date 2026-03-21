@@ -1,5 +1,13 @@
 import type { SafetyLevel } from "../../core/config";
 import { isSafetyLevel } from "../../core/config-validator";
+import { loadPresets } from "../../core/presets";
+import {
+  BusChannel,
+  type RunFinishedEvent,
+  type RunStartedEvent,
+  type WarningEvent,
+  type WorkerProgressEvent,
+} from "../../core/bus-events";
 import { DEFAULT_REASONING_PREFERENCE, DEFAULT_SAFETY, DEFAULT_THEME } from "../../core/defaults";
 import {
   MODE_DEFINITIONS,
@@ -17,24 +25,33 @@ import { PANCODE_PRODUCT_NAME, formatCategorizedHelp } from "../../core/shell-me
 import {
   type PanCodeReasoningPreference,
   THINKING_LEVELS,
+  cycleReasoningLevel,
   getModelReasoningControl,
   parseReasoningPreference,
-  parseThinkingLevel,
   resolveThinkingLevelForPreference,
 } from "../../core/thinking";
+import { PiEvent } from "../../engine/events";
 import { type ExtensionContext, defineExtension } from "../../engine/extensions";
 import { Container, Text, type ThemeColor, truncateToWidth, visibleWidth } from "../../engine/tui";
 import type { Api, Model } from "../../engine/types";
+import { agentRegistry } from "../agents";
 import { getRunLedger, taskList } from "../dispatch";
 import { getMetricsLedger } from "../observability";
 import { type MergedModelProfile, getModelProfileCache } from "../providers";
 import { getBudgetTracker } from "../scheduling";
-import { getContextPercent, recordContextFromSdk, recordContextUsage } from "./context-tracker";
+import { runtimeRegistry } from "../../engine/runtimes";
+import {
+  getContextPercent,
+  getContextTokens,
+  getContextWindow,
+  recordContextFromSdk,
+  recordContextUsage,
+} from "./context-tracker";
 import { renderDispatchBoard } from "./dispatch-board";
 import type { AgentStat, BoardColorizer, DispatchCardData } from "./dispatch-board";
 import { PanCodeEditor } from "./pancode-editor";
 import { synthesizeOrchestratorPrompt } from "./system-prompt";
-import { extractResultSummary } from "./widget-utils";
+import { extractResultSummary, formatTokenCount, truncate } from "./widget-utils";
 import {
   getLiveWorkers,
   resetAll as resetLiveWorkers,
@@ -60,23 +77,46 @@ function sendPanel(sendMessage: (title: string, body: string) => void, title: st
   sendMessage(title, lines.join("\n"));
 }
 
-function buildDashboardLines(input: {
-  modelLabel: string;
-  reasoningPreference: PanCodeReasoningPreference;
-  reasoningCapability: string;
-  effectiveThinkingLevel: string;
-  themeName: string;
-  workingDirectory: string;
-  tools: string[];
-  modeName?: string;
-  modeDescription?: string;
-}): string[] {
-  const mode = input.modeName ?? "Build";
-  return [
-    `${mode}  ${input.modelLabel}  ${input.workingDirectory}`,
-    "",
-    "  /help  /models  /mode  /settings  /reasoning",
+/**
+ * Build per-node model summary from profile cache.
+ * Groups chat models by providerId prefix (the part before the dash,
+ * e.g., "mini" from "mini-llamacpp") and counts loaded chat models.
+ */
+function buildNodeSummary(profiles: MergedModelProfile[]): string[] {
+  const chatProfiles = profiles.filter((p) => isChatModel(p.modelId));
+  const byNode = new Map<string, number>();
+  for (const p of chatProfiles) {
+    const node = p.providerId.split("-")[0] || p.providerId;
+    byNode.set(node, (byNode.get(node) ?? 0) + 1);
+  }
+  return [...byNode.entries()].map(([node, count]) => `${node}:${count} model${count !== 1 ? "s" : ""}`);
+}
+
+function buildWelcomeScreen(modelLabel: string, modeName: string): string[] {
+  const version = process.env.npm_package_version ?? "dev";
+  const modelShort = modelLabel.includes("/") ? modelLabel.split("/").pop() ?? modelLabel : modelLabel;
+  const profiles = getModelProfileCache();
+  const agentCount = agentRegistry.getAll().length;
+  const runtimeCount = runtimeRegistry.available().length;
+  const nodeSummary = buildNodeSummary(profiles);
+
+  const lines: string[] = [
+    "  \u2554\u2550\u2557",
+    `  \u2560\u2550\u255D a n C o d e  v${version}`,
+    "  \u255A",
+    `  ${modeName}  ${modelShort}`,
   ];
+
+  const infoParts: string[] = [];
+  if (agentCount > 0) infoParts.push(`${agentCount} agents`);
+  if (runtimeCount > 0) infoParts.push(`${runtimeCount} runtimes`);
+  const nodeCount = new Set(profiles.map((p) => p.providerId.split("-")[0] || p.providerId)).size;
+  if (nodeCount > 0) infoParts.push(`${nodeCount} nodes`);
+  if (infoParts.length > 0) lines.push(`  ${infoParts.join("  ")}`);
+  if (nodeSummary.length > 0) lines.push(`  ${nodeSummary.join("  ")}`);
+
+  lines.push("", "  shift+tab mode  /help commands");
+  return lines;
 }
 
 function readReasoningPreference(): PanCodeReasoningPreference {
@@ -129,20 +169,8 @@ function parseReasoningCommand(request: string): {
 } | null {
   const normalized = request.trim().toLowerCase();
   const preference = parseReasoningPreference(normalized);
-  if (preference) {
-    return { preference, note: null };
-  }
-
-  const legacyThinkingLevel = parseThinkingLevel(normalized);
-  if (!legacyThinkingLevel) return null;
-
-  return {
-    preference: legacyThinkingLevel === "off" ? "off" : "on",
-    note:
-      legacyThinkingLevel === "off"
-        ? null
-        : `PanCode stores reasoning as off/on; mapped "${legacyThinkingLevel}" to "on".`,
-  };
+  if (!preference) return null;
+  return { preference, note: null };
 }
 
 function modelRef(model: Pick<Model<Api>, "provider" | "id">): string {
@@ -411,6 +439,23 @@ export const extension = defineExtension((pi) => {
     return getModeDefinition(next);
   }
 
+  /**
+   * Apply a reasoning level: update preference, env, engine, and persist.
+   * Called on mode switch, manual /reasoning, and keyboard cycling.
+   */
+  function applyReasoningLevel(
+    level: PanCodeReasoningPreference,
+    model: Pick<Model<Api>, "reasoning" | "compat"> | null | undefined,
+    notify: (message: string, level: "info" | "warning" | "error") => void,
+  ): void {
+    currentReasoningPreference = level;
+    process.env.PANCODE_REASONING = level;
+    const effective = resolveThinkingLevelForPreference(model, level);
+    process.env.PANCODE_EFFECTIVE_THINKING = effective;
+    pi.setThinkingLevel(effective);
+    persistSettings({ reasoningPreference: level }, notify);
+  }
+
   function syncEditorDisplay(): void {
     if (!pancodeEditor) return;
     const mode = getModeDefinition();
@@ -538,39 +583,29 @@ export const extension = defineExtension((pi) => {
         `Applied engine setting: ${pi.getThinkingLevel()}`,
         `Model: ${ctx.model ? modelRef(ctx.model) : "unresolved"}`,
         `Capability: ${describeReasoningCapability(ctx.model)}`,
-        "PanCode values: off, on",
+        "PanCode values: off, minimal, low, medium, high, xhigh (or legacy: on)",
       ]);
       return;
     }
 
     const parsed = parseReasoningCommand(request);
     if (!parsed) {
-      ctx.ui.notify(`Invalid reasoning value: ${request}. Use "off" or "on".`, "error");
+      ctx.ui.notify(`Invalid reasoning value: ${request}. Use off, minimal, low, medium, high, or xhigh.`, "error");
       return;
     }
 
-    currentReasoningPreference = parsed.preference;
-    process.env.PANCODE_REASONING = currentReasoningPreference;
-    const effectiveThinkingLevel = resolveThinkingLevelForPreference(ctx.model, currentReasoningPreference);
-    process.env.PANCODE_EFFECTIVE_THINKING = effectiveThinkingLevel;
-    pi.setThinkingLevel(effectiveThinkingLevel);
-    persistSettings({ reasoningPreference: currentReasoningPreference }, (message, level) =>
-      ctx.ui.notify(message, level),
-    );
-
-    if (parsed.note) {
-      ctx.ui.notify(parsed.note, "warning");
-    }
+    applyReasoningLevel(parsed.preference, ctx.model, (m, l) => ctx.ui.notify(m, l));
 
     const capability = describeReasoningCapability(ctx.model);
-    ctx.ui.setStatus("thinking", `Reasoning: ${currentReasoningPreference} (${effectiveThinkingLevel})`);
-    if (capability === "unsupported" && currentReasoningPreference === "on") {
+    const effective = pi.getThinkingLevel();
+    ctx.ui.setStatus("thinking", `Reasoning: ${currentReasoningPreference}`);
+    if (capability === "unsupported" && currentReasoningPreference !== "off") {
       ctx.ui.notify("Reasoning preference saved. The current model leaves the engine setting at off.", "warning");
       return;
     }
 
     ctx.ui.notify(
-      `Reasoning preference: ${currentReasoningPreference} | capability: ${capability} | applied: ${effectiveThinkingLevel}`,
+      `Reasoning: ${currentReasoningPreference} | engine: ${effective} | capability: ${capability}`,
       "info",
     );
   };
@@ -671,19 +706,7 @@ export const extension = defineExtension((pi) => {
   const showDashboard = async (_args: string, ctx: ExtensionContext) => {
     const modelLabel = ctx.model ? modelRef(ctx.model) : "unresolved";
     const dashMode = getModeDefinition();
-    const lines = [
-      ...buildDashboardLines({
-        modelLabel,
-        reasoningPreference: currentReasoningPreference,
-        reasoningCapability: describeReasoningCapability(ctx.model),
-        effectiveThinkingLevel: pi.getThinkingLevel(),
-        themeName: ctx.ui.theme.name ?? currentThemeName,
-        workingDirectory: ctx.cwd,
-        tools: pi.getActiveTools(),
-        modeName: dashMode.name,
-        modeDescription: dashMode.description,
-      }),
-    ];
+    const lines = [...buildWelcomeScreen(modelLabel, dashMode.name)];
 
     // Compact session summary: runs, cost (if nonzero), active count
     const ledger = getRunLedger();
@@ -707,28 +730,69 @@ export const extension = defineExtension((pi) => {
     sendPanel(emitPanel, `${PANCODE_PRODUCT_NAME} Dashboard`, lines);
   };
 
-  pi.on("session_start", (_event, ctx) => {
+  pi.on(PiEvent.SESSION_START, (_event, ctx) => {
+    // Suppress tmux extended-keys warnings that pollute stderr.
+    const origStderrWrite = process.stderr.write.bind(process.stderr);
+    process.stderr.write = function (chunk: string | Uint8Array, ...args: unknown[]) {
+      if (typeof chunk === "string" && chunk.includes("extended-keys")) return true;
+      return (origStderrWrite as Function).call(process.stderr, chunk, ...args);
+    } as typeof process.stderr.write;
+
     currentModelLabel = ctx.model ? modelRef(ctx.model) : "no model";
     currentThemeName = ctx.ui.theme.name ?? currentThemeName;
     currentReasoningPreference = readReasoningPreference();
 
     // Surface cross-domain warnings from dispatch and other subsystems in the shell.
-    sharedBus.on("pancode:warning", (payload) => {
-      const event = payload as { source: string; message: string };
+    sharedBus.on(BusChannel.WARNING, (payload) => {
+      const event = payload as WarningEvent;
       ctx.ui.notify(`[${event.source}] ${event.message}`, "warning");
     });
     const effectiveThinkingLevel = resolveThinkingLevelForPreference(ctx.model, currentReasoningPreference);
     process.env.PANCODE_EFFECTIVE_THINKING = effectiveThinkingLevel;
     pi.setThinkingLevel(effectiveThinkingLevel);
 
+    // Detect git branch early so both header and footer can reference it.
+    let cachedGitBranch = "";
+    try {
+      const { execSync } = require("node:child_process");
+      cachedGitBranch = execSync("git rev-parse --abbrev-ref HEAD 2>/dev/null", {
+        cwd: ctx.cwd,
+        encoding: "utf-8",
+        timeout: 1000,
+      }).trim();
+    } catch {
+      cachedGitBranch = "";
+    }
+
     ctx.ui.setTitle(PANCODE_PRODUCT_NAME);
     ctx.ui.setHeader((_tui, theme) => ({
       invalidate() {},
       render(width) {
-        const left = `${theme.fg("accent", PANCODE_PRODUCT_NAME)} ${theme.fg("muted", process.env.PANCODE_PROFILE ?? "standard")}`;
+        const sep = theme.fg("dim", " \u2502 ");
         const modeInfo = getModeDefinition();
-        const right = `${theme.fg("dim", process.env.PANCODE_SAFETY ?? DEFAULT_SAFETY)}  ${theme.fg(modeThemeColor(modeInfo), modeInfo.name)}`;
-        return [composeSingleLine(left, right, width)];
+        const mc = modeThemeColor(modeInfo);
+        const modelShort = currentModelLabel.includes("/")
+          ? currentModelLabel.split("/").pop() ?? currentModelLabel
+          : currentModelLabel;
+        const safety = process.env.PANCODE_SAFETY ?? DEFAULT_SAFETY;
+        const reasoning = pi.getThinkingLevel() || "off";
+        const branchStr = cachedGitBranch ? `${sep}\u16B4 ${cachedGitBranch}` : "";
+        const parts = [
+          theme.fg("accent", "\u258C P\u2590"),
+          theme.fg(mc, modeInfo.name),
+          modelShort,
+          ...(branchStr ? [branchStr] : []),
+          theme.fg("dim", safety),
+          theme.fg("dim", `reasoning:${reasoning}`),
+        ];
+        // Join non-branch parts with separator; branch already has its own sep prefix
+        const header = parts.reduce((acc, part, i) => {
+          if (i === 0) return part;
+          // branchStr already includes its own sep
+          if (branchStr && part === branchStr) return acc + part;
+          return acc + sep + part;
+        }, "");
+        return [truncateToWidth(header, width)];
       },
     }));
 
@@ -859,21 +923,7 @@ export const extension = defineExtension((pi) => {
       };
     });
 
-    // Three-section footer: path/git | context/memory | dispatch/tasks
-    // Uses Unicode symbols for density. Mode color accents key indicators.
-    let cachedGitBranch = "";
-    try {
-      const { execSync } = require("node:child_process");
-      cachedGitBranch = execSync("git rev-parse --abbrev-ref HEAD 2>/dev/null", {
-        cwd: ctx.cwd,
-        encoding: "utf-8",
-        timeout: 1000,
-      }).trim();
-    } catch {
-      cachedGitBranch = "";
-    }
-    const shortCwd = ctx.cwd.replace(process.env.HOME ?? "", "~");
-
+    // Two-line mission control footer: telemetry strip + shortcuts/task chips.
     ctx.ui.setFooter((_tui, theme, _footerData) => ({
       invalidate() {},
       render(width) {
@@ -882,65 +932,101 @@ export const extension = defineExtension((pi) => {
         const sep = theme.fg("dim", " \u2502 ");
         const sepW = 3;
 
-        // === LEFT: path + git branch ===
-        const branchIcon = cachedGitBranch ? theme.fg("muted", `\u16B4 ${cachedGitBranch}`) : "";
-        const branchW = cachedGitBranch ? cachedGitBranch.length + 2 : 0;
-        const pathBudget = Math.max(8, Math.floor(width * 0.3) - branchW - sepW);
-        const pathStr = theme.fg("dim", truncateToWidth(shortCwd, pathBudget, "\u2026"));
-        const leftParts = [pathStr];
-        if (branchIcon) leftParts.push(branchIcon);
-        const left = leftParts.join(theme.fg("dim", " "));
+        const liveWorkers = getLiveWorkers();
+        const activeCount = liveWorkers.filter((w) => w.status === "running").length;
 
-        // === MIDDLE: context gauge + token stats ===
-        const contextPercent = getContextPercent();
-        const pct = Math.round(contextPercent);
-        // Quarter-block gauge: \u2591 light, \u2593 dark
+        // Narrow fallback (< 60 cols): single line with mode + activity
+        if (width < 60) {
+          const narrow =
+            theme.fg(mc, `[${modeInfo.name}]`) +
+            (activeCount > 0 ? theme.fg(mc, ` \u25CF ${activeCount}`) : theme.fg("dim", " \u25CB idle"));
+          return [truncateToWidth(narrow, width)];
+        }
+
+        // === LINE 1: Telemetry Strip ===
+        // Provider quota
+        const budget = getBudgetTracker();
+        const budgetState = budget?.getState();
+        let quotaStr: string;
+        if (budgetState && budgetState.ceiling > 0 && budgetState.totalCost > 0) {
+          quotaStr = theme.fg("muted", `$${budgetState.totalCost.toFixed(2)}/$${budgetState.ceiling.toFixed(0)}`);
+        } else {
+          quotaStr = theme.fg("dim", "\u221E local");
+        }
+
+        // Context gauge
+        const pct = Math.round(getContextPercent());
+        const ctxTokens = getContextTokens();
+        const ctxWindow = getContextWindow();
         const gaugeLen = 8;
         const filled = Math.round((pct / 100) * gaugeLen);
         const gauge = theme.fg(mc, "\u2593".repeat(filled)) + theme.fg("dim", "\u2591".repeat(gaugeLen - filled));
-        const ctxLabel = pct > 0 ? theme.fg("muted", ` ${pct}%`) : theme.fg("dim", " 0%");
-        const mid = gauge + ctxLabel;
+        const ctxCounts =
+          ctxWindow > 0
+            ? theme.fg("muted", ` ${pct}% ${formatTokenCount(ctxTokens)}/${formatTokenCount(ctxWindow)}`)
+            : theme.fg("dim", ` ${pct}%`);
+        const ctxStr = `ctx ${gauge}${ctxCounts}`;
 
-        // === RIGHT: activity + runs + tasks + cost ===
-        const liveWorkers = getLiveWorkers();
-        const activeCount = liveWorkers.filter((w) => w.status === "running").length;
-        const ledger = getRunLedger();
-        const budget = getBudgetTracker();
-        const totalRuns = ledger?.getAll().length ?? 0;
-        const totalCost = budget?.getState().totalCost ?? 0;
+        // Session throughput
+        const metrics = getMetricsLedger();
+        const summary = metrics?.getSummary();
+        const inputTok = summary?.totalInputTokens ?? 0;
+        const outputTok = summary?.totalOutputTokens ?? 0;
+        const throughput =
+          inputTok > 0 || outputTok > 0
+            ? theme.fg("muted", `\u2191${formatTokenCount(inputTok)} \u2193${formatTokenCount(outputTok)}`)
+            : "";
+
+        // Node status: machine name + filled circles per loaded chat model
+        const profiles = getModelProfileCache();
+        const chatProfiles = profiles.filter((p) => isChatModel(p.modelId));
+        const nodeMap = new Map<string, number>();
+        for (const p of chatProfiles) {
+          const node = p.providerId.split("-")[0] || p.providerId;
+          nodeMap.set(node, (nodeMap.get(node) ?? 0) + 1);
+        }
+        const nodeStr = [...nodeMap.entries()]
+          .map(([node, count]) => theme.fg("muted", `${node}${"\u25CF".repeat(count)}`))
+          .join(" ");
+
+        // Compose line 1
+        const line1Parts = [quotaStr, ctxStr];
+        if (throughput) line1Parts.push(throughput);
+        if (nodeStr) line1Parts.push(nodeStr);
+        const line1 = truncateToWidth(line1Parts.join(sep), width);
+
+        // === LINE 2: Shortcuts + Task Chips ===
+        const shortcuts = theme.fg("dim", "shift+tab mode \u00B7 ctrl+t reasoning \u00B7 ctrl+y safety");
+
+        // Task chips (last 4)
         const allTasks = taskList();
-        const doneTasks = allTasks.filter((t) => t.status === "done").length;
+        let taskChipStr = "";
+        if (allTasks.length > 0) {
+          const doneTasks = allTasks.filter((t) => t.status === "doing").length;
+          const lastTasks = allTasks.slice(-4);
+          const chips = lastTasks.map((t) => {
+            const icon = t.status === "doing" ? "\u25CF" : t.status === "blocked" ? "\u2717" : "\u25CB";
+            const label = truncate(t.description ?? t.id, 8);
+            return theme.fg("muted", `[${icon} ${label}]`);
+          });
+          taskChipStr = `${chips.join(" ")} ${theme.fg("dim", `${doneTasks}/${allTasks.length}`)}`;
+        }
 
-        const rightParts: string[] = [];
-        // Activity: filled circle when active, empty when idle
-        if (activeCount > 0) {
-          rightParts.push(theme.fg(mc, `\u25CF ${activeCount}`));
+        let line2: string;
+        if (taskChipStr) {
+          const shortcutsW = visibleWidth(shortcuts);
+          const chipW = visibleWidth(taskChipStr);
+          if (shortcutsW + sepW + chipW + 2 <= width) {
+            const slack = width - shortcutsW - sepW - chipW;
+            line2 = `${shortcuts}${" ".repeat(slack)}${sep}${taskChipStr}`;
+          } else {
+            line2 = truncateToWidth(`${shortcuts}${sep}${taskChipStr}`, width);
+          }
         } else {
-          rightParts.push(theme.fg("dim", "\u25CB"));
+          line2 = truncateToWidth(shortcuts, width);
         }
-        if (totalRuns > 0) rightParts.push(theme.fg("muted", `${totalRuns}r`));
-        if (allTasks.length > 0) rightParts.push(theme.fg("muted", `t:${doneTasks}/${allTasks.length}`));
-        if (totalCost > 0) rightParts.push(theme.fg("muted", `$${totalCost.toFixed(2)}`));
-        const right = rightParts.join(theme.fg("dim", " "));
 
-        // Compose: left | middle | right
-        const leftW = visibleWidth(left);
-        const midW = visibleWidth(mid);
-        const rightW = visibleWidth(right);
-        const totalContentW = leftW + midW + rightW + sepW * 2;
-
-        if (totalContentW + 2 <= width) {
-          // Full three-section layout
-          const slack = width - totalContentW;
-          const padL = " ".repeat(Math.floor(slack / 2));
-          const padR = " ".repeat(slack - Math.floor(slack / 2));
-          return [truncateToWidth(left + sep + padL + mid + padR + sep + right, width)];
-        }
-        // Narrow fallback: just mode + activity
-        const narrow =
-          theme.fg(mc, `[${modeInfo.name}]`) +
-          (activeCount > 0 ? theme.fg(mc, ` \u25CF ${activeCount}`) : theme.fg("dim", " \u25CB idle"));
-        return [truncateToWidth(narrow, width)];
+        return [line1, line2];
       },
     }));
 
@@ -948,7 +1034,7 @@ export const extension = defineExtension((pi) => {
     // Each "message_end" event triggers a read of the SDK's context estimate.
     // The SDK internally tracks cumulative token usage and model context window.
     // Falls back to raw message usage if getContextUsage() is unavailable.
-    pi.on("message_end", (event, msgCtx) => {
+    pi.on(PiEvent.MESSAGE_END, (event, msgCtx) => {
       const sdkUsage = msgCtx.getContextUsage();
       if (sdkUsage) {
         recordContextFromSdk(sdkUsage);
@@ -962,19 +1048,19 @@ export const extension = defineExtension((pi) => {
     });
 
     // Subscribe to dispatch events for live worker tracking.
-    sharedBus.on("pancode:run-started", (payload) => {
-      const event = payload as { runId: string; agent: string; task: string; model: string | null; runtime?: string };
+    sharedBus.on(BusChannel.RUN_STARTED, (payload) => {
+      const event = payload as RunStartedEvent;
       trackWorkerStart(event.runId, event.agent, event.task, event.model, event.runtime);
     });
 
-    sharedBus.on("pancode:worker-progress", (payload) => {
-      const event = payload as { runId: string; inputTokens: number; outputTokens: number; turns: number };
+    sharedBus.on(BusChannel.WORKER_PROGRESS, (payload) => {
+      const event = payload as WorkerProgressEvent;
       updateWorkerProgress(event.runId, event.inputTokens, event.outputTokens, event.turns);
     });
 
-    sharedBus.on("pancode:run-finished", (payload) => {
-      const event = payload as { runId: string; status: WorkerStatus };
-      trackWorkerEnd(event.runId, event.status);
+    sharedBus.on(BusChannel.RUN_FINISHED, (payload) => {
+      const event = payload as RunFinishedEvent;
+      trackWorkerEnd(event.runId, event.status as WorkerStatus);
     });
 
     // Set initial mode status and gate tools to match the active mode.
@@ -997,8 +1083,9 @@ export const extension = defineExtension((pi) => {
       const handlers = pancodeEditor.actionHandlers as Map<string, () => void>;
       handlers.set("cycleThinkingLevel", () => {
         const def = cycleModeTo();
+        applyReasoningLevel(def.reasoningLevel, ctx.model, (m, l) => ctx.ui.notify(m, l));
         ctx.ui.setStatus("mode", `[${def.name}]`);
-        ctx.ui.notify(`Mode: ${def.name} -- ${def.description}`, "info");
+        ctx.ui.notify(`Mode: ${def.name} (reasoning: ${def.reasoningLevel})`, "info");
         syncEditorDisplay();
       });
     }
@@ -1006,30 +1093,17 @@ export const extension = defineExtension((pi) => {
 
     if (!welcomeShown) {
       welcomeShown = true;
-      sendPanel(
-        emitPanel,
-        `${PANCODE_PRODUCT_NAME} Dashboard`,
-        buildDashboardLines({
-          modelLabel: currentModelLabel,
-          reasoningPreference: currentReasoningPreference,
-          reasoningCapability: describeReasoningCapability(ctx.model),
-          effectiveThinkingLevel,
-          themeName: currentThemeName,
-          workingDirectory: ctx.cwd,
-          tools: pi.getActiveTools(),
-          modeName: initMode.name,
-          modeDescription: initMode.description,
-        }),
-      );
+      sendPanel(emitPanel, `${PANCODE_PRODUCT_NAME}`, buildWelcomeScreen(currentModelLabel, initMode.name));
     }
   });
 
-  pi.on("model_select", (event, ctx) => {
+  pi.on(PiEvent.MODEL_SELECT, (event, ctx) => {
     currentModelLabel = modelRef(event.model);
-    const effectiveThinkingLevel = resolveThinkingLevelForPreference(event.model, currentReasoningPreference);
-    process.env.PANCODE_EFFECTIVE_THINKING = effectiveThinkingLevel;
-    pi.setThinkingLevel(effectiveThinkingLevel);
-    ctx.ui.setStatus("thinking", `Reasoning: ${currentReasoningPreference} (${pi.getThinkingLevel()})`);
+    // Re-resolve reasoning for the new model's capabilities.
+    const effective = resolveThinkingLevelForPreference(event.model, currentReasoningPreference);
+    process.env.PANCODE_EFFECTIVE_THINKING = effective;
+    pi.setThinkingLevel(effective);
+    ctx.ui.setStatus("thinking", `Reasoning: ${currentReasoningPreference}`);
     persistSettings(
       {
         preferredProvider: event.model.provider,
@@ -1056,11 +1130,24 @@ export const extension = defineExtension((pi) => {
     },
   });
 
+  // ctrl+t: cycle reasoning level (off, low, medium, high, xhigh).
+  // For toggle-only models (Qwen via local engines), cycles between off and medium.
+  pi.registerShortcut("ctrl+t", {
+    description: "Cycle reasoning level (off, low, medium, high, xhigh)",
+    handler: async (ctx) => {
+      const next = cycleReasoningLevel(currentReasoningPreference, ctx.model);
+      applyReasoningLevel(next, ctx.model, (message, level) => ctx.ui.notify(message, level));
+      ctx.ui.setStatus("thinking", `Reasoning: ${next}`);
+      ctx.ui.notify(`Reasoning: ${next}`, "info");
+      syncEditorDisplay();
+    },
+  });
+
   // === Orchestrator identity and mode behavior via system prompt synthesis ===
   // Replaces the Pi SDK's default identity with PanCode's orchestrator identity,
   // injects the current mode's behavioral instructions, removes Pi documentation
   // references, and adds tool output deduplication guidance.
-  pi.on("before_agent_start", async (event) => {
+  pi.on(PiEvent.BEFORE_AGENT_START, async (event) => {
     const mode = getModeDefinition();
     const synthesized = synthesizeOrchestratorPrompt(event.systemPrompt, mode);
     return { systemPrompt: synthesized };
@@ -1070,7 +1157,7 @@ export const extension = defineExtension((pi) => {
   // pancode-panel messages (dashboard, /models, /help output) are visual UI
   // for the user. Including them confuses local models: the dashboard text
   // "Build mini-llamacpp/Qwen35..." gets interpreted as a build instruction.
-  pi.on("context", async (event) => {
+  pi.on(PiEvent.CONTEXT, async (event) => {
     type MsgWithCustomType = (typeof event.messages)[number] & { customType?: string };
 
     return {
@@ -1148,8 +1235,9 @@ export const extension = defineExtension((pi) => {
 
       setCurrentMode(target.id);
       pi.setActiveTools(getToolsetForMode(target.id));
+      applyReasoningLevel(target.reasoningLevel, ctx.model, (m, l) => ctx.ui.notify(m, l));
       ctx.ui.setStatus("mode", `[${target.name}]`);
-      ctx.ui.notify(`Mode: ${target.name} -- ${target.description}`, "info");
+      ctx.ui.notify(`Mode: ${target.name} (reasoning: ${target.reasoningLevel})`, "info");
       syncEditorDisplay();
     },
   });
@@ -1158,6 +1246,58 @@ export const extension = defineExtension((pi) => {
     description: "Show PanCode commands",
     async handler(_args, _ctx) {
       sendPanel(emitPanel, `${PANCODE_PRODUCT_NAME} Commands`, formatCategorizedHelp());
+    },
+  });
+
+  pi.registerCommand("preset", {
+    description: "List or apply a boot preset from ~/.pancode/presets.yaml",
+    async handler(args, ctx) {
+      const pancodeHome = process.env.PANCODE_HOME;
+      if (!pancodeHome) {
+        ctx.ui.notify("PANCODE_HOME is not set.", "error");
+        return;
+      }
+      const presets = loadPresets(pancodeHome);
+      const request = args.trim();
+
+      if (!request || request === "list") {
+        const current = process.env.PANCODE_PRESET ?? "(none)";
+        const lines: string[] = [`Active preset: ${current}`, ""];
+        for (const [name, preset] of presets) {
+          const marker = name === current ? "*" : "-";
+          lines.push(`  ${marker} ${name.padEnd(14)} ${preset.description}`);
+          lines.push(`    model: ${preset.model}  worker: ${preset.workerModel ?? "(same)"}  scout: ${preset.scoutModel ?? preset.model}  reasoning: ${preset.reasoning}  safety: ${preset.safety}`);
+        }
+        lines.push("", "Use /preset <name> to apply. Edit ~/.pancode/presets.yaml to customize.");
+        sendPanel(emitPanel, `${PANCODE_PRODUCT_NAME} Presets`, lines);
+        return;
+      }
+
+      const preset = presets.get(request);
+      if (!preset) {
+        ctx.ui.notify(`Unknown preset: ${request}. Use /preset to see available presets.`, "error");
+        return;
+      }
+
+      // Apply preset: switch model, worker, scout, reasoning, safety.
+      process.env.PANCODE_PRESET = request;
+      if (preset.workerModel) {
+        process.env.PANCODE_WORKER_MODEL = preset.workerModel;
+      }
+      if (preset.scoutModel) {
+        process.env.PANCODE_SCOUT_MODEL = preset.scoutModel;
+      }
+      process.env.PANCODE_SAFETY = preset.safety;
+      applyReasoningLevel(preset.reasoning, ctx.model, (m, l) => ctx.ui.notify(m, l));
+
+      // Attempt model switch.
+      const slashIdx = preset.model.indexOf("/");
+      if (slashIdx > 0) {
+        await handleModelsCommand(preset.model, ctx);
+      }
+
+      syncEditorDisplay();
+      ctx.ui.notify(`Preset applied: ${request} (${preset.description})`, "info");
     },
   });
 

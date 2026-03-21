@@ -3,8 +3,8 @@ import { CustomEditor, truncateToWidth, visibleWidth } from "../../engine/tui";
 /**
  * PanCode editor with mode-colored borders and informational labels.
  *
- * Top border:    ─── provider/model ─────────────────── Build ──
- * Bottom border: ─── reasoning:level ──────────────── auto-edit ──
+ * Top border:    ─── Build ─────────────────────────────
+ * Bottom border: ─── Qwen35-Distilled · on · full-auto ──
  *
  * Border color changes per mode. The entire border line is rendered in the
  * mode's theme color, making mode transitions visually immediate.
@@ -43,35 +43,34 @@ export class PanCodeEditor extends CustomEditor {
     const lines = super.render(width);
     if (lines.length < 2 || width < 50) return lines;
 
-    // Top border: model on left, mode on right.
-    // Format: ─── provider/model ──────────────────── Build ──
-    const topLeft = this.modelLabel ? ` ${this.modelLabel} ` : "";
-    const topRight = ` ${this.modeLabel} `;
-    const topTagsWidth = visibleWidth(topLeft) + visibleWidth(topRight);
-    if (topTagsWidth + 10 <= width) {
-      const colorLeft = this.modeColorFn(topLeft);
-      const colorRight = this.modeColorFn(topRight);
-      // Truncate the existing border, inject left tag, fill, inject right tag.
-      const fillWidth = width - topTagsWidth;
+    // Top border: mode label only.
+    // Format: ─── Build ─────────────────────────────
+    const topTag = ` ${this.modeLabel} `;
+    const topTagWidth = visibleWidth(topTag);
+    if (topTagWidth + 10 <= width) {
+      const colorTag = this.modeColorFn(topTag);
+      const fillWidth = width - topTagWidth;
       const fill = this.modeColorFn("\u2500".repeat(fillWidth));
-      const newTop = fill.length > 0 ? `${colorLeft}${fill}${colorRight}` : lines[0];
+      const newTop = `${colorTag}${fill}`;
       if (visibleWidth(newTop) <= width) {
         lines[0] = newTop;
       }
     }
 
-    // Bottom border: reasoning on left, safety on right.
-    // Format: ─── reasoning:level ──────────────── auto-edit ──
-    const bottomLeft = ` ${this.reasoningLabel} `;
-    const bottomRight = ` ${this.safetyLabel} `;
-    const bottomTagsWidth = visibleWidth(bottomLeft) + visibleWidth(bottomRight);
+    // Bottom border: model + reasoning + safety.
+    // Format: ─── Qwen35-Distilled · on · full-auto ──
+    const modelShort = this.modelLabel.includes("/")
+      ? this.modelLabel.split("/").pop() ?? this.modelLabel
+      : this.modelLabel;
+    const bottomParts = [modelShort, this.reasoningLabel, this.safetyLabel].filter(Boolean);
+    const bottomTag = ` ${bottomParts.join(" \u00B7 ")} `;
+    const bottomTagWidth = visibleWidth(bottomTag);
     const lastIdx = lines.length - 1;
-    if (bottomTagsWidth + 10 <= width) {
-      const colorLeft = this.modeColorFn(bottomLeft);
-      const colorRight = this.modeColorFn(bottomRight);
-      const fillWidth = width - bottomTagsWidth;
+    if (bottomTagWidth + 10 <= width) {
+      const colorTag = this.modeColorFn(bottomTag);
+      const fillWidth = width - bottomTagWidth;
       const fill = this.modeColorFn("\u2500".repeat(fillWidth));
-      const newBottom = `${colorLeft}${fill}${colorRight}`;
+      const newBottom = `${colorTag}${fill}`;
       if (visibleWidth(newBottom) <= width) {
         lines[lastIdx] = newBottom;
       }

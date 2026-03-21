@@ -1,3 +1,5 @@
+import { ToolName } from "../../core/tool-names";
+import { PiEvent } from "../../engine/events";
 import { defineExtension } from "../../engine/extensions";
 import { rulesUpgrade } from "./rules-upgrade";
 
@@ -6,13 +8,13 @@ export const extension = defineExtension((pi) => {
   // When not enabled, no listeners are registered and this domain is inert.
   if (process.env.PANCODE_INTELLIGENCE !== "enabled") return;
 
-  pi.on("session_start", (_event, _ctx) => {
+  pi.on(PiEvent.SESSION_START, (_event, _ctx) => {
     rulesUpgrade.enable();
   });
 
   // Observe dispatch tool completions for learning.
-  pi.on("tool_execution_end", (event, _ctx) => {
-    if (event.toolName !== "dispatch_agent" && event.toolName !== "batch_dispatch") return;
+  pi.on(PiEvent.TOOL_EXECUTION_END, (event, _ctx) => {
+    if (event.toolName !== ToolName.DISPATCH_AGENT && event.toolName !== ToolName.BATCH_DISPATCH) return;
     // Record outcome for future rules upgrade.
   });
 });

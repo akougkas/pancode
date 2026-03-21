@@ -1,4 +1,6 @@
+import { BusChannel } from "../../core/bus-events";
 import { sharedBus } from "../../core/shared-bus";
+import { PiEvent } from "../../engine/events";
 import { defineExtension } from "../../engine/extensions";
 import { discoverAndRegisterRuntimes } from "../../engine/runtimes/discovery";
 import { runtimeRegistry } from "../../engine/runtimes/registry";
@@ -12,10 +14,10 @@ export const extension = defineExtension((pi) => {
   // Shadow agents are not visible in /agents and are not part of the dispatch system.
   registerShadowExplore(pi.registerTool.bind(pi));
 
-  pi.on("session_start", (_event, _ctx) => {
+  pi.on(PiEvent.SESSION_START, (_event, _ctx) => {
     // Discover and register runtimes before loading agents
     const discovery = discoverAndRegisterRuntimes();
-    sharedBus.emit("pancode:runtimes-discovered", discovery);
+    sharedBus.emit(BusChannel.RUNTIMES_DISCOVERED, discovery);
 
     const specs = loadAgentsFromYaml(PANCODE_HOME);
     for (const spec of specs) {

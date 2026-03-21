@@ -7,14 +7,31 @@ function deriveMaxTokens(contextWindow: number): number {
   return Math.max(4_096, Math.min(Math.floor(contextWindow / 2), cap));
 }
 
+/**
+ * Returns true if the model id looks like an embedding, reranker, or other
+ * non-conversational model that cannot be used for chat completions.
+ */
+function isEmbeddingModel(modelId: string): boolean {
+  const lower = modelId.toLowerCase();
+  if (lower.startsWith("text-embedding")) return true;
+  if (lower.includes("embedding") || lower.includes("reranker")) return true;
+  if (/(?:^|[\/-])bge-/.test(lower)) return true;
+  if (lower.includes("embed") && !lower.includes("instruct") && !lower.includes("chat")) return true;
+  return false;
+}
+
 export function registerDiscoveredModels(
   modelRegistry: InstanceType<typeof ModelRegistry>,
   profiles: MergedModelProfile[],
 ): string[] {
   const registered = new Set<string>();
 
+  // Filter out embedding and reranker models. They cannot serve chat completions
+  // and would only add noise to the model selector and /models output.
+  const chatProfiles = profiles.filter((p) => !isEmbeddingModel(p.modelId));
+
   const byProvider = new Map<string, MergedModelProfile[]>();
-  for (const profile of profiles) {
+  for (const profile of chatProfiles) {
     const existing = byProvider.get(profile.providerId) ?? [];
     existing.push(profile);
     byProvider.set(profile.providerId, existing);
@@ -38,12 +55,9 @@ export function registerDiscoveredModels(
       api: "openai-completions",
       models: providerProfiles.map((profile) => {
         const rawContextWindow = profile.capabilities.contextWindow;
-        if (!rawContextWindow && profile.matchType === "unmatched") {
-          // The model wasn't found in the knowledge base and the engine didn't report a
-          // context window. The 8192 fallback will significantly limit usefulness.
-          // Add a YAML entry under models/ to specify the correct value.
-          console.warn(
-            `[pancode:providers] Model "${profile.modelId}" has no context window. Defaulting to 8192 tokens. Add a models/ YAML entry to fix this.`,
+        if (!rawContextWindow && profile.matchType === "unmatched" && process.env.PANCODE_VERBOSE) {
+          console.error(
+            `[pancode:providers] Model "${profile.modelId}" has no context window. Defaulting to 8192 tokens.`,
           );
         }
         const contextWindow = rawContextWindow ?? 8_192;

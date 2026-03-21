@@ -1,3 +1,4 @@
+import { BusChannel, type WarningEvent } from "../../core/bus-events";
 import { sharedBus } from "../../core/shared-bus";
 import { agentRegistry } from "../agents";
 import { type SamplingPreset, findModelProfile, getSamplingPreset } from "../providers";
@@ -31,7 +32,7 @@ function resolveModelSampling(model: string | null, presetName: string | undefin
     const message = `Sampling preset "${presetName}" not found for ${providerId}/${modelId}. Worker will use model defaults.`;
     console.error(`[pancode:routing] ${message}`);
     // Also surface this in the TUI so the user can correct agents.yaml without checking stderr.
-    sharedBus.emit("pancode:warning", { source: "dispatch", message });
+    sharedBus.emit(BusChannel.WARNING, { source: "dispatch", message } satisfies WarningEvent);
   }
   return sampling;
 }
@@ -63,7 +64,7 @@ export function resolveWorkerRouting(agentName: string): WorkerRouting {
       if (profile && profile.capabilities.toolCalling === false) {
         const message = `Model ${model} may not support tool calling. Agent "${agentName}" requires tools: ${spec.tools}`;
         console.error(`[pancode:dispatch] ${message}`);
-        sharedBus.emit("pancode:warning", { source: "dispatch", message });
+        sharedBus.emit(BusChannel.WARNING, { source: "dispatch", message } satisfies WarningEvent);
       }
     }
   }

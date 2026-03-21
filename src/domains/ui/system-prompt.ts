@@ -17,7 +17,7 @@ Rules:
 - Do not dispatch tasks to yourself. You are the orchestrator.
 - Do not refer to yourself as the underlying model name. You are PanCode.
 - Do not expand scope beyond what was asked.
-- Do not read SDK documentation or engine internals. Your tools are listed above.`;
+- Do not read SDK documentation or engine internals. Your tools are listed below.`;
 
 function buildModeBlock(mode: ModeDefinition): string {
   switch (mode.id) {
@@ -39,21 +39,31 @@ terminal. Do not repeat or reformat tool output in your response. Instead,
 provide a brief interpretation, summary, or next-step recommendation.`;
 
 // Section markers used to locate boundaries in the Pi SDK system prompt.
-const MARKER_TOOLS = "Available tools:";
-const MARKER_PI_DOCS = "Pi documentation (read only";
-const MARKER_PROJECT_CONTEXT = "# Project Context";
-const MARKER_SKILLS = "# Skills";
-const MARKER_DATE = "\nCurrent date:";
+// Patterns are case-insensitive to survive minor SDK formatting changes.
+const RE_TOOLS = /^Available tools:/im;
+const RE_PI_DOCS = /^Pi documentation \(read only/im;
+const RE_PROJECT_CONTEXT = /^# Project Context/im;
+const RE_SKILLS = /^# Skills/im;
+const RE_DATE = /\nCurrent date:/im;
+
+/**
+ * Find a marker's position in the prompt using a case-insensitive regex.
+ * Searches from `fromIndex` onward. Returns -1 if not found.
+ */
+function findMarker(prompt: string, pattern: RegExp, fromIndex = 0): number {
+  const match = pattern.exec(prompt.slice(fromIndex));
+  return match ? fromIndex + match.index : -1;
+}
 
 /**
  * Find the start of the next major section after `fromIndex`.
  * Returns -1 if none found (meaning content runs to end of string).
  */
 function findNextSectionAfter(prompt: string, fromIndex: number): number {
-  const candidates = [MARKER_PROJECT_CONTEXT, MARKER_SKILLS, MARKER_DATE];
+  const candidates = [RE_PROJECT_CONTEXT, RE_SKILLS, RE_DATE];
   let earliest = -1;
-  for (const marker of candidates) {
-    const idx = prompt.indexOf(marker, fromIndex);
+  for (const pattern of candidates) {
+    const idx = findMarker(prompt, pattern, fromIndex);
     if (idx !== -1 && (earliest === -1 || idx < earliest)) {
       earliest = idx;
     }
@@ -69,7 +79,7 @@ function findNextSectionAfter(prompt: string, fromIndex: number): number {
  * PanCode-specific tool guidance.
  */
 export function synthesizeOrchestratorPrompt(piBasePrompt: string, mode: ModeDefinition): string {
-  const toolsIndex = piBasePrompt.indexOf(MARKER_TOOLS);
+  const toolsIndex = findMarker(piBasePrompt, RE_TOOLS);
 
   // Fallback: if the prompt structure is unexpected, prepend identity + mode.
   if (toolsIndex === -1) {
@@ -82,9 +92,9 @@ export function synthesizeOrchestratorPrompt(piBasePrompt: string, mode: ModeDef
 
   // 2. Remove Pi documentation section if present.
   let cleaned = afterIdentity;
-  const piDocsIndex = cleaned.indexOf(MARKER_PI_DOCS);
+  const piDocsIndex = findMarker(cleaned, RE_PI_DOCS);
   if (piDocsIndex !== -1) {
-    const nextSection = findNextSectionAfter(cleaned, piDocsIndex + MARKER_PI_DOCS.length);
+    const nextSection = findNextSectionAfter(cleaned, piDocsIndex + 30);
     if (nextSection !== -1) {
       cleaned = cleaned.slice(0, piDocsIndex) + cleaned.slice(nextSection);
     } else {
@@ -94,7 +104,7 @@ export function synthesizeOrchestratorPrompt(piBasePrompt: string, mode: ModeDef
   }
 
   // 3. Inject tool output guidance before the date footer.
-  const dateIndex = cleaned.indexOf(MARKER_DATE);
+  const dateIndex = findMarker(cleaned, RE_DATE);
   if (dateIndex !== -1) {
     cleaned = `${cleaned.slice(0, dateIndex)}\n\n${TOOL_OUTPUT_GUIDANCE}${cleaned.slice(dateIndex)}`;
   } else {

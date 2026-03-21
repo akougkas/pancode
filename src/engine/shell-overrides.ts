@@ -1,4 +1,5 @@
 import { BUILTIN_SLASH_COMMANDS } from "@pancode/pi-coding-agent/core/slash-commands.js";
+import { BusChannel } from "../core/bus-events";
 import { sharedBus } from "../core/shared-bus";
 import { PANCODE_PRODUCT_NAME } from "../core/shell-metadata";
 import { InteractiveMode } from "./session";
@@ -50,6 +51,10 @@ const HIDDEN_BUILTIN_NAMES = new Set([
 function patchBuiltinCommands(): void {
   // BUILTIN_SLASH_COMMANDS is typed ReadonlyArray but is a plain JS array at runtime.
   // Mutating it is the only way to control what Pi SDK exposes in autocomplete and help.
+  if (!Array.isArray(BUILTIN_SLASH_COMMANDS)) {
+    console.error("[pancode] WARNING: BUILTIN_SLASH_COMMANDS is not an array. Builtin command hiding skipped.");
+    return;
+  }
   const commands = BUILTIN_SLASH_COMMANDS as unknown as Array<{ name: string; description: string }>;
 
   // Remove all commands PanCode shadows. Iterate backwards to avoid index shift.
@@ -96,56 +101,75 @@ export function installPanCodeShellOverrides(): void {
   };
 
   // === Settings ===
-  prototype.showSettingsSelector = function showSettingsSelector(this: ShellPatchedInteractiveMode) {
-    void routeToShellCommand(this, "/settings");
-  };
+  if (typeof prototype.showSettingsSelector === "function") {
+    prototype.showSettingsSelector = function showSettingsSelector(this: ShellPatchedInteractiveMode) {
+      void routeToShellCommand(this, "/settings");
+    };
+  } else {
+    console.error("[pancode] WARNING: InteractiveMode.showSettingsSelector not found. Settings patch skipped.");
+  }
 
   // === Models ===
-  prototype.handleModelCommand = async function handleModelCommand(
-    this: ShellPatchedInteractiveMode,
-    searchTerm?: string,
-  ) {
-    const suffix = searchTerm?.trim() ? ` ${searchTerm.trim()}` : "";
-    await routeToShellCommand(this, `/models${suffix}`);
-  };
-  prototype.showModelsSelector = async function showModelsSelector(this: ShellPatchedInteractiveMode) {
-    await routeToShellCommand(this, "/models");
-  };
+  if (typeof prototype.handleModelCommand === "function") {
+    prototype.handleModelCommand = async function handleModelCommand(
+      this: ShellPatchedInteractiveMode,
+      searchTerm?: string,
+    ) {
+      const suffix = searchTerm?.trim() ? ` ${searchTerm.trim()}` : "";
+      await routeToShellCommand(this, `/models${suffix}`);
+    };
+  } else {
+    console.error("[pancode] WARNING: InteractiveMode.handleModelCommand not found. Model command patch skipped.");
+  }
+
+  if (typeof prototype.showModelsSelector === "function") {
+    prototype.showModelsSelector = async function showModelsSelector(this: ShellPatchedInteractiveMode) {
+      await routeToShellCommand(this, "/models");
+    };
+  }
 
   // === /new: emit reset event before Pi creates a new session ===
-  const originalClear = prototype.handleClearCommand;
-  prototype.handleClearCommand = async function handleClearCommand(this: ShellPatchedInteractiveMode) {
-    sharedBus.emit("pancode:session-reset", {});
-    if (originalClear) {
-      await originalClear.call(this);
-    }
-  };
+  if (typeof prototype.handleClearCommand === "function") {
+    const originalClear = prototype.handleClearCommand;
+    prototype.handleClearCommand = async function handleClearCommand(this: ShellPatchedInteractiveMode) {
+      sharedBus.emit(BusChannel.SESSION_RESET, {});
+      if (originalClear) {
+        await originalClear.call(this);
+      }
+    };
+  }
 
   // === /compact: emit compaction event, then call Pi's handler ===
-  const originalCompact = prototype.handleCompactCommand;
-  prototype.handleCompactCommand = async function handleCompactCommand(
-    this: ShellPatchedInteractiveMode,
-    customInstructions?: string,
-  ) {
-    sharedBus.emit("pancode:compaction-started", { customInstructions: customInstructions ?? null });
-    if (originalCompact) {
-      await originalCompact.call(this, customInstructions);
-    }
-  };
+  if (typeof prototype.handleCompactCommand === "function") {
+    const originalCompact = prototype.handleCompactCommand;
+    prototype.handleCompactCommand = async function handleCompactCommand(
+      this: ShellPatchedInteractiveMode,
+      customInstructions?: string,
+    ) {
+      sharedBus.emit(BusChannel.COMPACTION_STARTED, { customInstructions: customInstructions ?? null });
+      if (originalCompact) {
+        await originalCompact.call(this, customInstructions);
+      }
+    };
+  }
 
   // === /reload: emit event, then call Pi's handler ===
-  const originalReload = prototype.handleReloadCommand;
-  prototype.handleReloadCommand = async function handleReloadCommand(this: ShellPatchedInteractiveMode) {
-    if (originalReload) {
-      await originalReload.call(this);
-    }
-    sharedBus.emit("pancode:extensions-reloaded", {});
-  };
+  if (typeof prototype.handleReloadCommand === "function") {
+    const originalReload = prototype.handleReloadCommand;
+    prototype.handleReloadCommand = async function handleReloadCommand(this: ShellPatchedInteractiveMode) {
+      if (originalReload) {
+        await originalReload.call(this);
+      }
+      sharedBus.emit(BusChannel.EXTENSIONS_RELOADED, {});
+    };
+  }
 
   // === /session: route to PanCode wrapper that adds domain state summary ===
-  prototype.handleSessionCommand = function handleSessionCommand(this: ShellPatchedInteractiveMode) {
-    void routeToShellCommand(this, "/session");
-  };
+  if (typeof prototype.handleSessionCommand === "function") {
+    prototype.handleSessionCommand = function handleSessionCommand(this: ShellPatchedInteractiveMode) {
+      void routeToShellCommand(this, "/session");
+    };
+  }
 
   // Pass-through commands: Pi's hardcoded routing calls these methods directly.
   // We let them execute their Pi behavior unchanged. PanCode owns them visually

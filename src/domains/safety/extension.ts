@@ -1,4 +1,6 @@
+import { BusChannel, type RunFinishedEvent, type WarningEvent } from "../../core/bus-events";
 import { sharedBus } from "../../core/shared-bus";
+import { PiEvent } from "../../engine/events";
 import { defineExtension } from "../../engine/extensions";
 import { classifyAction, classifyBashCommand, isActionAllowed } from "./action-classifier";
 import { createLoopDetector } from "./loop-detector";
@@ -37,7 +39,7 @@ export function registerSafetyPreFlightChecks(register: RegisterPreFlight): void
 }
 
 export const extension = defineExtension((pi) => {
-  pi.on("session_start", (_event, _ctx) => {
+  pi.on(PiEvent.SESSION_START, (_event, _ctx) => {
     autonomyMode = parseAutonomyMode(process.env.PANCODE_SAFETY);
 
     // Load YAML safety rules (Layer 2)
@@ -52,14 +54,15 @@ export const extension = defineExtension((pi) => {
     }
 
     // Subscribe to run-finished events for loop detection
-    sharedBus.on("pancode:run-finished", (raw: unknown) => {
-      const payload = raw as Record<string, unknown> | null;
+    sharedBus.on(BusChannel.RUN_FINISHED, (raw: unknown) => {
+      const payload = raw as RunFinishedEvent | null;
       const agent = typeof payload?.agent === "string" ? payload.agent : "unknown";
       if (payload?.status === "error") {
-        const event = loopDetector.recordFailure(agent);
-        if (event) {
-          console.error(`[pancode:safety] Loop detector: ${event.message}`);
-          sharedBus.emit("pancode:warning", { source: "safety", message: event.message });
+        const loopEvent = loopDetector.recordFailure(agent);
+        if (loopEvent) {
+          console.error(`[pancode:safety] Loop detector: ${loopEvent.message}`);
+          const warning: WarningEvent = { source: "safety", message: loopEvent.message };
+          sharedBus.emit(BusChannel.WARNING, warning);
         }
       } else if (payload?.status === "done") {
         loopDetector.recordSuccess(agent);
@@ -67,7 +70,7 @@ export const extension = defineExtension((pi) => {
     });
   });
 
-  pi.on("tool_call", (event, _ctx) => {
+  pi.on(PiEvent.TOOL_CALL, (event, _ctx) => {
     const actionClass = classifyAction(event.toolName);
 
     // Layer 1: Formal scope model

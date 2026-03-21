@@ -50,13 +50,24 @@ export function createLmStudioConnection(baseUrl: string, providerId: string): E
     },
 
     async listModels(): Promise<DiscoveredModel[]> {
+      // Discover ALL available models via REST, then enrich loaded ones via SDK.
+      // LM Studio loads models on demand, so unloaded models are still usable.
+      // Previously this only called sdk.llm.listLoaded(), which missed unloaded
+      // models and caused scout/worker model resolution to silently fall back
+      // to the orchestrator model.
+      const restModels = await this.listModelsViaRest();
+      const modelsById = new Map<string, DiscoveredModel>();
+      for (const m of restModels) {
+        modelsById.set(m.id, m);
+      }
+
+      // Enrich loaded models with SDK capabilities (context window, vision, etc.)
       try {
         const sdk = ensureClient();
         const loaded = await sdk.llm.listLoaded();
 
-        const models: DiscoveredModel[] = [];
         for (const model of loaded) {
-          const caps = emptyCapabilities();
+          const caps = modelsById.get(model.identifier)?.capabilities ?? emptyCapabilities();
 
           try {
             const info = await model.getModelInfo();
@@ -70,10 +81,10 @@ export function createLmStudioConnection(baseUrl: string, providerId: string): E
               caps.quantization = String(info.quantization);
             }
           } catch {
-            // Model info unavailable; caps stay null
+            // Model info unavailable; caps stay at REST defaults
           }
 
-          models.push({
+          modelsById.set(model.identifier, {
             id: model.identifier,
             engine: "lmstudio",
             providerId,
@@ -81,12 +92,11 @@ export function createLmStudioConnection(baseUrl: string, providerId: string): E
             capabilities: caps,
           });
         }
-
-        return models;
       } catch {
-        // SDK connection failed; fall back to REST probe
-        return this.listModelsViaRest();
+        // SDK connection failed; REST models are still valid
       }
+
+      return [...modelsById.values()];
     },
 
     async listModelsViaRest(): Promise<DiscoveredModel[]> {

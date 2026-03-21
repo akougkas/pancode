@@ -3,10 +3,25 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import type { PanCodeConfig } from "../core/config";
 
+/**
+ * Build Pi CLI --provider and --model arguments from config.
+ * Handles compound "provider/model-id" format by splitting into separate flags.
+ * Pi CLI requires --provider and --model as separate arguments.
+ */
 export function buildWorkerModelArgs(config: Pick<PanCodeConfig, "provider" | "model">): string[] {
   const args: string[] = [];
-  if (config.provider) args.push("--provider", config.provider);
-  if (config.model) args.push("--model", config.model);
+  let provider = config.provider;
+  let model = config.model;
+
+  // Split compound "provider/model-id" format if present.
+  if (model && model.includes("/") && !provider) {
+    const slashIdx = model.indexOf("/");
+    provider = model.slice(0, slashIdx);
+    model = model.slice(slashIdx + 1);
+  }
+
+  if (provider) args.push("--provider", provider);
+  if (model) args.push("--model", model);
   return args;
 }
 

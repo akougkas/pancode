@@ -1,21 +1,11 @@
+import { BusChannel, type RunFinishedEvent } from "../../core/bus-events";
 import { sharedBus } from "../../core/shared-bus";
+import { PiEvent } from "../../engine/events";
 import { defineExtension } from "../../engine/extensions";
 import { registerPreFlightCheck } from "../dispatch";
 import { getModelProfileCache } from "../providers";
 import { BudgetTracker } from "./budget";
 import { buildClusterView } from "./cluster-transport";
-
-// Local shape for the cross-domain pancode:run-finished event payload.
-// Matches what dispatch/extension.ts emits on sharedBus.
-interface RunFinishedEvent {
-  status: string;
-  usage: {
-    cost: number;
-    inputTokens: number;
-    outputTokens: number;
-  };
-  runtime: string;
-}
 
 let budgetTracker: BudgetTracker | null = null;
 
@@ -27,7 +17,7 @@ function publishBudgetState(): void {
   if (!budgetTracker) return;
   const state = budgetTracker.getState();
   process.env.PANCODE_BUDGET_SPENT = state.totalCost.toFixed(4);
-  sharedBus.emit("pancode:budget-updated", {
+  sharedBus.emit(BusChannel.BUDGET_UPDATED, {
     totalCost: state.totalCost,
     ceiling: state.ceiling,
     runsCount: state.runsCount,
@@ -37,7 +27,7 @@ function publishBudgetState(): void {
 }
 
 export const extension = defineExtension((pi) => {
-  pi.on("session_start", (_event, _ctx) => {
+  pi.on(PiEvent.SESSION_START, (_event, _ctx) => {
     const packageRoot = process.env.PANCODE_PACKAGE_ROOT;
     if (!packageRoot) {
       console.error("[pancode:scheduling] PANCODE_PACKAGE_ROOT is not set. Domain state will not persist.");
@@ -64,7 +54,7 @@ export const extension = defineExtension((pi) => {
     // This replaces the previous approach of regex-scraping tool result text.
     // Only completed runs (status "done") count against the budget because
     // failed runs reflect an incomplete task, maintaining backward-compatible behavior.
-    sharedBus.on("pancode:run-finished", (payload) => {
+    sharedBus.on(BusChannel.RUN_FINISHED, (payload) => {
       if (!budgetTracker) return;
       const event = payload as RunFinishedEvent;
       if (event.status === "done") {

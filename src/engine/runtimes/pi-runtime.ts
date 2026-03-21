@@ -49,8 +49,16 @@ export class PiRuntime implements AgentRuntime {
     ];
     const args: string[] = isDev ? ["--import", "tsx", entryPath, ...workerArgs] : [entryPath, ...workerArgs];
 
+    // Pi CLI requires --provider and --model as separate args.
+    // PanCode uses compound "provider/model-id" format internally.
     if (config.model) {
-      args.push("--model", config.model);
+      const slashIdx = config.model.indexOf("/");
+      if (slashIdx > 0) {
+        args.push("--provider", config.model.slice(0, slashIdx));
+        args.push("--model", config.model.slice(slashIdx + 1));
+      } else {
+        args.push("--model", config.model);
+      }
     }
 
     if (config.systemPrompt.trim()) {

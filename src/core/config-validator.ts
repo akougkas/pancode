@@ -44,7 +44,7 @@ export function validateConfigShape(config: Partial<PanCodeConfig>): ConfigValid
     errors.push({ path: "safety", message: "must be suggest, auto-edit, or full-auto" });
   }
   if (config.reasoningPreference != null && !parseReasoningPreference(config.reasoningPreference)) {
-    errors.push({ path: "reasoningPreference", message: "must be off or on" });
+    errors.push({ path: "reasoningPreference", message: "must be off, on, minimal, low, medium, high, or xhigh" });
   }
   if (config.domains != null && !Array.isArray(config.domains)) {
     errors.push({ path: "domains", message: "must be an array of strings" });

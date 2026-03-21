@@ -1,27 +1,17 @@
 import { randomUUID } from "node:crypto";
+import {
+  BusChannel,
+  type BudgetUpdatedEvent,
+  type RunFinishedEvent,
+  type WarningEvent,
+} from "../../core/bus-events";
 import { sharedBus } from "../../core/shared-bus";
+import { PiEvent } from "../../engine/events";
 import { defineExtension } from "../../engine/extensions";
 import { getRunLedger } from "../dispatch";
 import { runHealthChecks } from "./health";
 import { MetricsLedger, type RunMetric } from "./metrics";
 import { type AuditTrail, createAuditTrail } from "./telemetry";
-
-interface RunFinishedEvent {
-  runId: string;
-  agent: string;
-  status: string;
-  usage: {
-    cost: number;
-    turns: number;
-    inputTokens: number;
-    outputTokens: number;
-    cacheReadTokens: number;
-    cacheWriteTokens: number;
-  };
-  runtime: string;
-  startedAt: string;
-  completedAt: string;
-}
 
 let metricsLedger: MetricsLedger | null = null;
 let auditTrail: AuditTrail | null = null;
@@ -36,7 +26,7 @@ export function getAuditTrail(): AuditTrail | null {
 }
 
 export const extension = defineExtension((pi) => {
-  pi.on("session_start", (_event, _ctx) => {
+  pi.on(PiEvent.SESSION_START, (_event, _ctx) => {
     const packageRoot = process.env.PANCODE_PACKAGE_ROOT;
     if (!packageRoot) {
       console.error("[pancode:observability] PANCODE_PACKAGE_ROOT is not set. Domain state will not persist.");
@@ -62,7 +52,7 @@ export const extension = defineExtension((pi) => {
     });
 
     // Subscribe to dispatch events for both metrics and audit
-    sharedBus.on("pancode:run-finished", (payload) => {
+    sharedBus.on(BusChannel.RUN_FINISHED, (payload) => {
       const event = payload as RunFinishedEvent;
       const durationMs = new Date(event.completedAt).getTime() - new Date(event.startedAt).getTime();
 
@@ -95,8 +85,8 @@ export const extension = defineExtension((pi) => {
     });
 
     // Subscribe to warnings
-    sharedBus.on("pancode:warning", (payload) => {
-      const event = payload as { source: string; message: string };
+    sharedBus.on(BusChannel.WARNING, (payload) => {
+      const event = payload as WarningEvent;
       auditTrail?.record({
         domain: event.source,
         event: "warning",
@@ -106,12 +96,12 @@ export const extension = defineExtension((pi) => {
     });
 
     // Subscribe to session reset
-    sharedBus.on("pancode:session-reset", () => {
+    sharedBus.on(BusChannel.SESSION_RESET, () => {
       auditTrail?.record({ domain: "session", event: "reset", detail: "Coordination state reset", severity: "info" });
     });
 
     // Subscribe to compaction
-    sharedBus.on("pancode:compaction-started", () => {
+    sharedBus.on(BusChannel.COMPACTION_STARTED, () => {
       auditTrail?.record({
         domain: "session",
         event: "compaction",
@@ -120,8 +110,8 @@ export const extension = defineExtension((pi) => {
       });
     });
 
-    sharedBus.on("pancode:budget-updated", (payload) => {
-      const event = payload as { totalCost: number; ceiling: number };
+    sharedBus.on(BusChannel.BUDGET_UPDATED, (payload) => {
+      const event = payload as BudgetUpdatedEvent;
       budgetSnapshot = {
         totalCost: event.totalCost,
         ceiling: event.ceiling,
@@ -129,7 +119,7 @@ export const extension = defineExtension((pi) => {
     });
   });
 
-  pi.on("session_shutdown", async () => {
+  pi.on(PiEvent.SESSION_SHUTDOWN, async () => {
     const sessionId = process.env.PANCODE_SESSION_ID ?? "unknown";
     metricsLedger?.addSessionMarker({ type: "session_end", timestamp: new Date().toISOString(), sessionId });
   });
