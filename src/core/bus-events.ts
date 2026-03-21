@@ -21,6 +21,7 @@ export const BusChannel = {
   EXTENSIONS_RELOADED: "pancode:extensions-reloaded",
   BUDGET_UPDATED: "pancode:budget-updated",
   RUNTIMES_DISCOVERED: "pancode:runtimes-discovered",
+  PROMPT_COMPILED: "pancode:prompt-compiled",
 } as const;
 
 export type BusChannelName = (typeof BusChannel)[keyof typeof BusChannel];
@@ -78,6 +79,15 @@ export interface CompactionStartedEvent {
   customInstructions: string | null;
 }
 
+export interface PromptCompiledEvent {
+  role: "orchestrator" | "worker" | "scout";
+  tier: string;
+  mode: string;
+  estimatedTokens: number;
+  fragmentCount: number;
+  hash: string;
+}
+
 // Convenience: map channel names to their payload types for documentation.
 // Not enforced at runtime (the bus is stringly typed), but enables grep-based
 // auditing of which channel carries which shape.
@@ -92,4 +102,5 @@ export interface BusEventMap {
   [BusChannel.EXTENSIONS_RELOADED]: Record<string, never>;
   [BusChannel.BUDGET_UPDATED]: BudgetUpdatedEvent;
   [BusChannel.RUNTIMES_DISCOVERED]: unknown;
+  [BusChannel.PROMPT_COMPILED]: PromptCompiledEvent;
 }

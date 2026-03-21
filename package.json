@@ -41,8 +41,9 @@
     "down": "node dist/loader.js down",
     "worker": "node dist/loader.js --worker",
     "check-boundaries": "node scripts/check-boundaries.mjs",
+    "check-prompts": "node scripts/check-prompts.mjs",
     "lint": "biome check src/",
-    "typecheck": "npm run build:pi && node scripts/check-boundaries.mjs && tsc --noEmit",
+    "typecheck": "npm run build:pi && node scripts/check-boundaries.mjs && node scripts/check-prompts.mjs && tsc --noEmit",
     "postinstall": "node scripts/link-workspace-packages.cjs",
     "prepublishOnly": "npm run build"
   },

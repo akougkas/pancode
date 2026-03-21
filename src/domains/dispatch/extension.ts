@@ -9,6 +9,8 @@ import { PiEvent } from "../../engine/events";
 import { defineExtension } from "../../engine/extensions";
 import type { AgentToolResult } from "../../engine/types";
 import { agentRegistry } from "../agents";
+import { compileWorkerPrompt } from "../prompts";
+import { findModelProfile } from "../providers";
 import { registerSafetyPreFlightChecks } from "../safety";
 import { registerPreFlightCheck, runPreFlightChecks } from "./admission";
 import { batchTracker } from "./batch-tracker";
@@ -22,6 +24,14 @@ import { liveWorkerProcesses, spawnWorker, stopAllWorkers } from "./worker-spawn
 
 function textResult(text: string): AgentToolResult<unknown> {
   return { content: [{ type: "text", text }], details: undefined };
+}
+
+/** Resolve a model profile from a "provider/model-id" string. */
+function resolveModelProfile(modelRef: string | null) {
+  if (!modelRef) return null;
+  const slash = modelRef.indexOf("/");
+  if (slash === -1) return null;
+  return findModelProfile(modelRef.slice(0, slash), modelRef.slice(slash + 1)) ?? null;
 }
 
 let ledger: RunLedger | null = null;
@@ -176,11 +186,23 @@ export const extension = defineExtension((pi) => {
         }
       }
 
+      // Compile dynamic worker prompt from PanPrompt engine.
+      const spec = agentRegistry.get(dispatchAction.agent);
+      const workerProfile = routing.model ? resolveModelProfile(routing.model) : null;
+      const workerPrompt = compileWorkerPrompt(spec ?? null, {
+        agentName: dispatchAction.agent,
+        task: dispatchAction.task,
+        readonly: routing.readonly,
+        tools: routing.tools,
+        mode: getModeDefinition().id,
+        tier: "mid",
+      }, workerProfile);
+
       const workerResult = await spawnWorker({
         task: dispatchAction.task,
         tools: routing.tools,
         model: routing.model,
-        systemPrompt: routing.systemPrompt,
+        systemPrompt: workerPrompt,
         cwd: workerCwd,
         agentName: dispatchAction.agent,
         sampling: routing.sampling,
@@ -329,19 +351,32 @@ export const extension = defineExtension((pi) => {
         );
       }
 
-      const parallelTasks = tasks.map((task, i) => ({
-        task,
-        tools: routing.tools,
-        model: routing.model,
-        systemPrompt: routing.systemPrompt,
-        cwd: ctx.cwd,
-        agentName,
-        sampling: routing.sampling,
-        runId: runs[i].id,
-        runtime: routing.runtime,
-        runtimeArgs: routing.runtimeArgs,
-        readonly: routing.readonly,
-      }));
+      // Compile dynamic worker prompts from PanPrompt engine.
+      const batchSpec = agentRegistry.get(agentName);
+      const batchProfile = routing.model ? resolveModelProfile(routing.model) : null;
+      const parallelTasks = tasks.map((task, i) => {
+        const wp = compileWorkerPrompt(batchSpec ?? null, {
+          agentName,
+          task,
+          readonly: routing.readonly,
+          tools: routing.tools,
+          mode: getModeDefinition().id,
+          tier: "mid",
+        }, batchProfile);
+        return {
+          task,
+          tools: routing.tools,
+          model: routing.model,
+          systemPrompt: wp,
+          cwd: ctx.cwd,
+          agentName,
+          sampling: routing.sampling,
+          runId: runs[i].id,
+          runtime: routing.runtime,
+          runtimeArgs: routing.runtimeArgs,
+          readonly: routing.readonly,
+        };
+      });
 
       const results = await runParallel(parallelTasks, concurrency, signal ?? undefined);
 
@@ -471,11 +506,23 @@ export const extension = defineExtension((pi) => {
             runtime: routing.runtime,
           });
 
+          // Compile dynamic worker prompt from PanPrompt engine.
+          const chainSpec = agentRegistry.get(agent);
+          const chainProfile = routing.model ? resolveModelProfile(routing.model) : null;
+          const chainPrompt = compileWorkerPrompt(chainSpec ?? null, {
+            agentName: agent,
+            task,
+            readonly: routing.readonly,
+            tools: routing.tools,
+            mode: getModeDefinition().id,
+            tier: "mid",
+          }, chainProfile);
+
           const result = await spawnWorker({
             task,
             tools: routing.tools,
             model: routing.model,
-            systemPrompt: routing.systemPrompt,
+            systemPrompt: chainPrompt,
             cwd: ctx.cwd,
             agentName: agent,
             sampling: routing.sampling,

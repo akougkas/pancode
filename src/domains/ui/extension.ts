@@ -37,7 +37,7 @@ import type { Api, Model } from "../../engine/types";
 import { agentRegistry } from "../agents";
 import { getRunLedger, taskList } from "../dispatch";
 import { getMetricsLedger } from "../observability";
-import { type MergedModelProfile, getModelProfileCache } from "../providers";
+import { type MergedModelProfile, findModelProfile, getModelProfileCache } from "../providers";
 import { getBudgetTracker } from "../scheduling";
 import { runtimeRegistry } from "../../engine/runtimes";
 import {
@@ -50,7 +50,7 @@ import {
 import { renderDispatchBoard } from "./dispatch-board";
 import type { AgentStat, BoardColorizer, DispatchCardData } from "./dispatch-board";
 import { PanCodeEditor } from "./pancode-editor";
-import { synthesizeOrchestratorPrompt } from "./system-prompt";
+import { compileOrchestratorPrompt } from "../prompts";
 import { extractResultSummary, formatTokenCount, truncate } from "./widget-utils";
 import {
   getLiveWorkers,
@@ -1143,14 +1143,17 @@ export const extension = defineExtension((pi) => {
     },
   });
 
-  // === Orchestrator identity and mode behavior via system prompt synthesis ===
-  // Replaces the Pi SDK's default identity with PanCode's orchestrator identity,
-  // injects the current mode's behavioral instructions, removes Pi documentation
-  // references, and adds tool output deduplication guidance.
-  pi.on(PiEvent.BEFORE_AGENT_START, async (event) => {
+  // === Orchestrator identity and mode behavior via PanPrompt engine ===
+  // Compiles the orchestrator system prompt from typed fragments based on
+  // current mode and model tier. Performs Pi SDK prompt surgery (identity
+  // replacement, Pi docs removal) and injects dispatch strategy, safety
+  // awareness, tool guidance, and output contracts.
+  pi.on(PiEvent.BEFORE_AGENT_START, async (event, ctx) => {
     const mode = getModeDefinition();
-    const synthesized = synthesizeOrchestratorPrompt(event.systemPrompt, mode);
-    return { systemPrompt: synthesized };
+    const model = ctx.model;
+    const profile = model ? findModelProfile(model.provider, model.id) ?? null : null;
+    const compiled = compileOrchestratorPrompt(event.systemPrompt, mode, profile);
+    return { systemPrompt: compiled };
   });
 
   // Filter UI-only panel messages from LLM context.

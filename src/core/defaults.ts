@@ -10,6 +10,7 @@ export const DEFAULT_ENABLED_DOMAINS = [
   "safety",
   "session",
   "agents",
+  "prompts",
   "dispatch",
   "observability",
   "scheduling",
