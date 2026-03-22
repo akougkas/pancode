@@ -4,7 +4,7 @@ import { CustomEditor, truncateToWidth, visibleWidth } from "../../engine/tui";
  * PanCode editor with mode-colored borders and informational labels.
  *
  * Top border:    ─── Build ─────────────────────────────
- * Bottom border: ─── Qwen35-Distilled · on · full-auto ──
+ * Bottom border: ─── model-name · on · full-auto ──
  *
  * Border color changes per mode. The entire border line is rendered in the
  * mode's theme color, making mode transitions visually immediate.
@@ -58,7 +58,7 @@ export class PanCodeEditor extends CustomEditor {
     }
 
     // Bottom border: model + reasoning + safety.
-    // Format: ─── Qwen35-Distilled · on · full-auto ──
+    // Format: ─── model-name · reasoning · safety ──
     const modelShort = this.modelLabel.includes("/")
       ? this.modelLabel.split("/").pop() ?? this.modelLabel
       : this.modelLabel;

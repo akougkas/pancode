@@ -36,40 +36,58 @@ interface PresetFileEntry {
 
 type PresetFile = Record<string, PresetFileEntry>;
 
-const DEFAULT_PRESETS: PresetFile = {
-  local: {
-    description: "Local inference on mini (Qwen3.5 Distilled, 262K context)",
-    model: "mini-llamacpp/Qwen35-Distilled-i1-Q4_K_M",
-    workerModel: null,
-    scoutModel: null,
-    reasoning: "medium",
-    safety: "auto-edit",
-  },
-  openai: {
-    description: "OpenAI Codex subscription (gpt-5.4 orchestrator, gpt-5.4-mini workers)",
-    model: "openai-codex/gpt-5.4",
-    workerModel: "openai-codex/gpt-5.4-mini",
-    scoutModel: "openai-codex/gpt-5.4-mini",
-    reasoning: "medium",
-    safety: "auto-edit",
-  },
-  "openai-max": {
-    description: "OpenAI Codex with high reasoning for deep analysis",
-    model: "openai-codex/gpt-5.4",
-    workerModel: "openai-codex/gpt-5.3-codex",
-    scoutModel: "openai-codex/gpt-5.4-mini",
-    reasoning: "high",
-    safety: "full-auto",
-  },
-  hybrid: {
-    description: "Local orchestrator with OpenAI workers for cost-effective dispatch",
-    model: "mini-llamacpp/Qwen35-Distilled-i1-Q4_K_M",
-    workerModel: "openai-codex/gpt-5.4-mini",
-    scoutModel: null,
-    reasoning: "medium",
-    safety: "auto-edit",
-  },
-};
+/**
+ * Build default presets from environment variables. Model IDs are never
+ * hardcoded in source. The .env file is the single source of truth for
+ * all model assignments. Presets read from env at seed time so the
+ * generated presets.yaml reflects the user's actual environment.
+ */
+function buildDefaultPresets(): PresetFile {
+  const localModel = process.env.PANCODE_LOCAL_MODEL ?? process.env.PANCODE_MODEL ?? "";
+  const localWorker = process.env.PANCODE_LOCAL_WORKER_MODEL ?? process.env.PANCODE_WORKER_MODEL ?? null;
+  const localScout = process.env.PANCODE_LOCAL_SCOUT_MODEL ?? process.env.PANCODE_SCOUT_MODEL ?? null;
+  const openaiModel = process.env.PANCODE_OPENAI_MODEL ?? "";
+  const openaiWorker = process.env.PANCODE_OPENAI_WORKER_MODEL ?? null;
+  const openaiScout = process.env.PANCODE_OPENAI_SCOUT_MODEL ?? null;
+  const openaiMaxModel = process.env.PANCODE_OPENAI_MAX_MODEL ?? openaiModel;
+  const openaiMaxWorker = process.env.PANCODE_OPENAI_MAX_WORKER_MODEL ?? null;
+  const openaiMaxScout = process.env.PANCODE_OPENAI_MAX_SCOUT_MODEL ?? openaiScout;
+
+  return {
+    local: {
+      description: "Local inference via homelab engines",
+      model: localModel || undefined,
+      workerModel: localWorker,
+      scoutModel: localScout,
+      reasoning: "medium",
+      safety: "auto-edit",
+    },
+    openai: {
+      description: "OpenAI Codex (orchestrator + workers)",
+      model: openaiModel || undefined,
+      workerModel: openaiWorker,
+      scoutModel: openaiScout,
+      reasoning: "medium",
+      safety: "auto-edit",
+    },
+    "openai-max": {
+      description: "OpenAI Codex with high reasoning for deep analysis",
+      model: openaiMaxModel || undefined,
+      workerModel: openaiMaxWorker,
+      scoutModel: openaiMaxScout,
+      reasoning: "high",
+      safety: "full-auto",
+    },
+    hybrid: {
+      description: "Local orchestrator with OpenAI workers",
+      model: localModel || undefined,
+      workerModel: openaiWorker,
+      scoutModel: localScout,
+      reasoning: "medium",
+      safety: "auto-edit",
+    },
+  };
+}
 
 function presetsPath(pancodeHome: string): string {
   return join(pancodeHome, "presets.yaml");
@@ -114,7 +132,7 @@ export function ensurePresetsFile(pancodeHome: string): void {
   const header =
     "# PanCode boot presets. Use: pancode --preset <name>\n" +
     "# Edit freely. PanCode never overwrites this file after creation.\n\n";
-  writeFileSync(filePath, header + YAML.stringify(DEFAULT_PRESETS), "utf8");
+  writeFileSync(filePath, header + YAML.stringify(buildDefaultPresets()), "utf8");
 }
 
 /**

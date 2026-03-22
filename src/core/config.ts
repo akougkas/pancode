@@ -77,16 +77,6 @@ interface ConfigOverrides {
   timeoutMs?: number;
 }
 
-/**
- * Parse a comma-separated domain list from PANCODE_ENABLED_DOMAINS.
- * Returns null for "all" or empty values so the caller falls through to defaults.
- */
-function parseDomainList(value: string | null): string[] | null {
-  if (value === null || value === "all") return null;
-  const names = value.split(",").map((s) => s.trim()).filter((s) => s.length > 0);
-  return names.length > 0 ? names : null;
-}
-
 function parseTimeoutMs(value: string | undefined): number {
   if (value == null || value === "") return DEFAULT_TIMEOUT_MS;
   const parsed = Number.parseInt(value, 10);
@@ -107,8 +97,7 @@ export function loadConfig(overrides: ConfigOverrides = {}): PanCodeConfig {
   const runtimeRoot = join(packageRoot, ".pancode", "runtime");
   const settings = loadPanCodeSettings();
   const defaultModel = getFirstEnvValue("PANCODE_MODEL", "PANCODE_DEFAULT_MODEL") ?? readDefaultModelFile(packageRoot);
-  const domainsFromEnv = parseDomainList(getFirstEnvValue("PANCODE_ENABLED_DOMAINS"));
-  const domains = [...(overrides.domains ?? overrides.extensions ?? domainsFromEnv ?? DEFAULT_ENABLED_DOMAINS)];
+  const domains = [...(overrides.domains ?? overrides.extensions ?? DEFAULT_ENABLED_DOMAINS)];
   const reasoningPreference =
     overrides.reasoningPreference ??
     parseReasoningPreference(getFirstEnvValue("PANCODE_REASONING")) ??

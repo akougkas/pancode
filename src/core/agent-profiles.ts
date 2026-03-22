@@ -2,8 +2,8 @@
  * Agent class profiles: role-based defaults for orchestrator, worker, and scout agents.
  *
  * These profiles define the operational envelope for each agent class independently
- * of which model family is used. A scout running qwen3.5-0.8b and a scout running
- * granite-350m both get the same context window, temperature, and reasoning policy.
+ * of which model family is used. A scout running a small model and a scout running
+ * a large model both get the same context window, temperature, and reasoning policy.
  *
  * The three agent classes serve fundamentally different purposes:
  *   - Orchestrator: human-facing, creative reasoning, long context for conversation history

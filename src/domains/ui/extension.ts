@@ -1175,7 +1175,7 @@ export const extension = defineExtension((pi) => {
   // Filter UI-only panel messages from LLM context.
   // pancode-panel messages (dashboard, /models, /help output) are visual UI
   // for the user. Including them confuses local models: the dashboard text
-  // "Build mini-llamacpp/Qwen35..." gets interpreted as a build instruction.
+  // "Build <model-id>..." gets interpreted as a build instruction.
   pi.on(PiEvent.CONTEXT, async (event) => {
     type MsgWithCustomType = (typeof event.messages)[number] & { customType?: string };
 

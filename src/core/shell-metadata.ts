@@ -170,7 +170,7 @@ ${formatOption("--version", "Show PanCode version")}`;
 
   return `Usage:
   pancode
-  pancode --model openai-codex/gpt-5.4
+  pancode --model provider/model-id
 
 Options:
 ${formatOption("--cwd <path>", "Working directory for the session")}

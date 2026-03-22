@@ -46,7 +46,7 @@ function printUsage(): void {
   console.log(`Usage:
   pancode
   pancode --preset openai
-  pancode --model openai-codex/gpt-5.4
+  pancode --model provider/model-id
 
 Options:
   --preset <name>      Boot preset (local, openai, openai-max, hybrid)

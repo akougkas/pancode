@@ -184,7 +184,7 @@ function calculateGridColumns(cardCount: number, terminalWidth: number): number 
  * ┌─────────────────────┐
  * │ dev                 │
  * │ ● running    23s    │
- * │ dynamo/qwen3.5-35b  │
+ * │ provider/model-id   │
  * │ 2.1k tok  T3  auth..│
  * └─────────────────────┘
  * ```
