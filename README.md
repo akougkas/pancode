@@ -77,13 +77,15 @@ Result: 3 findings, 0 critical, 47s, 12,400 tokens
 - **Universal Agent Dispatch.** 6 CLI runtime adapters plus native Pi agents. Dispatch to Claude Code, Codex, Gemini CLI, OpenCode, Cline, or Copilot CLI as subprocess workers.
 - **Runtime Abstraction.** `AgentRuntime` interface with `buildSpawnConfig` and `parseResult`. Auto-discovery scans PATH at boot and registers available runtimes.
 - **Formal Safety Model.** 4 scope levels (`read < suggest < write < admin`), 9 action classes, 3 autonomy modes. Workers cannot exceed the orchestrator's scope. Enforced before dispatch and inside the worker process.
-- **8 Composable Domains.** Topological loading, independent persistence, safe event bus. Each domain owns its commands and state.
+- **9 Composable Domains.** Topological loading, independent persistence, safe event bus. Each domain owns its commands and state.
 - **Provider Agnostic.** 16+ LLM providers. Local-first with LM Studio, Ollama, llama.cpp, vLLM, SGLang. Cloud APIs (Anthropic, OpenAI, Google, Mistral) supported in the same session.
 - **Chain and Batch Dispatch.** Sequential pipelines with `$INPUT`/`$ORIGINAL` token substitution. Parallel batch execution with configurable concurrency.
 - **Live Dispatch Board.** Worker cards with runtime badges, token tracking, duration, and error details. Updated in real time via event bus.
 - **37 Slash Commands** across 7 categories (session, dispatch, agents, observe, schedule, display, utility).
 - **Cost Tracking.** Per-run, per-agent, per-model token and cost breakdown. Budget ceiling with admission gating.
-- **5 Orchestrator Modes.** Capture (blue), plan (purple), build (green), ask (orange), review (red). Mode gating controls which dispatches are allowed.
+- **5 Orchestrator Modes.** Capture (blue), plan (purple), build (green), ask (orange), review (red). Mode gating controls which tools and dispatches are allowed.
+- **PanPrompt Engine.** Fragment-based prompt compilation with model tiering (frontier/mid/small). 36 fragments across orchestrator, worker, and scout roles. Token-budget-aware selection.
+- **Boot Presets.** Named model configurations (local, openai, hybrid) in `~/.pancode/presets.yaml`. Switch at boot with `--preset` or at runtime with `/preset`. All model IDs live in `.env`, never in source code.
 
 ## Supported Runtimes
 
@@ -121,7 +123,12 @@ Level 3: agents (depends on nothing)
   Agent spec registry, YAML agent loading with env var expansion
   Runtime field support for CLI agent dispatch
 
-Level 4: dispatch (depends on safety, agents)
+Level 3: prompts (depends on nothing)
+  PanPrompt fragment library, tiered compilation (frontier/mid/small)
+  36 fragments: orchestrator identity (Panos), modes, dispatch, safety, tools, output
+  Worker and scout prompt compilation with dynamic variable expansion
+
+Level 4: dispatch (depends on safety, agents, prompts)
   Worker subprocess spawning, NDJSON event stream parsing
   Declarative routing rules, batch tracking, chain dispatch
   Dispatch admission gating, run ledger persistence
@@ -153,16 +160,17 @@ Level 6: ui (depends on all above)
                                |
                  +-------------+-------------+
                  v             v             v
-           +----------+  +----------+  +----------+
-           |  safety  |  | session  |  |  agents  |
-           | Level 2  |  | Level 2  |  | Level 3  |
-           +-----+----+  +----+-----+  +-----+----+
-                 |             |              |
-                 +------+------+       +------+
-                        v              v
+           +----------+  +----------+  +-----+----+  +----------+
+           |  safety  |  | session  |  |  agents  |  | prompts  |
+           | Level 2  |  | Level 2  |  | Level 3  |  | Level 3  |
+           +-----+----+  +----+-----+  +-----+----+  +-----+----+
+                 |             |              |              |
+                 +------+------+---------+----+------+-------+
+                        v                v
                  +--------------------------+
                  |       dispatch (L4)      |
-                 |  uses: safety, agents    |
+                 | uses: safety, agents,    |
+                 |       prompts            |
                  +-------------+------------+
                         +------+-------+
                         v              v
@@ -219,20 +227,25 @@ npm run build
 
 ### Configuration
 
-On first boot, PanCode creates `~/.pancode/` with a default `agents.yaml`
-containing three native agents (dev, reviewer, scout) and commented examples
-for CLI agents. Edit this file to add your own agents with any runtime.
+On first boot, PanCode creates `~/.pancode/` with:
+- `agents.yaml` containing two native agents (dev, reviewer) and commented CLI agent examples
+- `presets.yaml` with named model configurations seeded from your `.env`
+- `model-cache.yaml` with discovered model profiles (refreshed in background)
+
+Configure models in the project `.env` file:
 
 ```bash
-# Set the worker model (used by native agents)
-export PANCODE_WORKER_MODEL=ollama/qwen3:8b
+# Orchestrator model (provider-id/model-id from engine discovery)
+PANCODE_MODEL=lmstudio/qwen3.5-35b-a3b
 
-# Optional: set a different orchestrator model
-export PANCODE_MODEL=lmstudio/qwen3.5-35b
+# Worker model for dispatched tasks
+PANCODE_WORKER_MODEL=lmstudio/qwen3.5-35b-a3b
 
-# Optional: safety mode (suggest, auto-edit, full-auto)
-export PANCODE_SAFETY=auto-edit
+# Scout model for shadow_explore reconnaissance
+PANCODE_SCOUT_MODEL=ollama/qwen3:2b
 ```
+
+Edit `~/.pancode/presets.yaml` to define named configurations for different providers. Switch at boot with `--preset local` or at runtime with `/preset openai`.
 
 ### First Boot
 
@@ -242,6 +255,12 @@ npm start
 
 # Or run from built output
 node dist/loader.js
+
+# Start in a tmux session (detachable)
+npm run up
+
+# Boot with a specific preset
+npm start -- --preset local
 
 # Fast paths (no SDK loaded)
 npm start -- --help
@@ -453,6 +472,7 @@ src/
     safety/          (9 files)        Scope, classifier, enforcement, rules, loop
     session/         (6 files)        Context registry, shared board, memory
     agents/          (5 files)        Spec registry, teams, YAML loading, skills
+    prompts/         (7 files)        PanPrompt fragments, tiered compiler, worker prompts
     dispatch/       (12 files)        Spawn, routing, admission, rules, state, batch
     providers/      (11 files)        LM Studio, Ollama, llama.cpp, cloud, matching
     observability/   (5 files)        Metrics, health, audit trail
@@ -472,7 +492,7 @@ src/
     version.ts                        Version display
 ```
 
-128 TypeScript source files. Strict mode. ~11,400 LOC.
+145 TypeScript source files. Strict mode. ~16,700 LOC.
 
 ### Adding a New Runtime Adapter
 

@@ -53,5 +53,5 @@ distributions:
 variants:
   - id: claude-reasoning-distilled
     repo: Jackrong/Qwen3.5-35B-A3B-Claude-4.6-Opus-Reasoning-Distilled
-    gguf: mradermacher/Qwen3.5-35B-A3B-Claude-4.6-Opus-Reasoning-Distilled-i1-GGUF
+    gguf: mradermacher/qwen3.5-35b-a3b-claude-4.6-opus-reasoning-distilled-i1.gguf
     distilled_from: claude-4.6-opus
