@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { type SessionBoundary, isSessionBoundary } from "../../core/ledger-types";
 
 export const MAX_METRIC_ENTRIES = 1000;
 
@@ -18,17 +19,7 @@ export interface RunMetric {
   timestamp: string;
 }
 
-export interface SessionBoundary {
-  type: "session_start" | "session_end";
-  timestamp: string;
-  sessionId: string;
-}
-
 export type MetricLedgerEntry = RunMetric | SessionBoundary;
-
-function isSessionBoundary(entry: MetricLedgerEntry): entry is SessionBoundary {
-  return "type" in entry && (entry.type === "session_start" || entry.type === "session_end");
-}
 
 export interface SessionMetrics {
   totalRuns: number;

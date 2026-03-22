@@ -1,7 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { type SessionBoundary, isSessionBoundary } from "../../core/ledger-types";
 import type { RuntimeUsage } from "../../engine/runtimes";
+
+export { type SessionBoundary, isSessionBoundary } from "../../core/ledger-types";
 
 export const MAX_RUN_ENTRIES = 500;
 
@@ -25,17 +28,7 @@ export interface RunEnvelope {
   cwd: string;
 }
 
-export interface SessionBoundary {
-  type: "session_start" | "session_end";
-  timestamp: string;
-  sessionId: string;
-}
-
 export type LedgerEntry = RunEnvelope | SessionBoundary;
-
-export function isSessionBoundary(entry: LedgerEntry): entry is SessionBoundary {
-  return "type" in entry && (entry.type === "session_start" || entry.type === "session_end");
-}
 
 export function createRunEnvelope(
   task: string,
