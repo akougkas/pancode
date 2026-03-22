@@ -64,11 +64,3 @@ export function atomicWriteTextSync(path: string, contents: string, options?: At
 export function atomicWriteJsonSync(path: string, value: unknown, options?: AtomicWriteOptions): void {
   atomicWriteTextSync(path, `${JSON.stringify(value, null, 2)}\n`, options);
 }
-
-export async function atomicWriteText(path: string, contents: string): Promise<void> {
-  atomicWriteTextSync(path, contents);
-}
-
-export async function atomicWriteJson(path: string, value: unknown): Promise<void> {
-  atomicWriteJsonSync(path, value);
-}
