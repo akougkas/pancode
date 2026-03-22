@@ -1,33 +1,65 @@
 import { execSync } from "node:child_process";
-import { EXIT_FAILURE, EXIT_SUCCESS, PANCODE_TMUX_SESSION, isTmuxAvailable, isTmuxSessionRunning } from "./shared";
+import {
+  EXIT_FAILURE,
+  EXIT_SUCCESS,
+  type PancodeSession,
+  isTmuxAvailable,
+  listPancodeSessions,
+} from "./shared";
 
+/**
+ * Attach to an existing PanCode tmux session.
+ *
+ *   pancode up         Attach to the most recent session.
+ *   pancode up <name>  Attach to a specific session by name.
+ */
 export function up(args: string[]): number {
   if (!isTmuxAvailable()) {
-    console.error("[pancode:cli] tmux is not installed. Run PanCode directly with: npm start");
+    console.error("[pancode] tmux is not installed.");
     return EXIT_FAILURE;
   }
 
-  if (isTmuxSessionRunning()) {
-    console.log(`PanCode session "${PANCODE_TMUX_SESSION}" is already running. Attaching...`);
-    try {
-      execSync(`tmux attach-session -t ${PANCODE_TMUX_SESSION}`, { stdio: "inherit" });
-    } catch {
-      // User detached or session ended
-    }
-    return EXIT_SUCCESS;
+  const sessions = listPancodeSessions();
+  if (sessions.length === 0) {
+    console.error("[pancode] No sessions running. Start one with: pancode");
+    return EXIT_FAILURE;
   }
 
-  const binPath = process.env.PANCODE_BIN_PATH ?? "src/loader.ts";
-  const extraArgs = args.length > 0 ? ` ${args.join(" ")}` : "";
-  const cmd = `node --import tsx ${binPath}${extraArgs}`;
+  let target: PancodeSession;
 
-  console.log(`Starting PanCode in tmux session "${PANCODE_TMUX_SESSION}"...`);
+  if (args.length > 0 && !args[0].startsWith("-")) {
+    // Attach to a specific session by name
+    const requested = args[0];
+    const match = sessions.find((s) => s.name === requested);
+    if (!match) {
+      console.error(`[pancode] Session "${requested}" not found.`);
+      printSessionList(sessions);
+      return EXIT_FAILURE;
+    }
+    target = match;
+  } else {
+    // Attach to the most recent session
+    target = sessions[0];
+  }
+
+  if (target.attached) {
+    console.log(`Session "${target.name}" is already attached in another terminal.`);
+    return EXIT_FAILURE;
+  }
+
   try {
-    execSync(`tmux new-session -d -s ${PANCODE_TMUX_SESSION} '${cmd}'`, { stdio: "pipe" });
-    execSync(`tmux attach-session -t ${PANCODE_TMUX_SESSION}`, { stdio: "inherit" });
+    execSync(`tmux attach-session -t ${target.name}`, { stdio: "inherit" });
   } catch {
     // User detached or session ended
   }
 
   return EXIT_SUCCESS;
+}
+
+function printSessionList(sessions: PancodeSession[]): void {
+  console.log("Available sessions:");
+  for (const s of sessions) {
+    const status = s.attached ? "(attached)" : "(detached)";
+    console.log(`  ${s.name} ${status}`);
+  }
 }

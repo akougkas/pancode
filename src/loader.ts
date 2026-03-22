@@ -3,11 +3,10 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolvePackageRoot } from "./core/package-root";
-import { formatPanCodeCliUsage } from "./core/shell-metadata";
 
-type LoaderTarget = "orchestrator" | "worker" | "cli";
+type LoaderTarget = "orchestrator" | "worker" | "cli" | "tmux-start";
 
-const CLI_SUBCOMMANDS = new Set(["up", "down", "login", "version"]);
+const CLI_SUBCOMMANDS = new Set(["up", "down", "sessions", "login", "version"]);
 
 function resolveVersion(packageRoot: string): string {
   try {
@@ -31,7 +30,6 @@ function loadEnvFile(packageRoot: string): void {
     if (eqIndex === -1) continue;
     const key = trimmed.slice(0, eqIndex).trim();
     const value = trimmed.slice(eqIndex + 1).trim();
-    // Only set if not already defined (real env takes precedence)
     if (!process.env[key]) {
       process.env[key] = value;
     }
@@ -40,8 +38,6 @@ function loadEnvFile(packageRoot: string): void {
 
 function initializeEnvironment(): string {
   const packageRoot = resolvePackageRoot(import.meta.url);
-
-  // Load .env before anything else (real env vars take precedence)
   loadEnvFile(packageRoot);
 
   const pancodeHome = process.env.PANCODE_HOME?.trim() || join(homedir(), ".pancode");
@@ -67,6 +63,11 @@ function parseLoaderArgs(argv: string[]): ParsedLoaderArgs {
   let cliSubcommand: string | null = null;
   const forwardedArgs: string[] = [];
 
+  // Handle --sessions as a top-level flag (convenience alias for `pancode sessions`)
+  if (argv.includes("--sessions")) {
+    return { target: "cli", cliSubcommand: "sessions", forwardedArgs: [] };
+  }
+
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
 
@@ -86,6 +87,12 @@ function parseLoaderArgs(argv: string[]): ParsedLoaderArgs {
     forwardedArgs.push(arg);
   }
 
+  // Default (no subcommand): create a new tmux session unless we are
+  // already inside one (set by start.ts before spawning the inner process).
+  if (target === "orchestrator" && !process.env.PANCODE_INSIDE_TMUX) {
+    target = "tmux-start";
+  }
+
   return { target, cliSubcommand, forwardedArgs };
 }
 
@@ -95,6 +102,32 @@ function isHelpRequest(args: string[]): boolean {
 
 function isVersionRequest(args: string[]): boolean {
   return args.length === 1 && (args[0] === "--version" || args[0] === "-v");
+}
+
+function printUsage(): void {
+  console.log(`Usage:
+  pancode                     Start a new session in tmux
+  pancode --preset <name>     Start with a named preset
+  pancode up [<name>]         Attach to a running session
+  pancode down [<name>]       Stop a session (--all for all)
+  pancode --sessions          List running sessions
+  pancode login               Authenticate with providers
+  pancode version             Show version
+
+Options:
+  --preset <name>             Boot preset (local, openai, hybrid, ...)
+  --model <id>                Model override (provider/model-id)
+  --provider <name>           Preferred provider
+  --cwd <path>                Working directory
+  --safety <level>            suggest | auto-edit | full-auto
+  --sessions                  List all PanCode sessions
+  --help, -h                  Show this help
+  --version, -v               Show version
+
+Sessions:
+  Each "pancode" invocation creates a new tmux session.
+  Use "pancode up" to reattach and "pancode down" to stop.
+  Sessions are named pancode, pancode-2, pancode-3, etc.`);
 }
 
 async function loadTarget(parsed: ParsedLoaderArgs): Promise<void> {
@@ -109,31 +142,28 @@ async function loadTarget(parsed: ParsedLoaderArgs): Promise<void> {
     process.exit(exitCode);
   }
 
+  if (parsed.target === "tmux-start") {
+    const { runCliCommand } = await import("./cli/index");
+    const exitCode = runCliCommand("start", parsed.forwardedArgs);
+    process.exit(exitCode);
+  }
+
+  // target === "orchestrator" (inside tmux)
   await import("./entry/orchestrator");
 }
 
 async function main(): Promise<void> {
   const packageRoot = initializeEnvironment();
-  const version = resolveVersion(packageRoot);
+  const ver = resolveVersion(packageRoot);
   const parsed = parseLoaderArgs(process.argv.slice(2));
 
-  if (parsed.target === "orchestrator" && isHelpRequest(parsed.forwardedArgs)) {
-    console.log(formatPanCodeCliUsage("orchestrator"));
-    console.log("\nSubcommands:");
-    console.log("  up                      Start PanCode in a tmux session");
-    console.log("  down                    Stop the PanCode tmux session");
-    console.log("  login                   Authenticate with providers");
-    console.log("  version                 Show PanCode version");
-    return;
-  }
-
-  if (parsed.target === "worker" && isHelpRequest(parsed.forwardedArgs)) {
-    console.log(formatPanCodeCliUsage("worker"));
-    return;
-  }
-
   if (isVersionRequest(parsed.forwardedArgs)) {
-    console.log(version);
+    console.log(ver);
+    return;
+  }
+
+  if (isHelpRequest(parsed.forwardedArgs)) {
+    printUsage();
     return;
   }
 
@@ -142,7 +172,7 @@ async function main(): Promise<void> {
     process.env.PANCODE_BIN_PATH ?? process.argv[1] ?? "pancode",
     ...parsed.forwardedArgs,
   ];
-  process.env.PANCODE_ENTRYPOINT = parsed.target;
+  process.env.PANCODE_ENTRYPOINT = parsed.target === "tmux-start" ? "orchestrator" : parsed.target;
 
   await loadTarget(parsed);
 }
