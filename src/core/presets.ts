@@ -37,52 +37,49 @@ interface PresetFileEntry {
 type PresetFile = Record<string, PresetFileEntry>;
 
 /**
- * Build default presets from environment variables. Model IDs are never
- * hardcoded in source. The .env file is the single source of truth for
- * all model assignments. Presets read from env at seed time so the
- * generated presets.yaml reflects the user's actual environment.
+ * Build default presets from the three core model env vars. The local
+ * preset seeds from PANCODE_MODEL/WORKER_MODEL/SCOUT_MODEL. OpenAI
+ * presets seed as stubs (no model) because PanCode cannot guess the
+ * user's API provider IDs. Users fill them in by editing presets.yaml.
+ *
+ * This function runs exactly once per install (when presets.yaml does
+ * not exist). After seeding, presets.yaml is the source of truth.
  */
 function buildDefaultPresets(): PresetFile {
-  const localModel = process.env.PANCODE_LOCAL_MODEL ?? process.env.PANCODE_MODEL ?? "";
-  const localWorker = process.env.PANCODE_LOCAL_WORKER_MODEL ?? process.env.PANCODE_WORKER_MODEL ?? null;
-  const localScout = process.env.PANCODE_LOCAL_SCOUT_MODEL ?? process.env.PANCODE_SCOUT_MODEL ?? null;
-  const openaiModel = process.env.PANCODE_OPENAI_MODEL ?? "";
-  const openaiWorker = process.env.PANCODE_OPENAI_WORKER_MODEL ?? null;
-  const openaiScout = process.env.PANCODE_OPENAI_SCOUT_MODEL ?? null;
-  const openaiMaxModel = process.env.PANCODE_OPENAI_MAX_MODEL ?? openaiModel;
-  const openaiMaxWorker = process.env.PANCODE_OPENAI_MAX_WORKER_MODEL ?? null;
-  const openaiMaxScout = process.env.PANCODE_OPENAI_MAX_SCOUT_MODEL ?? openaiScout;
+  const model = process.env.PANCODE_MODEL ?? undefined;
+  const worker = process.env.PANCODE_WORKER_MODEL ?? null;
+  const scout = process.env.PANCODE_SCOUT_MODEL ?? null;
 
   return {
     local: {
       description: "Local inference via homelab engines",
-      model: localModel || undefined,
-      workerModel: localWorker,
-      scoutModel: localScout,
+      model,
+      workerModel: worker,
+      scoutModel: scout,
       reasoning: "medium",
       safety: "auto-edit",
     },
     openai: {
-      description: "OpenAI Codex (orchestrator + workers)",
-      model: openaiModel || undefined,
-      workerModel: openaiWorker,
-      scoutModel: openaiScout,
+      description: "OpenAI (edit model IDs to match your subscription)",
+      model: undefined,
+      workerModel: null,
+      scoutModel: null,
       reasoning: "medium",
       safety: "auto-edit",
     },
     "openai-max": {
-      description: "OpenAI Codex with high reasoning for deep analysis",
-      model: openaiMaxModel || undefined,
-      workerModel: openaiMaxWorker,
-      scoutModel: openaiMaxScout,
+      description: "OpenAI high reasoning (edit model IDs to match your subscription)",
+      model: undefined,
+      workerModel: null,
+      scoutModel: null,
       reasoning: "high",
       safety: "full-auto",
     },
     hybrid: {
-      description: "Local orchestrator with OpenAI workers",
-      model: localModel || undefined,
-      workerModel: openaiWorker,
-      scoutModel: localScout,
+      description: "Local orchestrator with remote workers (edit worker model)",
+      model,
+      workerModel: null,
+      scoutModel: scout,
       reasoning: "medium",
       safety: "auto-edit",
     },
