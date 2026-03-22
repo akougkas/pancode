@@ -93,6 +93,27 @@ export function resolveDomainOrder(enabledDomains: readonly string[], registry: 
   return ordered.map((name) => registry[name]);
 }
 
+/**
+ * Validate domain names against the registry. Returns only names that exist
+ * in the registry. Unknown names are logged to stderr as warnings so a typo
+ * in PANCODE_ENABLED_DOMAINS does not crash the boot sequence.
+ */
+export function filterValidDomains(requested: readonly string[], registry: DomainRegistry): string[] {
+  const available = new Set(Object.keys(registry));
+  const valid: string[] = [];
+
+  for (const name of requested) {
+    if (available.has(name)) {
+      valid.push(name);
+    } else {
+      const known = [...available].sort().join(", ");
+      process.stderr.write(`[pancode:domains] Unknown domain "${name}" (skipped). Available: ${known}\n`);
+    }
+  }
+
+  return valid;
+}
+
 export function collectDomainExtensions(
   enabledDomains: readonly string[],
   registry: DomainRegistry,

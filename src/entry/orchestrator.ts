@@ -2,7 +2,7 @@ import { performance } from "node:perf_hooks";
 import { join } from "node:path";
 import { type PanCodeConfig, type SafetyLevel, loadConfig } from "../core/config";
 import { ensurePresetsFile, loadPreset } from "../core/presets";
-import { collectDomainExtensions, resolveDomainOrder } from "../core/domain-loader";
+import { collectDomainExtensions, filterValidDomains, resolveDomainOrder } from "../core/domain-loader";
 import { createSafeEventBus } from "../core/event-bus";
 import { ensureProjectRuntime } from "../core/init";
 import { resolvePackageRoot } from "../core/package-root";
@@ -263,8 +263,9 @@ export async function runOrchestratorEntry(): Promise<void> {
 
   // === Bootstrap Phase 1: Domain resolution ===
   const p1 = phase("Phase 1", "domains");
-  const orderedDomains = resolveDomainOrder(config.domains, DOMAIN_REGISTRY);
-  const extensionFactories = collectDomainExtensions(config.domains, DOMAIN_REGISTRY);
+  const validDomains = filterValidDomains(config.domains, DOMAIN_REGISTRY);
+  const orderedDomains = resolveDomainOrder(validDomains, DOMAIN_REGISTRY);
+  const extensionFactories = collectDomainExtensions(validDomains, DOMAIN_REGISTRY);
   process.env.PANCODE_ENABLED_DOMAINS = orderedDomains.map((domain) => domain.manifest.name).join(",");
   p1.end();
 
