@@ -60,7 +60,7 @@ interface YamlAgentsFile {
   agents?: Record<string, YamlAgentEntry>;
 }
 
-const DEFAULT_AGENTS_YAML = `# PanCode Agent Definitions
+const DEFAULT_AGENTS_YAML = `# PanCode Agent Definitions (panagents.yaml)
 # Each agent specifies tools, sampling preset, and readonly mode.
 # The model field supports \${ENV_VAR} expansion.
 
@@ -144,7 +144,7 @@ function expandEnvVars(value: string): string {
 }
 
 export function ensureAgentsYaml(pancodeHome: string): string {
-  const filePath = join(pancodeHome, "agents.yaml");
+  const filePath = join(pancodeHome, "panagents.yaml");
   if (!existsSync(filePath)) {
     mkdirSync(dirname(filePath), { recursive: true });
     writeFileSync(filePath, DEFAULT_AGENTS_YAML, "utf8");

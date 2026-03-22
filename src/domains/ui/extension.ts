@@ -1278,7 +1278,7 @@ export const extension = defineExtension((pi) => {
   });
 
   pi.registerCommand("preset", {
-    description: "List or apply a boot preset from ~/.pancode/presets.yaml",
+    description: "List or apply a boot preset from ~/.pancode/panpresets.yaml",
     async handler(args, ctx) {
       const pancodeHome = process.env.PANCODE_HOME;
       if (!pancodeHome) {
@@ -1296,7 +1296,7 @@ export const extension = defineExtension((pi) => {
           lines.push(`  ${marker} ${name.padEnd(14)} ${preset.description}`);
           lines.push(`    model: ${preset.model}  worker: ${preset.workerModel ?? "(same)"}  scout: ${preset.scoutModel ?? preset.model}  reasoning: ${preset.reasoning}  safety: ${preset.safety}`);
         }
-        lines.push("", "Use /preset <name> to apply. Edit ~/.pancode/presets.yaml to customize.");
+        lines.push("", "Use /preset <name> to apply. Edit ~/.pancode/panpresets.yaml to customize.");
         sendPanel(emitPanel, `${PANCODE_PRODUCT_NAME} Presets`, lines);
         return;
       }

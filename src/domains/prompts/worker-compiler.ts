@@ -47,7 +47,7 @@ export interface WorkerModelProfileSlice {
  * Assembles role identity, task framing, safety constraints, tool strategy,
  * and output contract based on the agent spec and dispatch context.
  *
- * Falls back to the static agents.yaml system_prompt if the agent has a
+ * Falls back to the static panagents.yaml system_prompt if the agent has a
  * custom prompt (non-default). Default agents (dev, reviewer) get dynamic
  * prompts from the fragment library.
  */
@@ -57,7 +57,7 @@ export function compileWorkerPrompt(
   modelProfile: WorkerModelProfileSlice | null,
 ): string {
   // If the agent spec has a custom system prompt that was explicitly set
-  // (not a default empty string), preserve it. Custom agents from agents.yaml
+  // (not a default empty string), preserve it. Custom agents from panagents.yaml
   // retain their user-authored prompts.
   if (spec?.systemPrompt && isCustomAgentPrompt(spec.name, spec.systemPrompt)) {
     return spec.systemPrompt;

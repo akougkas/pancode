@@ -18,7 +18,7 @@ echo "Setting up integration test project at: ${PROJECT_DIR}"
 mkdir -p "${PROJECT_DIR}/.pancode"
 
 # Copy web dev agent definitions
-cp "${PANCODE_ROOT}/templates/web-dev-agents.yaml" "${PROJECT_DIR}/.pancode/agents.yaml"
+cp "${PANCODE_ROOT}/templates/web-dev-panagents.yaml" "${PROJECT_DIR}/.pancode/panagents.yaml"
 
 # Initialize npm project if not already done
 if [ ! -f "${PROJECT_DIR}/package.json" ]; then

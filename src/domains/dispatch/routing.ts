@@ -31,7 +31,7 @@ function resolveModelSampling(model: string | null, presetName: string | undefin
   if (!sampling) {
     const message = `Sampling preset "${presetName}" not found for ${providerId}/${modelId}. Worker will use model defaults.`;
     console.error(`[pancode:routing] ${message}`);
-    // Also surface this in the TUI so the user can correct agents.yaml without checking stderr.
+    // Also surface this in the TUI so the user can correct panagents.yaml without checking stderr.
     sharedBus.emit(BusChannel.WARNING, { source: "dispatch", message } satisfies WarningEvent);
   }
   return sampling;

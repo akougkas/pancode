@@ -120,8 +120,7 @@ export function loadConfig(overrides: ConfigOverrides = {}): PanCodeConfig {
     preferredProvider: settings.preferredProvider,
     preferredModel: settings.preferredModel,
     tools: overrides.tools ?? getFirstEnvValue("PANCODE_TOOLS", "PANCODE_PHASE0_TOOLS") ?? DEFAULT_TOOLS,
-    timeoutMs:
-      overrides.timeoutMs ?? parseTimeoutMs(process.env.PANCODE_TIMEOUT_MS ?? process.env.PANCODE_PHASE0_TIMEOUT_MS),
+    timeoutMs: overrides.timeoutMs ?? parseTimeoutMs(process.env.PANCODE_TIMEOUT_MS),
     runtimeRoot,
     resultsDir: join(runtimeRoot, "results"),
   };

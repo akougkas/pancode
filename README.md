@@ -22,8 +22,8 @@ See [docs/](./docs/README.md) for the full guide set.
   observability, scheduling, intelligence, and ui.
 - 6 CLI runtime adapters plus native Pi: Claude Code, Codex, Gemini, OpenCode,
   Cline, and Copilot CLI.
-- Model presets in `~/.pancode/presets.yaml`.
-- Agent specs in `~/.pancode/agents.yaml`.
+- Model presets in `~/.pancode/panpresets.yaml`.
+- Agent specs in `~/.pancode/panagents.yaml`.
 - User settings in `~/.pancode/settings.json`.
 
 ## Documentation
@@ -127,9 +127,9 @@ The internal runtime surface also includes `PANCODE_HOME`,
 `PI_SKIP_VERSION_CHECK`. See the configuration guide for where each one is
 read and written.
 
-## agents.yaml
+## panagents.yaml
 
-`~/.pancode/agents.yaml` defines dispatchable agents.
+`~/.pancode/panagents.yaml` defines dispatchable agents.
 
 ### Fields
 

@@ -103,7 +103,7 @@ function loadCachedProviderUrls(): Set<string> {
   const pancodeHome = process.env.PANCODE_HOME;
   if (!pancodeHome) return new Set();
 
-  const filePath = join(pancodeHome, "providers.yaml");
+  const filePath = join(pancodeHome, "panproviders.yaml");
   try {
     const content = readFileSync(filePath, "utf8");
     const parsed = YAML.parse(content) as { providers?: Array<{ baseUrl?: string }> };
@@ -171,7 +171,7 @@ export function writeProvidersYaml(results: DiscoveryResult[], pancodeHome: stri
     discoveredAt: new Date().toISOString(),
   }));
 
-  const filePath = join(pancodeHome, "providers.yaml");
+  const filePath = join(pancodeHome, "panproviders.yaml");
   mkdirSync(dirname(filePath), { recursive: true });
   writeFileSync(filePath, YAML.stringify({ providers }), "utf8");
 }

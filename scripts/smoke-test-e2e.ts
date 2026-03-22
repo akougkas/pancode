@@ -127,8 +127,8 @@ async function phase1(): Promise<boolean> {
   console.log(`         PANCODE_MODEL: ${orchModel}`);
   console.log(`         PANCODE_WORKER_MODEL: ${workerModel}`);
 
-  // Step 4: Ensure agents.yaml
-  console.log("\n  [4/4] Ensuring agents.yaml...");
+  // Step 4: Ensure panagents.yaml
+  console.log("\n  [4/4] Ensuring panagents.yaml...");
   const agentsPath = ensureAgentsYaml(process.env.PANCODE_HOME!);
   console.log(`         Path: ${agentsPath}`);
   console.log(`         Exists: ${existsSync(agentsPath)}`);

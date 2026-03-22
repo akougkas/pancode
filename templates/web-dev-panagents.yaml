@@ -1,6 +1,6 @@
 # PanCode Web Development Agent Definitions
 # Specialized agents for building websites and web applications.
-# Copy to .pancode/agents.yaml in your project directory.
+# Copy to .pancode/panagents.yaml in your project directory.
 
 agents:
   dev:

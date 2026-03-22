@@ -21,7 +21,7 @@ export function loadSafetyRules(packageRoot: string): SafetyRules {
     noDeletePaths: [],
   };
 
-  const rulesPath = join(packageRoot, ".pancode", "safety-rules.yaml");
+  const rulesPath = join(packageRoot, ".pancode", "pansafety.yaml");
   if (!existsSync(rulesPath)) return defaults;
 
   try {

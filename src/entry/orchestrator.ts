@@ -59,7 +59,7 @@ Options:
   --rediscover         Force full engine discovery (ignore cache)
   --help               Show this help
 
-Presets are defined in ~/.pancode/presets.yaml. Edit freely.`);
+Presets are defined in ~/.pancode/panpresets.yaml. Edit freely.`);
 }
 
 function parseSafetyLevel(value: string | undefined): SafetyLevel | null {
@@ -191,6 +191,9 @@ export async function runOrchestratorEntry(): Promise<void> {
     return;
   }
 
+  // Pi SDK interop environment variables.
+  // These control the vendored Pi SDK and must keep their PI_* prefix.
+  // PanCode-owned env vars use the PANCODE_* prefix exclusively.
   process.env.PI_SKIP_VERSION_CHECK = "1";
 
   // Resolve preset before config so preset values feed into overrides.
@@ -201,7 +204,7 @@ export async function runOrchestratorEntry(): Promise<void> {
   let presetWorkerModel: string | null = null;
   let presetScoutModel: string | null = null;
 
-  // Ensure presets.yaml exists (seeds defaults on first run).
+  // Ensure panpresets.yaml exists (seeds defaults on first run).
   // PANCODE_HOME is set by loader.ts before this entry point runs.
   const pancodeHomeForPresets = process.env.PANCODE_HOME;
   if (pancodeHomeForPresets) {
@@ -211,7 +214,7 @@ export async function runOrchestratorEntry(): Promise<void> {
   if (args.preset && pancodeHomeForPresets) {
     const preset = loadPreset(pancodeHomeForPresets, args.preset);
     if (!preset) {
-      console.error(`[pancode] Unknown preset: ${args.preset}. Check ~/.pancode/presets.yaml`);
+      console.error(`[pancode] Unknown preset: ${args.preset}. Check ~/.pancode/panpresets.yaml`);
       process.exit(1);
     }
     presetModel = preset.model;

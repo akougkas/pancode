@@ -1,5 +1,5 @@
 /**
- * Named boot presets stored in ~/.pancode/presets.yaml.
+ * Named boot presets stored in ~/.pancode/panpresets.yaml.
  *
  * Each preset defines orchestrator model, worker model, reasoning level,
  * and safety mode. The CLI flag --preset <name> applies a preset at boot.
@@ -40,10 +40,10 @@ type PresetFile = Record<string, PresetFileEntry>;
  * Build default presets from the three core model env vars. The local
  * preset seeds from PANCODE_MODEL/WORKER_MODEL/SCOUT_MODEL. OpenAI
  * presets seed as stubs (no model) because PanCode cannot guess the
- * user's API provider IDs. Users fill them in by editing presets.yaml.
+ * user's API provider IDs. Users fill them in by editing panpresets.yaml.
  *
- * This function runs exactly once per install (when presets.yaml does
- * not exist). After seeding, presets.yaml is the source of truth.
+ * This function runs exactly once per install (when panpresets.yaml does
+ * not exist). After seeding, panpresets.yaml is the source of truth.
  */
 function buildDefaultPresets(): PresetFile {
   const model = process.env.PANCODE_MODEL ?? undefined;
@@ -87,7 +87,7 @@ function buildDefaultPresets(): PresetFile {
 }
 
 function presetsPath(pancodeHome: string): string {
-  return join(pancodeHome, "presets.yaml");
+  return join(pancodeHome, "panpresets.yaml");
 }
 
 function isValidSafety(value: unknown): value is SafetyLevel {
@@ -119,7 +119,7 @@ function parseEntry(name: string, entry: PresetFileEntry): Preset | null {
 }
 
 /**
- * Ensure presets.yaml exists. Seeds the default file on first run.
+ * Ensure panpresets.yaml exists. Seeds the default file on first run.
  * Never overwrites an existing file.
  */
 export function ensurePresetsFile(pancodeHome: string): void {
