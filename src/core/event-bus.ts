@@ -1,5 +1,3 @@
-import { createEventBus as createEngineEventBus } from "../engine/session";
-
 export type SafeEventListener = (payload: unknown) => void | Promise<void>;
 
 export interface SafeEventBus {
@@ -26,7 +24,6 @@ export function emitSafe(bus: Pick<SafeEventBus, "listeners">, channel: string, 
 }
 
 export function createSafeEventBus(): SafeEventBus {
-  const baseBus = createEngineEventBus();
   const registry = new Map<string, Set<SafeEventListener>>();
 
   const bus: SafeEventBus = {
@@ -53,7 +50,6 @@ export function createSafeEventBus(): SafeEventBus {
     },
     clear() {
       registry.clear();
-      baseBus.clear();
     },
   };
 
