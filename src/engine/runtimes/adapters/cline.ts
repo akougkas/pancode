@@ -53,6 +53,7 @@ import type { RuntimeResult, RuntimeTaskConfig, SpawnConfig } from "../types";
 export class ClineRuntime extends CliRuntime {
   readonly id = "cli:cline";
   readonly displayName = "Cline";
+  override readonly telemetryTier = "silver" as const;
   readonly binaryName = "cline";
 
   buildCliArgs(config: RuntimeTaskConfig): string[] {
@@ -80,6 +81,11 @@ export class ClineRuntime extends CliRuntime {
     // Model passthrough (provider:model-id format)
     if (config.model) {
       args.push("-m", config.model);
+    }
+
+    // Cline supports -t <seconds> for timeout. Forward from PanCode's timeoutMs.
+    if (config.timeoutMs > 0 && !config.runtimeArgs.includes("-t") && !config.runtimeArgs.includes("--timeout")) {
+      args.push("-t", String(Math.ceil(config.timeoutMs / 1000)));
     }
 
     // Pass through extra runtime args from agent spec
@@ -116,6 +122,7 @@ export class ClineRuntime extends CliRuntime {
     let totalCost = 0;
     let turns = 0;
     let lastError = "";
+    let model: string | null = null;
 
     for (const line of lines) {
       const trimmed = line.trim();
@@ -139,6 +146,10 @@ export class ClineRuntime extends CliRuntime {
             totalOutputTokens += apiData.tokensOut ?? 0;
             totalCost += apiData.cost ?? 0;
             turns++;
+            // Extract model name from api_req_started metadata if available.
+            if (!model && typeof apiData.model === "string" && apiData.model) {
+              model = apiData.model;
+            }
           } catch {
             // Not all api_req_started events have parseable JSON
           }
@@ -158,12 +169,12 @@ export class ClineRuntime extends CliRuntime {
       usage: {
         inputTokens: totalInputTokens,
         outputTokens: totalOutputTokens,
-        cacheReadTokens: 0,
-        cacheWriteTokens: 0,
+        cacheReadTokens: null, // Cline CLI does not report cache tokens
+        cacheWriteTokens: null,
         cost: totalCost,
         turns,
       },
-      model: null,
+      model,
       runtime: this.id,
     };
   }
@@ -187,4 +198,5 @@ interface ClineApiReqData {
   tokensIn?: number;
   tokensOut?: number;
   cost?: number;
+  model?: string;
 }

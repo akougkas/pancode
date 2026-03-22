@@ -1,7 +1,7 @@
 import { execSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import type { AgentRuntime, RuntimeResult, RuntimeTaskConfig, SpawnConfig } from "./types";
+import type { AgentRuntime, RuntimeResult, RuntimeTaskConfig, SpawnConfig, TelemetryTier } from "./types";
 
 /**
  * Check if a binary exists on PATH.
@@ -32,6 +32,9 @@ export abstract class CliRuntime implements AgentRuntime {
   abstract readonly id: string;
   abstract readonly displayName: string;
   readonly tier = "cli" as const;
+
+  /** Telemetry quality tier. Subclasses override to reflect their reporting capabilities. */
+  readonly telemetryTier: TelemetryTier = "silver";
 
   /** The binary name to look for on PATH (e.g., "claude", "codex") */
   abstract readonly binaryName: string;
@@ -109,7 +112,14 @@ export abstract class CliRuntime implements AgentRuntime {
       exitCode,
       result: trimmed,
       error: classified?.message ?? "",
-      usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, cost: 0, turns: 0 },
+      usage: {
+        inputTokens: null,
+        outputTokens: null,
+        cacheReadTokens: null,
+        cacheWriteTokens: null,
+        cost: null,
+        turns: null,
+      },
       model: null,
       runtime: this.id,
     };

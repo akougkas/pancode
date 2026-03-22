@@ -17,7 +17,8 @@ export function renderRunBoard(runs: RunEnvelope[]): string[] {
   for (const run of runs) {
     const status = run.status.padEnd(9);
     const agent = run.agent.padEnd(10);
-    const costStr = run.usage.cost > 0 ? ` $${run.usage.cost.toFixed(4)}` : "";
+    const renderCostVal = run.usage.cost;
+    const costStr = renderCostVal != null && renderCostVal > 0 ? ` $${renderCostVal.toFixed(4)}` : "";
     const task = run.task.length > 50 ? `${run.task.slice(0, 47)}...` : run.task;
     lines.push(`[${run.id}] ${status} ${agent} ${task}${costStr}`);
   }

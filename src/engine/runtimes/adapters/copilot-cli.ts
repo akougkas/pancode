@@ -44,6 +44,7 @@ import type { RuntimeTaskConfig, SpawnConfig } from "../types";
 export class CopilotCliRuntime extends CliRuntime {
   readonly id = "cli:copilot-cli";
   readonly displayName = "Copilot CLI";
+  override readonly telemetryTier = "bronze" as const;
   readonly binaryName = "copilot";
 
   buildCliArgs(config: RuntimeTaskConfig): string[] {
@@ -75,6 +76,9 @@ export class CopilotCliRuntime extends CliRuntime {
     if (config.model) {
       args.push("--model", config.model);
     }
+
+    // Copilot CLI does not support a --timeout flag. The cli-entry.ts wrapper
+    // provides a process-level kill timer as the fallback timeout mechanism.
 
     // Pass through extra runtime args from agent spec
     args.push(...config.runtimeArgs);

@@ -45,6 +45,7 @@ export class PiRuntime implements AgentRuntime {
   readonly id = "pi";
   readonly displayName = "Pi (native)";
   readonly tier = "native" as const;
+  readonly telemetryTier = "platinum" as const;
 
   getVersion(): string | null {
     return "built-in";

@@ -9,12 +9,12 @@ export interface RunMetric {
   agent: string;
   status: string;
   runtime: string; // Runtime ID: "pi", "cli:claude-code", "cli:codex", etc.
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadTokens: number;
-  cacheWriteTokens: number;
-  cost: number;
-  turns: number;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  cacheReadTokens: number | null;
+  cacheWriteTokens: number | null;
+  cost: number | null;
+  turns: number | null;
   durationMs: number;
   timestamp: string;
 }
@@ -92,9 +92,9 @@ export class MetricsLedger {
     let totalOutputTokens = 0;
 
     for (const m of metrics) {
-      totalCost += m.cost;
-      totalInputTokens += m.inputTokens;
-      totalOutputTokens += m.outputTokens;
+      totalCost += m.cost ?? 0;
+      totalInputTokens += m.inputTokens ?? 0;
+      totalOutputTokens += m.outputTokens ?? 0;
     }
 
     return {

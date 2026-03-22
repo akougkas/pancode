@@ -362,10 +362,12 @@ export const extension = defineExtension((pi) => {
         completedAt: run.completedAt ?? new Date().toISOString(),
       });
 
+      const costVal = workerResult.usage.cost;
+      const turnsVal = workerResult.usage.turns;
       const usageStr =
-        workerResult.usage.cost > 0
-          ? ` | cost: $${workerResult.usage.cost.toFixed(4)} | turns: ${workerResult.usage.turns}`
-          : ` | turns: ${workerResult.usage.turns}`;
+        costVal != null && costVal > 0
+          ? ` | cost: $${costVal.toFixed(4)} | turns: ${turnsVal ?? "--"}`
+          : turnsVal != null ? ` | turns: ${turnsVal}` : "";
 
       const statusEmoji = run.status === "done" ? "completed" : "failed";
       const summary = `Worker ${statusEmoji} (${run.id})${usageStr}\n\nAgent: ${run.agent}${run.model ? ` | Model: ${run.model}` : ""}`;
@@ -526,7 +528,7 @@ export const extension = defineExtension((pi) => {
         run.completedAt = new Date().toISOString();
         ledger?.update(run.id, run);
         batchTracker.markCompleted(batch.id, run.status === "done");
-        totalCost += workerResult.usage.cost;
+        totalCost += workerResult.usage.cost ?? 0;
 
         // Record outcome for provider health tracking.
         recordDispatchOutcome(run.model, workerResult.exitCode, workerResult.error);
@@ -542,7 +544,8 @@ export const extension = defineExtension((pi) => {
         });
 
         const statusStr = run.status === "done" ? "OK" : "FAIL";
-        const costStr = workerResult.usage.cost > 0 ? ` $${workerResult.usage.cost.toFixed(4)}` : "";
+        const batchCostVal = workerResult.usage.cost;
+        const costStr = batchCostVal != null && batchCostVal > 0 ? ` $${batchCostVal.toFixed(4)}` : "";
         const truncatedTask = run.task.length > 50 ? `${run.task.slice(0, 47)}...` : run.task;
         summaryLines.push(`  [${run.id}] ${statusStr} ${run.agent} ${truncatedTask}${costStr}`);
 
@@ -724,7 +727,8 @@ export const extension = defineExtension((pi) => {
       ];
       for (const step of chainResult.steps) {
         const statusStr = step.result.exitCode === 0 && !step.result.error ? "OK" : "FAIL";
-        const costStr = step.result.usage.cost > 0 ? ` $${step.result.usage.cost.toFixed(4)}` : "";
+        const stepCostVal = step.result.usage.cost;
+        const costStr = stepCostVal != null && stepCostVal > 0 ? ` $${stepCostVal.toFixed(4)}` : "";
         const durStr = ` ${(step.durationMs / 1000).toFixed(1)}s`;
         const truncatedTask = step.task.length > 50 ? `${step.task.slice(0, 47)}...` : step.task;
         lines.push(`  Step ${step.stepIndex + 1}: [${statusStr}] ${step.agent} ${truncatedTask}${costStr}${durStr}`);
@@ -832,24 +836,25 @@ export const extension = defineExtension((pi) => {
       const byRuntime = new Map<string, { runs: number; cost: number; hasCosts: boolean }>();
 
       for (const run of allRuns) {
-        totalCost += run.usage.cost;
+        const runCost = run.usage.cost ?? 0;
+        totalCost += runCost;
 
         const agentStats = byAgent.get(run.agent) ?? { runs: 0, cost: 0 };
         agentStats.runs++;
-        agentStats.cost += run.usage.cost;
+        agentStats.cost += runCost;
         byAgent.set(run.agent, agentStats);
 
         const modelKey = run.model ?? "(unresolved)";
         const modelStats = byModel.get(modelKey) ?? { runs: 0, cost: 0 };
         modelStats.runs++;
-        modelStats.cost += run.usage.cost;
+        modelStats.cost += runCost;
         byModel.set(modelKey, modelStats);
 
         const runtimeKey = run.runtime ?? "pi";
         const runtimeStats = byRuntime.get(runtimeKey) ?? { runs: 0, cost: 0, hasCosts: false };
         runtimeStats.runs++;
-        runtimeStats.cost += run.usage.cost;
-        if (run.usage.cost > 0) runtimeStats.hasCosts = true;
+        runtimeStats.cost += runCost;
+        if (run.usage.cost != null && run.usage.cost > 0) runtimeStats.hasCosts = true;
         byRuntime.set(runtimeKey, runtimeStats);
       }
 
@@ -933,9 +938,9 @@ export const extension = defineExtension((pi) => {
         const runtimeKey = run.runtime ?? "pi";
         const rtStats = byRuntime.get(runtimeKey) ?? { runs: 0, cost: 0, totalMs: 0, hasCosts: false };
         rtStats.runs++;
-        rtStats.cost += run.usage.cost;
+        rtStats.cost += run.usage.cost ?? 0;
         rtStats.totalMs += dMs;
-        if (run.usage.cost > 0) rtStats.hasCosts = true;
+        if (run.usage.cost != null && run.usage.cost > 0) rtStats.hasCosts = true;
         byRuntime.set(runtimeKey, rtStats);
       }
 
@@ -1022,7 +1027,8 @@ export const extension = defineExtension((pi) => {
         lines.push("No runs recorded.");
       } else {
         for (const run of runs) {
-          const costStr = run.usage.cost > 0 ? ` $${run.usage.cost.toFixed(4)}` : "";
+          const runsCostVal = run.usage.cost;
+          const costStr = runsCostVal != null && runsCostVal > 0 ? ` $${runsCostVal.toFixed(4)}` : "";
           const runtimeLabel = (run.runtime ?? "pi").padEnd(16);
           const truncatedTask = run.task.length > 50 ? `${run.task.slice(0, 47)}...` : run.task;
           lines.push(

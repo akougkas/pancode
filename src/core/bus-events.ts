@@ -43,12 +43,12 @@ export interface RunFinishedEvent {
   agent: string;
   status: string;
   usage: {
-    cost: number;
-    turns: number;
-    inputTokens: number;
-    outputTokens: number;
-    cacheReadTokens: number;
-    cacheWriteTokens: number;
+    cost: number | null;
+    turns: number | null;
+    inputTokens: number | null;
+    outputTokens: number | null;
+    cacheReadTokens: number | null;
+    cacheWriteTokens: number | null;
   };
   runtime?: string;
   startedAt: string;

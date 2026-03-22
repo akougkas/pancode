@@ -5,6 +5,7 @@ export type {
   RuntimeTaskConfig,
   RuntimeUsage,
   SpawnConfig,
+  TelemetryTier,
 } from "./types";
 export { runtimeRegistry } from "./registry";
 export { discoverAndRegisterRuntimes } from "./discovery";

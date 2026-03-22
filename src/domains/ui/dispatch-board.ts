@@ -25,10 +25,10 @@ export interface DispatchCardData {
   resultPreview?: string; // First meaningful line of worker result (for completed runs)
   runId: string;
   batchId: string | null;
-  cost?: number;
-  inputTokens?: number;
-  outputTokens?: number;
-  turns?: number;
+  cost?: number | null;
+  inputTokens?: number | null;
+  outputTokens?: number | null;
+  turns?: number | null;
   runtime?: string; // Runtime ID for badge display (omit or "pi" for no badge)
 }
 
@@ -284,8 +284,8 @@ function renderRecentRun(card: DispatchCardData, width: number, c: BoardColorize
   const coloredIcon = colorizeStatusIcon(icon, card.status, c);
   const agent = c.accent(padRight(card.agent, 8));
   const elapsed = c.dim(formatDuration(card.elapsedMs).padStart(6));
-  const costStr = card.cost && card.cost > 0 ? c.muted(formatCost(card.cost).padStart(8)) : "";
-  const hasCost = card.cost !== undefined && card.cost > 0;
+  const costStr = card.cost != null && card.cost > 0 ? c.muted(formatCost(card.cost).padStart(8)) : "";
+  const hasCost = card.cost != null && card.cost > 0;
   const fixedWidth = 20 + (hasCost ? 9 : 0);
   const maxTask = Math.max(10, width - fixedWidth);
 

@@ -353,7 +353,7 @@ function computeAgentStats(
   runs: ReadonlyArray<{
     agent: string;
     status: string;
-    cost: number;
+    cost: number | null;
     durationMs: number;
   }>,
 ): AgentStat[] {
@@ -370,7 +370,7 @@ function computeAgentStats(
     agent,
     runs: agentRuns.length,
     successRate: Math.round((agentRuns.filter((r) => r.status === "done").length / agentRuns.length) * 100),
-    avgCostPerRun: agentRuns.reduce((s, r) => s + r.cost, 0) / agentRuns.length,
+    avgCostPerRun: agentRuns.reduce((s, r) => s + (r.cost ?? 0), 0) / agentRuns.length,
     avgDurationMs: agentRuns.reduce((s, r) => s + r.durationMs, 0) / agentRuns.length,
   }));
 }
@@ -878,7 +878,7 @@ export const extension = defineExtension((pi) => {
               resultPreview: r.result ? extractResultSummary(r.result) : undefined,
               runId: r.id,
               batchId: r.batchId,
-              cost: r.usage.cost > 0 ? r.usage.cost : undefined,
+              cost: r.usage.cost != null && r.usage.cost > 0 ? r.usage.cost : undefined,
             }));
 
           const budget = getBudgetTracker();
@@ -891,8 +891,8 @@ export const extension = defineExtension((pi) => {
           let totalCacheRead = 0;
           let totalCacheWrite = 0;
           for (const m of metricsRuns) {
-            totalCacheRead += m.cacheReadTokens;
-            totalCacheWrite += m.cacheWriteTokens;
+            totalCacheRead += m.cacheReadTokens ?? 0;
+            totalCacheWrite += m.cacheWriteTokens ?? 0;
           }
 
           // Construct a theme-backed colorizer so the pure renderer can

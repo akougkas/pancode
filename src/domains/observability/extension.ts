@@ -75,11 +75,12 @@ export const extension = defineExtension((pi) => {
 
       // Audit trail entry
       const severity = event.status === "error" ? "warn" : "info";
+      const costLabel = event.usage.cost != null ? `$${event.usage.cost.toFixed(4)}` : "--";
       auditTrail?.record({
         domain: "dispatch",
         event: `run-${event.status}`,
         agent: event.agent,
-        detail: `Run ${event.runId}: ${event.status} (${(durationMs / 1000).toFixed(1)}s, $${event.usage.cost.toFixed(4)})`,
+        detail: `Run ${event.runId}: ${event.status} (${(durationMs / 1000).toFixed(1)}s, ${costLabel})`,
         severity,
       });
     });
@@ -152,7 +153,8 @@ export const extension = defineExtension((pi) => {
       if (recent.length > 0) {
         lines.push("Recent:");
         for (const m of recent) {
-          const costStr = m.cost > 0 ? ` $${m.cost.toFixed(4)}` : "";
+          const mCostVal = m.cost;
+          const costStr = mCostVal != null && mCostVal > 0 ? ` $${mCostVal.toFixed(4)}` : "";
           const durationStr = m.durationMs > 0 ? ` ${(m.durationMs / 1000).toFixed(1)}s` : "";
           lines.push(`  [${m.runId}] ${m.status} ${m.agent}${costStr}${durationStr}`);
         }

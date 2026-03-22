@@ -71,7 +71,20 @@ interface SpawnOptions {
   timeoutMs?: number; // Per-task timeout in milliseconds (0 = no timeout)
 }
 
+/** Usage with all null fields (nothing reported). Used for error fallbacks. */
 function emptyUsage(): RuntimeUsage {
+  return {
+    inputTokens: null,
+    outputTokens: null,
+    cacheReadTokens: null,
+    cacheWriteTokens: null,
+    cost: null,
+    turns: null,
+  };
+}
+
+/** Usage with all zero fields. Used for Pi NDJSON path accumulation. */
+function zeroUsage(): RuntimeUsage {
   return { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, cost: 0, turns: 0 };
 }
 
@@ -142,11 +155,20 @@ function spawnWorkerNdjsonPath(
   resultFile: string | null,
   resolve: (value: WorkerResult) => void,
 ): void {
+  // Pi runtime always reports all usage fields. Use zero-initialized accumulators
+  // so += works without null-checking, then assign to result.usage at the end.
+  let accInputTokens = 0;
+  let accOutputTokens = 0;
+  let accCacheRead = 0;
+  let accCacheWrite = 0;
+  let accCost = 0;
+  let accTurns = 0;
+
   const result: WorkerResult = {
     exitCode: 0,
     result: "",
     error: "",
-    usage: emptyUsage(),
+    usage: zeroUsage(),
     model: null,
   };
 
@@ -194,9 +216,9 @@ function spawnWorkerNdjsonPath(
 
     const progress: WorkerProgressEvent = {
       runId: options.runId,
-      inputTokens: result.usage.inputTokens,
-      outputTokens: result.usage.outputTokens,
-      turns: result.usage.turns,
+      inputTokens: accInputTokens,
+      outputTokens: accOutputTokens,
+      turns: accTurns,
       currentTool,
       currentToolArgs,
       recentTools: [...recentTools],
@@ -268,14 +290,14 @@ function spawnWorkerNdjsonPath(
         }
       }
 
-      result.usage.turns++;
+      accTurns++;
       const usage = msg.usage;
       if (usage) {
-        result.usage.inputTokens += usage.input ?? 0;
-        result.usage.outputTokens += usage.output ?? 0;
-        result.usage.cacheReadTokens += usage.cacheRead ?? 0;
-        result.usage.cacheWriteTokens += usage.cacheWrite ?? 0;
-        result.usage.cost += usage.cost?.total ?? 0;
+        accInputTokens += usage.input ?? 0;
+        accOutputTokens += usage.output ?? 0;
+        accCacheRead += usage.cacheRead ?? 0;
+        accCacheWrite += usage.cacheWrite ?? 0;
+        accCost += usage.cost?.total ?? 0;
       }
 
       // Emit live progress with full context including tool tracking.
@@ -306,6 +328,16 @@ function spawnWorkerNdjsonPath(
     liveWorkerProcesses.delete(proc);
     if (buffer.trim()) processLine(buffer);
     result.exitCode = code ?? 0;
+
+    // Write accumulated usage to result before resolving.
+    result.usage = {
+      inputTokens: accInputTokens,
+      outputTokens: accOutputTokens,
+      cacheReadTokens: accCacheRead,
+      cacheWriteTokens: accCacheWrite,
+      cost: accCost,
+      turns: accTurns,
+    };
 
     // Emit a final progress event so the TUI clears any stale "tool running" state.
     // The 50ms throttle could swallow the last tool_execution_end event.

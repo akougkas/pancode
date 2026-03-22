@@ -1,10 +1,27 @@
+/**
+ * Telemetry tier classification for runtime adapters.
+ *
+ * Platinum: full structured output with all usage fields (Pi native).
+ * Gold: structured JSON with tokens, cost, model, and turns (Claude Code, OpenCode).
+ * Silver: partial structured output, some fields missing (Codex, Gemini, Cline).
+ * Bronze: text-only output, no usage extraction (Copilot CLI).
+ */
+export type TelemetryTier = "platinum" | "gold" | "silver" | "bronze";
+
+/**
+ * Token and cost usage from a runtime execution.
+ *
+ * Fields are nullable: `null` means the runtime did not report this field.
+ * `0` means the runtime reported zero tokens or zero cost.
+ * Consumers must handle null gracefully (render as "--", skip in aggregation).
+ */
 export interface RuntimeUsage {
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadTokens: number;
-  cacheWriteTokens: number;
-  cost: number;
-  turns: number;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  cacheReadTokens: number | null;
+  cacheWriteTokens: number | null;
+  cost: number | null;
+  turns: number | null;
 }
 
 export interface RuntimeSamplingConfig {
@@ -71,6 +88,9 @@ export interface AgentRuntime {
 
   /** Runtime tier: "native" (Pi), "cli" (headless invocation), "sdk" (programmatic) */
   readonly tier: "native" | "cli" | "sdk";
+
+  /** Telemetry quality tier: how much usage data this runtime can report */
+  readonly telemetryTier: TelemetryTier;
 
   /** Return the runtime version string, or null if unknown */
   getVersion(): string | null;
