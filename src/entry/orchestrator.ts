@@ -1,16 +1,18 @@
-import { performance } from "node:perf_hooks";
 import { join } from "node:path";
+import { performance } from "node:perf_hooks";
+import { resetRuntimeState } from "../cli/reset";
 import { type PanCodeConfig, type SafetyLevel, loadConfig } from "../core/config";
-import { ensurePresetsFile, loadPreset } from "../core/presets";
 import { collectDomainExtensions, filterValidDomains, resolveDomainOrder } from "../core/domain-loader";
 import { createSafeEventBus } from "../core/event-bus";
 import { ensureProjectRuntime } from "../core/init";
 import { resolvePackageRoot } from "../core/package-root";
+import { ensurePresetsFile, loadPreset } from "../core/presets";
 import { shutdownCoordinator } from "../core/termination";
 import { resolveThinkingLevelForPreference } from "../core/thinking";
 import { DOMAIN_REGISTRY } from "../domains";
 import { ensureAgentsYaml } from "../domains/agents/spec-registry";
 import {
+  type MergedModelProfile,
   PANCODE_HOME,
   createSharedAuth,
   discoverEngines,
@@ -23,7 +25,6 @@ import {
   setModelProfileCache,
   writeModelCacheYaml,
   writeProvidersYaml,
-  type MergedModelProfile,
 } from "../domains/providers";
 import type { DiscoveryResult } from "../domains/providers";
 import { DefaultResourceLoader, SessionManager, SettingsManager } from "../engine/resources";
@@ -39,6 +40,7 @@ interface ParsedArgs {
   safety: SafetyLevel | null;
   theme: string | null;
   rediscover: boolean;
+  fresh: boolean;
   help: boolean;
 }
 
@@ -57,6 +59,7 @@ Options:
   --safety <level>     suggest | auto-edit | full-auto
   --theme <name>       Pi TUI theme name
   --rediscover         Force full engine discovery (ignore cache)
+  --fresh              Clear runtime state (runs, metrics, sessions) before boot
   --help               Show this help
 
 Presets are defined in ~/.pancode/panpresets.yaml. Edit freely.`);
@@ -83,6 +86,7 @@ function parseArgs(argv: string[]): ParsedArgs {
     safety: null,
     theme: null,
     rediscover: false,
+    fresh: false,
     help: false,
   };
 
@@ -95,6 +99,10 @@ function parseArgs(argv: string[]): ParsedArgs {
     }
     if (arg === "--rediscover") {
       parsed.rediscover = true;
+      continue;
+    }
+    if (arg === "--fresh") {
+      parsed.fresh = true;
       continue;
     }
     if (arg === "--cwd") {
@@ -250,6 +258,12 @@ export async function runOrchestratorEntry(): Promise<void> {
   process.env.PANCODE_REASONING = config.reasoningPreference;
   process.env.PANCODE_THEME = config.theme;
   process.env.PANCODE_RUNTIME_ROOT = config.runtimeRoot;
+
+  // --fresh: wipe runtime state before boot so the dashboard starts clean.
+  if (args.fresh) {
+    console.log("[pancode] --fresh: clearing runtime state...");
+    resetRuntimeState(config.packageRoot, { quiet: false });
+  }
 
   ensureProjectRuntime(config);
 

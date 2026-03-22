@@ -1,5 +1,6 @@
 import { down } from "./down";
 import { login } from "./login";
+import { reset } from "./reset";
 import { sessions } from "./sessions";
 import { EXIT_FAILURE } from "./shared";
 import { start } from "./start";
@@ -14,6 +15,8 @@ export function runCliCommand(command: string, args: string[]): number {
       return up(args);
     case "down":
       return down(args);
+    case "reset":
+      return reset(args);
     case "sessions":
       return sessions();
     case "login":

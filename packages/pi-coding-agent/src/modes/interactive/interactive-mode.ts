@@ -596,9 +596,9 @@ export class InteractiveMode {
 	private async checkTmuxKeyboardSetup(): Promise<string | undefined> {
 		if (!process.env.TMUX) return undefined;
 
-		const runTmuxShow = (option: string): Promise<string | undefined> => {
+		const runTmuxCmd = (args: string[]): Promise<string | undefined> => {
 			return new Promise((resolve) => {
-				const proc = spawn("tmux", ["show", "-gv", option], {
+				const proc = spawn("tmux", args, {
 					stdio: ["ignore", "pipe", "ignore"],
 				});
 				let stdout = "";
@@ -607,31 +607,40 @@ export class InteractiveMode {
 					resolve(undefined);
 				}, 2000);
 
-				proc.stdout?.on("data", (data) => {
+				proc.stdout?.on("data", (data: Buffer) => {
 					stdout += data.toString();
 				});
 				proc.on("error", () => {
 					clearTimeout(timer);
 					resolve(undefined);
 				});
-				proc.on("close", (code) => {
+				proc.on("close", (code: number | null) => {
 					clearTimeout(timer);
 					resolve(code === 0 ? stdout.trim() : undefined);
 				});
 			});
 		};
 
-		const [extendedKeys, extendedKeysFormat] = await Promise.all([
-			runTmuxShow("extended-keys"),
-			runTmuxShow("extended-keys-format"),
-		]);
+		// Check current values.
+		let extendedKeys = await runTmuxCmd(["show", "-gv", "extended-keys"]);
+		let extendedKeysFormat = await runTmuxCmd(["show", "-gv", "extended-keys-format"]);
 
+		// Auto-fix: set extended-keys on if not already configured.
 		if (extendedKeys !== "on" && extendedKeys !== "always") {
-			return "tmux extended-keys is off. Modified Enter keys may not work. Add `set -g extended-keys on` to ~/.tmux.conf and restart tmux.";
+			await runTmuxCmd(["set", "-g", "extended-keys", "on"]);
+			extendedKeys = await runTmuxCmd(["show", "-gv", "extended-keys"]);
+			if (extendedKeys !== "on" && extendedKeys !== "always") {
+				return "tmux extended-keys could not be auto-configured. Add `set -g extended-keys on` to ~/.tmux.conf.";
+			}
 		}
 
+		// Auto-fix: set extended-keys-format to csi-u if it is xterm.
 		if (extendedKeysFormat === "xterm") {
-			return "tmux extended-keys-format is xterm. Pi works best with csi-u. Add `set -g extended-keys-format csi-u` to ~/.tmux.conf and restart tmux.";
+			await runTmuxCmd(["set", "-g", "extended-keys-format", "csi-u"]);
+			extendedKeysFormat = await runTmuxCmd(["show", "-gv", "extended-keys-format"]);
+			if (extendedKeysFormat === "xterm") {
+				return "tmux extended-keys-format could not be set to csi-u. Add `set -g extended-keys-format csi-u` to ~/.tmux.conf.";
+			}
 		}
 
 		return undefined;

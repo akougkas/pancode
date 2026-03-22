@@ -92,6 +92,23 @@ function readDefaultModelFile(packageRoot: string): string | null {
   return value.length > 0 ? value : null;
 }
 
+// ---------------------------------------------------------------------------
+// Persistence model
+// ---------------------------------------------------------------------------
+// ~/.pancode/ holds user configuration that survives reinstall:
+//   panpresets.yaml, panagents.yaml, panproviders.yaml, settings.json,
+//   model-cache.yaml, and agent-engine/auth.json.
+//
+// <project>/.pancode/ holds per-project runtime state:
+//   runs.json, metrics.json, budget.json, tasks.json, and the runtime/
+//   subdirectory (board.json, worker-*.result.json).
+//
+// ~/.pancode/agent-engine/sessions/ holds Pi SDK session history.
+//
+// "pancode reset" or the "--fresh" boot flag clears all runtime state
+// (project-local and sessions) while preserving user configuration.
+// ---------------------------------------------------------------------------
+
 export function loadConfig(overrides: ConfigOverrides = {}): PanCodeConfig {
   const packageRoot = resolvePackageRoot(import.meta.url);
   const runtimeRoot = join(packageRoot, ".pancode", "runtime");
