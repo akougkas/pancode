@@ -80,17 +80,18 @@ export const extension = defineExtension((pi) => {
       }
 
       const lines: string[] = [
-        `${"RUNTIME".padEnd(20)} ${"TIER".padEnd(9)} ${"STATUS".padEnd(10)} BINARY`,
-        `${"-------".padEnd(20)} ${"----".padEnd(9)} ${"------".padEnd(10)} ------`,
+        `${"RUNTIME".padEnd(20)} ${"TIER".padEnd(9)} ${"VERSION".padEnd(12)} ${"STATUS".padEnd(10)} BINARY`,
+        `${"-------".padEnd(20)} ${"----".padEnd(9)} ${"-------".padEnd(12)} ${"------".padEnd(10)} ------`,
       ];
 
       for (const rt of allRuntimes) {
         const id = rt.id.padEnd(20);
         const tier = rt.tier.padEnd(9);
+        const version = (rt.getVersion() ?? "-").padEnd(12);
         const available = rt.isAvailable();
         const status = (available ? "active" : "missing").padEnd(10);
         const binary = rt.tier === "native" ? "(built-in)" : ((rt as { binaryName?: string }).binaryName ?? "unknown");
-        lines.push(`${id} ${tier} ${status} ${binary}`);
+        lines.push(`${id} ${tier} ${version} ${status} ${binary}`);
       }
 
       pi.sendMessage({

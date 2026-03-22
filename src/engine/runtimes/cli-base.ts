@@ -36,6 +36,9 @@ export abstract class CliRuntime implements AgentRuntime {
   /** The binary name to look for on PATH (e.g., "claude", "codex") */
   abstract readonly binaryName: string;
 
+  private _versionResolved = false;
+  private _cachedVersion: string | null = null;
+
   /** Build the CLI-specific arguments for headless invocation */
   abstract buildCliArgs(config: RuntimeTaskConfig): string[];
 
@@ -74,6 +77,23 @@ export abstract class CliRuntime implements AgentRuntime {
     };
   }
 
+  getVersion(): string | null {
+    if (this._versionResolved) return this._cachedVersion;
+    this._versionResolved = true;
+    try {
+      const result = execSync(`${this.binaryName} --version`, {
+        timeout: 5000,
+        encoding: "utf-8",
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+      const match = result.match(/v?(\d+\.\d+\.\d+)/);
+      this._cachedVersion = match ? `v${match[1]}` : result.trim().slice(0, 20);
+    } catch {
+      this._cachedVersion = null;
+    }
+    return this._cachedVersion;
+  }
+
   isAvailable(): boolean {
     return binaryExists(this.binaryName);
   }
@@ -83,15 +103,37 @@ export abstract class CliRuntime implements AgentRuntime {
   }
 
   parseResult(stdout: string, stderr: string, exitCode: number, _resultFile: string | null): RuntimeResult {
-    // Default: treat stdout as the response, no usage tracking
     const trimmed = stdout.trim();
+    const classified = exitCode !== 0 ? this.classifyCliError(stderr, exitCode) : null;
     return {
       exitCode,
       result: trimmed,
-      error: exitCode !== 0 ? stderr.trim() || `Exited with code ${exitCode}` : "",
+      error: classified?.message ?? "",
       usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, cost: 0, turns: 0 },
       model: null,
       runtime: this.id,
     };
+  }
+
+  protected classifyCliError(stderr: string, exitCode: number): {
+    category: "auth" | "binary" | "rate_limit" | "timeout" | "unknown";
+    message: string;
+  } {
+    const lower = stderr.toLowerCase();
+
+    if (exitCode === 127 || lower.includes("command not found") || lower.includes("not found")) {
+      return { category: "binary", message: "Binary not found on PATH. Install the CLI tool and retry." };
+    }
+    if (lower.includes("unauthorized") || lower.includes("authentication") || lower.includes("api key") || lower.includes("login")) {
+      return { category: "auth", message: "Authentication failed. Check your API key or run the CLI login command." };
+    }
+    if (lower.includes("rate limit") || lower.includes("429") || lower.includes("too many requests")) {
+      return { category: "rate_limit", message: "Rate limited by the provider. Retry in 30 seconds." };
+    }
+    if (lower.includes("timeout") || lower.includes("timed out") || exitCode === 124) {
+      return { category: "timeout", message: "Timed out. Try increasing timeout via PANCODE_WORKER_TIMEOUT_MS." };
+    }
+
+    return { category: "unknown", message: stderr.trim() || `Exited with code ${exitCode}` };
   }
 }

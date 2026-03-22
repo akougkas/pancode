@@ -72,6 +72,9 @@ export interface AgentRuntime {
   /** Runtime tier: "native" (Pi), "cli" (headless invocation), "sdk" (programmatic) */
   readonly tier: "native" | "cli" | "sdk";
 
+  /** Return the runtime version string, or null if unknown */
+  getVersion(): string | null;
+
   /** Check if this runtime is available on the current system */
   isAvailable(): boolean;
 

@@ -155,7 +155,7 @@ export class CodexRuntime extends CliRuntime {
       return super.parseResult(stdout, stderr, exitCode, _resultFile);
     }
 
-    const error = exitCode !== 0 ? lastError || stderr.trim() || `Codex exited with code ${exitCode}` : "";
+    const error = exitCode !== 0 ? lastError || this.classifyCliError(stderr, exitCode).message : "";
 
     return {
       exitCode,

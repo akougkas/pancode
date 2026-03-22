@@ -149,7 +149,7 @@ export class ClineRuntime extends CliRuntime {
     }
 
     const result = completionResult || "";
-    const error = exitCode !== 0 ? lastError || stderr.trim() || `Cline exited with code ${exitCode}` : lastError;
+    const error = exitCode !== 0 ? lastError || this.classifyCliError(stderr, exitCode).message : lastError;
 
     return {
       exitCode,

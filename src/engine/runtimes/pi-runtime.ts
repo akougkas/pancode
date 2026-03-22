@@ -46,6 +46,10 @@ export class PiRuntime implements AgentRuntime {
   readonly displayName = "Pi (native)";
   readonly tier = "native" as const;
 
+  getVersion(): string | null {
+    return "built-in";
+  }
+
   isAvailable(): boolean {
     return true; // Pi SDK is always available (vendored)
   }
