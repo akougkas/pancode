@@ -1,3 +1,5 @@
+import { AgentName } from "../../core/agent-names";
+
 export interface TeamDefinition {
   name: string;
   description: string;
@@ -9,13 +11,13 @@ export const BUILTIN_TEAMS: TeamDefinition[] = [
   {
     name: "code-review",
     description: "Developer writes code, reviewer checks it",
-    agents: ["dev", "reviewer"],
+    agents: [AgentName.DEV, AgentName.REVIEWER],
     workflow: "sequential",
   },
   {
     name: "research-dev",
     description: "Reviewer explores codebase, developer implements",
-    agents: ["reviewer", "dev"],
+    agents: [AgentName.REVIEWER, AgentName.DEV],
     workflow: "sequential",
   },
 ];

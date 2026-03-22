@@ -1,4 +1,5 @@
 import { BusChannel, type RunFinishedEvent } from "../../core/bus-events";
+import { PanMessageType } from "../../core/message-types";
 import { sharedBus } from "../../core/shared-bus";
 import { PiEvent } from "../../engine/events";
 import { defineExtension } from "../../engine/extensions";
@@ -70,7 +71,7 @@ export const extension = defineExtension((pi) => {
     async handler(args, _ctx) {
       if (!budgetTracker) {
         pi.sendMessage({
-          customType: "pancode-panel",
+          customType: PanMessageType.PANEL,
           content: "Budget tracker not initialized.",
           display: true,
           details: { title: "PanCode Budget" },
@@ -84,7 +85,7 @@ export const extension = defineExtension((pi) => {
         const newCeiling = Number.parseFloat(subcommand[1]);
         if (!Number.isFinite(newCeiling) || newCeiling <= 0) {
           pi.sendMessage({
-            customType: "pancode-panel",
+            customType: PanMessageType.PANEL,
             content: "Invalid ceiling value. Use: /budget set <amount>",
             display: true,
             details: { title: "PanCode Budget" },
@@ -94,7 +95,7 @@ export const extension = defineExtension((pi) => {
         budgetTracker.setCeiling(newCeiling);
         publishBudgetState();
         pi.sendMessage({
-          customType: "pancode-panel",
+          customType: PanMessageType.PANEL,
           content: `Budget ceiling set to $${newCeiling.toFixed(2)}`,
           display: true,
           details: { title: "PanCode Budget" },
@@ -114,7 +115,7 @@ export const extension = defineExtension((pi) => {
       ];
 
       pi.sendMessage({
-        customType: "pancode-panel",
+        customType: PanMessageType.PANEL,
         content: lines.join("\n"),
         display: true,
         details: { title: "PanCode Budget" },

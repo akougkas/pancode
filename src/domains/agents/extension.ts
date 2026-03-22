@@ -1,4 +1,5 @@
 import { BusChannel } from "../../core/bus-events";
+import { PanMessageType } from "../../core/message-types";
 import { sharedBus } from "../../core/shared-bus";
 import { PiEvent } from "../../engine/events";
 import { defineExtension } from "../../engine/extensions";
@@ -33,7 +34,7 @@ export const extension = defineExtension((pi) => {
       const specs = agentRegistry.getAll();
       if (specs.length === 0) {
         pi.sendMessage({
-          customType: "pancode-panel",
+          customType: PanMessageType.PANEL,
           content: "No agents registered.",
           display: true,
           details: { title: "PanCode Agents" },
@@ -57,7 +58,7 @@ export const extension = defineExtension((pi) => {
       }
 
       pi.sendMessage({
-        customType: "pancode-panel",
+        customType: PanMessageType.PANEL,
         content: lines.join("\n"),
         display: true,
         details: { title: "PanCode Agents" },
@@ -71,7 +72,7 @@ export const extension = defineExtension((pi) => {
       const allRuntimes = runtimeRegistry.all();
       if (allRuntimes.length === 0) {
         pi.sendMessage({
-          customType: "pancode-panel",
+          customType: PanMessageType.PANEL,
           content: "No runtimes registered. Run /agents to trigger discovery.",
           display: true,
           details: { title: "PanCode Runtimes" },
@@ -96,7 +97,7 @@ export const extension = defineExtension((pi) => {
       }
 
       pi.sendMessage({
-        customType: "pancode-panel",
+        customType: PanMessageType.PANEL,
         content: lines.join("\n"),
         display: true,
         details: { title: "PanCode Runtimes" },
@@ -114,7 +115,7 @@ export const extension = defineExtension((pi) => {
       if (subcommand === "list" || !subcommand) {
         if (skills.length === 0) {
           pi.sendMessage({
-            customType: "pancode-panel",
+            customType: PanMessageType.PANEL,
             content:
               "No skills discovered. Place SKILL.md or *.skill.md files in .pancode/skills/, .claude/, .codex/, or .gemini/",
             display: true,
@@ -130,7 +131,7 @@ export const extension = defineExtension((pi) => {
         });
 
         pi.sendMessage({
-          customType: "pancode-panel",
+          customType: PanMessageType.PANEL,
           content: [`${skills.length} skills discovered:`, "", ...lines].join("\n"),
           display: true,
           details: { title: "PanCode Skills" },
@@ -161,7 +162,7 @@ export const extension = defineExtension((pi) => {
         ];
 
         pi.sendMessage({
-          customType: "pancode-panel",
+          customType: PanMessageType.PANEL,
           content: lines.join("\n"),
           display: true,
           details: { title: `Skill: ${skill.name}` },
@@ -191,7 +192,7 @@ export const extension = defineExtension((pi) => {
 
         const header = allValid ? "All skills validated." : "Some skills have missing tools.";
         pi.sendMessage({
-          customType: "pancode-panel",
+          customType: PanMessageType.PANEL,
           content: [header, "", ...lines].join("\n"),
           display: true,
           details: { title: "PanCode Skill Validation" },

@@ -1,5 +1,6 @@
 import type { SafetyLevel } from "../../core/config";
 import { isSafetyLevel } from "../../core/config-validator";
+import { PanMessageType } from "../../core/message-types";
 import { loadPresets } from "../../core/presets";
 import {
   BusChannel,
@@ -443,7 +444,7 @@ export const extension = defineExtension((pi) => {
     const dispatch = mode.dispatchEnabled ? "Dispatch enabled." : "Dispatch disabled.";
     const mutations = mode.mutationsAllowed ? "File mutations allowed." : "Read-only.";
     pi.sendMessage({
-      customType: "pancode-mode-transition",
+      customType: PanMessageType.MODE_TRANSITION,
       content: `[MODE SWITCH] Now in ${mode.name} mode. ${mode.description} ${dispatch} ${mutations} Previous mode instructions are superseded.`,
       display: true,
       details: { title: `Mode: ${mode.name}` },
@@ -480,14 +481,14 @@ export const extension = defineExtension((pi) => {
 
   const emitPanel = (title: string, body: string) => {
     pi.sendMessage({
-      customType: "pancode-panel",
+      customType: PanMessageType.PANEL,
       content: body,
       display: true,
       details: { title },
     });
   };
 
-  pi.registerMessageRenderer("pancode-panel", (message, _options, theme) => {
+  pi.registerMessageRenderer(PanMessageType.PANEL, (message, _options, theme) => {
     const title =
       typeof message.details === "object" && message.details && "title" in message.details
         ? String((message.details as { title?: unknown }).title ?? PANCODE_PRODUCT_NAME)
@@ -497,7 +498,7 @@ export const extension = defineExtension((pi) => {
     return new Text(text, 1, 0);
   });
 
-  pi.registerMessageRenderer("pancode-mode-transition", (message, _options, theme) => {
+  pi.registerMessageRenderer(PanMessageType.MODE_TRANSITION, (message, _options, theme) => {
     const body = typeof message.content === "string" ? message.content : String(message.content ?? "");
     return new Text(theme.fg("warning", `▸ ${body}`), 0, 0);
   });
@@ -1191,7 +1192,7 @@ export const extension = defineExtension((pi) => {
     return {
       messages: event.messages.filter((m) => {
         const ct = (m as MsgWithCustomType).customType;
-        if (ct === "pancode-panel") return false;
+        if (ct === PanMessageType.PANEL) return false;
         return true;
       }),
     };
@@ -1333,7 +1334,7 @@ export const extension = defineExtension((pi) => {
       const workerLabel = preset.workerModel ?? "(orchestrator model)";
       const scoutLabel = preset.scoutModel ?? "(orchestrator model)";
       pi.sendMessage({
-        customType: "pancode-mode-transition",
+        customType: PanMessageType.MODE_TRANSITION,
         content: `[PRESET SWITCH] Now using ${request}. Orchestrator: ${preset.model}. Workers: ${workerLabel}. Scouts: ${scoutLabel}. Conversation preserved.`,
         display: true,
         details: { title: `Preset: ${request}` },

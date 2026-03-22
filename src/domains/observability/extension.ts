@@ -1,10 +1,6 @@
 import { randomUUID } from "node:crypto";
-import {
-  BusChannel,
-  type BudgetUpdatedEvent,
-  type RunFinishedEvent,
-  type WarningEvent,
-} from "../../core/bus-events";
+import { type BudgetUpdatedEvent, BusChannel, type RunFinishedEvent, type WarningEvent } from "../../core/bus-events";
+import { PanMessageType } from "../../core/message-types";
 import { sharedBus } from "../../core/shared-bus";
 import { PiEvent } from "../../engine/events";
 import { defineExtension } from "../../engine/extensions";
@@ -131,7 +127,7 @@ export const extension = defineExtension((pi) => {
     async handler(args, _ctx) {
       if (!metricsLedger) {
         pi.sendMessage({
-          customType: "pancode-panel",
+          customType: PanMessageType.PANEL,
           content: "Metrics ledger not initialized.",
           display: true,
           details: { title: "PanCode Metrics" },
@@ -163,7 +159,7 @@ export const extension = defineExtension((pi) => {
       }
 
       pi.sendMessage({
-        customType: "pancode-panel",
+        customType: PanMessageType.PANEL,
         content: lines.join("\n"),
         display: true,
         details: { title: "PanCode Metrics" },
@@ -177,7 +173,7 @@ export const extension = defineExtension((pi) => {
     async handler(args, _ctx) {
       if (!auditTrail) {
         pi.sendMessage({
-          customType: "pancode-panel",
+          customType: PanMessageType.PANEL,
           content: "Audit trail not initialized.",
           display: true,
           details: { title: "PanCode Audit" },
@@ -197,7 +193,7 @@ export const extension = defineExtension((pi) => {
 
       if (entries.length === 0) {
         pi.sendMessage({
-          customType: "pancode-panel",
+          customType: PanMessageType.PANEL,
           content: filter ? `No audit entries matching "${filter}".` : "No audit entries recorded.",
           display: true,
           details: { title: "PanCode Audit" },
@@ -223,7 +219,7 @@ export const extension = defineExtension((pi) => {
       lines.push("", "Filters: /audit <domain>, /audit error, /audit warn, /audit info");
 
       pi.sendMessage({
-        customType: "pancode-panel",
+        customType: PanMessageType.PANEL,
         content: lines.join("\n"),
         display: true,
         details: { title: "PanCode Audit" },
@@ -272,7 +268,7 @@ export const extension = defineExtension((pi) => {
       }
 
       pi.sendMessage({
-        customType: "pancode-panel",
+        customType: PanMessageType.PANEL,
         content: lines.join("\n"),
         display: true,
         details: { title: "PanCode Doctor" },

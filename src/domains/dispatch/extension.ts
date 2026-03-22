@@ -2,11 +2,13 @@ import { randomUUID } from "node:crypto";
 import { existsSync, readdirSync, statSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { Type } from "@sinclair/typebox";
+import { DEFAULT_AGENT } from "../../core/agent-names";
 import { BusChannel } from "../../core/bus-events";
+import { PanMessageType } from "../../core/message-types";
 import { getModeDefinition } from "../../core/modes";
 import { sharedBus } from "../../core/shared-bus";
-import { ToolName } from "../../core/tool-names";
 import { shutdownCoordinator } from "../../core/termination";
+import { ToolName } from "../../core/tool-names";
 import { PiEvent } from "../../engine/events";
 import { defineExtension } from "../../engine/extensions";
 import type { AgentToolResult } from "../../engine/types";
@@ -182,13 +184,13 @@ export const extension = defineExtension((pi) => {
       "Delegate a task to a specialized PanCode worker agent. The worker runs as a separate subprocess with its own context window. Use this to parallelize work or delegate to specialized agents (dev, reviewer).",
     parameters: Type.Object({
       task: Type.String({ description: "The task description to send to the worker agent" }),
-      agent: Type.Optional(Type.String({ description: "Agent spec name (default: dev)", default: "dev" })),
+      agent: Type.Optional(Type.String({ description: "Agent spec name (default: dev)", default: DEFAULT_AGENT })),
       isolate: Type.Optional(
         Type.Boolean({ description: "Run in a git worktree for filesystem isolation", default: false }),
       ),
     }),
     async execute(_toolCallId, params, signal, onUpdate, ctx) {
-      const defaultAgent = process.env.PANCODE_DEFAULT_AGENT ?? "dev";
+      const defaultAgent = process.env.PANCODE_DEFAULT_AGENT ?? DEFAULT_AGENT;
       const agentName = params.agent || defaultAgent;
       const task = params.task;
       const isolate = params.isolate ?? false;
@@ -392,14 +394,14 @@ export const extension = defineExtension((pi) => {
         maxItems: 8,
       }),
       agent: Type.Optional(
-        Type.String({ description: "Agent spec name for all tasks (default: dev)", default: "dev" }),
+        Type.String({ description: "Agent spec name for all tasks (default: dev)", default: DEFAULT_AGENT }),
       ),
       concurrency: Type.Optional(
         Type.Number({ description: "Max parallel workers (default: 4)", default: 4, minimum: 1, maximum: 8 }),
       ),
     }),
     async execute(_toolCallId, params, signal, onUpdate, ctx) {
-      const agentName = params.agent || "dev";
+      const agentName = params.agent || DEFAULT_AGENT;
       const concurrency = params.concurrency || 4;
       const tasks = params.tasks;
 
@@ -586,7 +588,7 @@ export const extension = defineExtension((pi) => {
       originalTask: Type.String({ description: "The original high-level task description." }),
     }),
     async execute(_toolCallId, params, signal, onUpdate, ctx) {
-      const defaultAgent = process.env.PANCODE_DEFAULT_AGENT ?? "dev";
+      const defaultAgent = process.env.PANCODE_DEFAULT_AGENT ?? DEFAULT_AGENT;
 
       // Mode gating
       const mode = getModeDefinition();
@@ -811,7 +813,7 @@ export const extension = defineExtension((pi) => {
     async handler(_args, _ctx) {
       if (!ledger) {
         pi.sendMessage({
-          customType: "pancode-panel",
+          customType: PanMessageType.PANEL,
           content: "Dispatch ledger not initialized.",
           display: true,
           details: { title: "PanCode Cost" },
@@ -822,7 +824,7 @@ export const extension = defineExtension((pi) => {
       const allRuns = ledger.getAll();
       if (allRuns.length === 0) {
         pi.sendMessage({
-          customType: "pancode-panel",
+          customType: PanMessageType.PANEL,
           content: "No runs recorded.",
           display: true,
           details: { title: "PanCode Cost" },
@@ -888,7 +890,7 @@ export const extension = defineExtension((pi) => {
       }
 
       pi.sendMessage({
-        customType: "pancode-panel",
+        customType: PanMessageType.PANEL,
         content: lines.join("\n"),
         display: true,
         details: { title: "PanCode Cost" },
@@ -901,7 +903,7 @@ export const extension = defineExtension((pi) => {
     async handler(_args, _ctx) {
       if (!ledger) {
         pi.sendMessage({
-          customType: "pancode-panel",
+          customType: PanMessageType.PANEL,
           content: "Dispatch ledger not initialized.",
           display: true,
           details: { title: "PanCode Dispatch Insights" },
@@ -912,7 +914,7 @@ export const extension = defineExtension((pi) => {
       const allRuns = ledger.getAll();
       if (allRuns.length === 0) {
         pi.sendMessage({
-          customType: "pancode-panel",
+          customType: PanMessageType.PANEL,
           content: "No dispatch history.",
           display: true,
           details: { title: "PanCode Dispatch Insights" },
@@ -992,7 +994,7 @@ export const extension = defineExtension((pi) => {
       }
 
       pi.sendMessage({
-        customType: "pancode-panel",
+        customType: PanMessageType.PANEL,
         content: lines.join("\n"),
         display: true,
         details: { title: "PanCode Dispatch Insights" },
@@ -1005,7 +1007,7 @@ export const extension = defineExtension((pi) => {
     async handler(args, _ctx) {
       if (!ledger) {
         pi.sendMessage({
-          customType: "pancode-panel",
+          customType: PanMessageType.PANEL,
           content: "Dispatch ledger not initialized.",
           display: true,
           details: { title: "PanCode Runs" },
@@ -1038,7 +1040,7 @@ export const extension = defineExtension((pi) => {
       }
 
       pi.sendMessage({
-        customType: "pancode-panel",
+        customType: PanMessageType.PANEL,
         content: lines.join("\n"),
         display: true,
         details: { title: `PanCode Runs (last ${count})` },
@@ -1052,7 +1054,7 @@ export const extension = defineExtension((pi) => {
       const batches = batchTracker.getRecent(10);
       if (batches.length === 0) {
         pi.sendMessage({
-          customType: "pancode-panel",
+          customType: PanMessageType.PANEL,
           content: "No batches recorded.",
           display: true,
           details: { title: "PanCode Batches" },
@@ -1069,7 +1071,7 @@ export const extension = defineExtension((pi) => {
       }
 
       pi.sendMessage({
-        customType: "pancode-panel",
+        customType: PanMessageType.PANEL,
         content: lines.join("\n"),
         display: true,
         details: { title: "PanCode Batches" },

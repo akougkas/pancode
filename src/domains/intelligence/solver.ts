@@ -3,19 +3,20 @@
  * Given an intent, generates a dispatch plan.
  */
 
+import { AgentName, DEFAULT_AGENT } from "../../core/agent-names";
 import type { DispatchPlan, Intent } from "./contracts";
 
 const AGENT_MAP: Record<string, string> = {
-  coding: "dev",
-  review: "reviewer",
-  research: "dev",
-  testing: "dev",
-  refactoring: "dev",
-  unknown: "dev",
+  coding: AgentName.DEV,
+  review: AgentName.REVIEWER,
+  research: AgentName.DEV,
+  testing: AgentName.DEV,
+  refactoring: AgentName.DEV,
+  unknown: AgentName.DEV,
 };
 
 export function generatePlan(intent: Intent): DispatchPlan {
-  const agent = AGENT_MAP[intent.category] ?? "dev";
+  const agent = AGENT_MAP[intent.category] ?? DEFAULT_AGENT;
 
   return {
     intent,

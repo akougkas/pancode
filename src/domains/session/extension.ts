@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import { BusChannel } from "../../core/bus-events";
+import { PanMessageType } from "../../core/message-types";
 import { sharedBus } from "../../core/shared-bus";
 import { PANCODE_PRODUCT_NAME } from "../../core/shell-metadata";
 import { PiEvent } from "../../engine/events";
@@ -57,7 +58,7 @@ let _emitPanel: (title: string, lines: string[]) => void = () => {};
 export const extension = defineExtension((pi) => {
   _emitPanel = (title: string, lines: string[]) => {
     pi.sendMessage({
-      customType: "pancode-panel",
+      customType: PanMessageType.PANEL,
       content: lines.join("\n"),
       display: true,
       details: { title },
@@ -178,7 +179,7 @@ export const extension = defineExtension((pi) => {
         for (const entry of entries) {
           if (
             "customType" in entry &&
-            (entry.customType === "pancode-checkpoint" || entry.customType === "pancode:checkpoint")
+            (entry.customType === PanMessageType.CHECKPOINT || entry.customType === "pancode:checkpoint")
           ) {
             const data = ("data" in entry ? entry.data : undefined) as CheckpointData | undefined;
             checkpoints.push({
@@ -224,7 +225,7 @@ export const extension = defineExtension((pi) => {
         budgetSpent: process.env.PANCODE_BUDGET_SPENT ?? "0",
       };
 
-      pi.appendEntry("pancode-checkpoint", checkpointData);
+      pi.appendEntry(PanMessageType.CHECKPOINT, checkpointData);
       ctx.ui.notify(`Checkpoint marked: ${label}`, "info");
       console.error(`[pancode:session] Checkpoint: ${label}`);
     },

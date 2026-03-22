@@ -1,3 +1,4 @@
+import { ToolName } from "../../core/tool-names";
 import type { ActionClass, AutonomyMode } from "./scope";
 import { lookupTier } from "./scope";
 
@@ -14,8 +15,8 @@ const TOOL_TO_ACTION: Record<string, ActionClass> = {
   shell: "bash_exec",
   web_fetch: "network",
   web_search: "network",
-  dispatch_agent: "agent_dispatch",
-  batch_dispatch: "agent_dispatch",
+  [ToolName.DISPATCH_AGENT]: "agent_dispatch",
+  [ToolName.BATCH_DISPATCH]: "agent_dispatch",
 };
 
 export function classifyAction(toolName: string): ActionClass {
