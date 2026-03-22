@@ -19,7 +19,7 @@ import {
   getToolsetForMode,
   setCurrentMode,
 } from "../../core/modes";
-import { updatePanCodeSettings } from "../../core/settings-state";
+import { writePanCodeSettings } from "../../core/settings-state";
 import { sharedBus } from "../../core/shared-bus";
 import { PANCODE_PRODUCT_NAME, formatCategorizedHelp } from "../../core/shell-metadata";
 import {
@@ -152,11 +152,11 @@ function describeReasoningCapability(
 }
 
 function persistSettings(
-  patch: Parameters<typeof updatePanCodeSettings>[0],
+  patch: Parameters<typeof writePanCodeSettings>[0],
   notify: (message: string, level: "info" | "warning" | "error") => void,
 ): void {
   try {
-    updatePanCodeSettings(patch);
+    writePanCodeSettings(patch);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     notify(`Failed to save PanCode settings: ${message}`, "error");
@@ -1071,7 +1071,16 @@ export const extension = defineExtension((pi) => {
 
     sharedBus.on(BusChannel.WORKER_PROGRESS, (payload) => {
       const event = payload as WorkerProgressEvent;
-      updateWorkerProgress(event.runId, event.inputTokens, event.outputTokens, event.turns);
+      updateWorkerProgress(
+        event.runId,
+        event.inputTokens,
+        event.outputTokens,
+        event.turns,
+        event.currentTool,
+        event.currentToolArgs,
+        event.recentTools,
+        event.toolCount,
+      );
     });
 
     sharedBus.on(BusChannel.RUN_FINISHED, (payload) => {

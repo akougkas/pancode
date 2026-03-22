@@ -83,6 +83,3 @@ export function writePanCodeSettings(settings: Partial<PanCodeSettings>): PanCod
   return next;
 }
 
-export function updatePanCodeSettings(settings: Partial<PanCodeSettings>): PanCodeSettings {
-  return writePanCodeSettings(settings);
-}
