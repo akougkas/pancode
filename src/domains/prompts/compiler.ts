@@ -39,10 +39,19 @@ function computeHash(text: string): string {
  * Check whether a fragment matches the compilation context.
  * Empty arrays in the fragment mean "all values match".
  */
-function fragmentMatches(fragment: Fragment, role: PromptRole, tier: ModelTier, mode: OrchestratorMode): boolean {
+function fragmentMatches(
+  fragment: Fragment,
+  role: PromptRole,
+  tier: ModelTier,
+  mode: OrchestratorMode,
+  runtime?: string,
+): boolean {
   if (fragment.roles.length > 0 && !fragment.roles.includes(role)) return false;
   if (fragment.tiers.length > 0 && !fragment.tiers.includes(tier)) return false;
   if (fragment.modes.length > 0 && !fragment.modes.includes(mode)) return false;
+  if (fragment.runtimes && fragment.runtimes.length > 0) {
+    if (!runtime || !fragment.runtimes.includes(runtime)) return false;
+  }
   return true;
 }
 
@@ -63,13 +72,13 @@ function categoryIndex(category: FragmentCategory): number {
  * 6. Return CompiledPrompt with full metadata
  */
 export function compilePrompt(fragments: readonly Fragment[], context: CompilationContext): CompiledPrompt {
-  const { role, tier, mode, variables, tokenBudget } = context;
+  const { role, tier, mode, variables, tokenBudget, runtime } = context;
 
   // 1. Filter matching fragments
   const matching: Fragment[] = [];
   const excluded: string[] = [];
   for (const f of fragments) {
-    if (fragmentMatches(f, role, tier, mode)) {
+    if (fragmentMatches(f, role, tier, mode, runtime)) {
       matching.push(f);
     } else {
       excluded.push(f.id);

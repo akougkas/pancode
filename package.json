@@ -37,6 +37,7 @@
     "build": "npm run build:pi && tsup",
     "dev": "npm run build:pi && PANCODE_INSIDE_TMUX=1 node --import tsx src/loader.ts",
     "check-boundaries": "node scripts/check-boundaries.mjs",
+    "check-constitution": "tsx scripts/constitution-audit.ts",
     "check-prompts": "node scripts/check-prompts.mjs",
     "lint": "biome check src/",
     "typecheck": "npm run build:pi && node scripts/check-boundaries.mjs && node scripts/check-prompts.mjs && tsc --noEmit",
