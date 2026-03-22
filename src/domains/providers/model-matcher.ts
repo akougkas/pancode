@@ -177,24 +177,88 @@ export function matchAllModels(
 }
 
 export function writeModelCacheYaml(profiles: MergedModelProfile[], pancodeHome: string): void {
-  const serializable = profiles.map((p) => ({
-    modelId: p.modelId,
-    providerId: p.providerId,
-    engine: p.engine,
-    baseUrl: p.baseUrl,
-    family: p.family,
-    matchType: p.matchType,
-    contextWindow: p.capabilities.contextWindow,
-    toolCalling: p.capabilities.toolCalling,
-    reasoning: p.capabilities.reasoning,
-    vision: p.capabilities.vision,
-    thinkingFormat: p.thinkingFormat,
-    sampling: p.sampling,
-  }));
+  const serializable = {
+    cachedAt: new Date().toISOString(),
+    models: profiles.map((p) => ({
+      modelId: p.modelId,
+      providerId: p.providerId,
+      engine: p.engine,
+      baseUrl: p.baseUrl,
+      family: p.family,
+      matchType: p.matchType,
+      capabilities: p.capabilities,
+      sampling: p.sampling,
+      thinkingFormat: p.thinkingFormat,
+      compat: p.compat,
+    })),
+  };
 
   const filePath = join(pancodeHome, "model-cache.yaml");
   mkdirSync(dirname(filePath), { recursive: true });
-  writeFileSync(filePath, YAML.stringify({ models: serializable }), "utf8");
+  writeFileSync(filePath, YAML.stringify(serializable), "utf8");
+}
+
+// Default cache TTL: 4 hours. Fresh homelab configs rarely change mid-session.
+// Override with PANCODE_CACHE_TTL_HOURS env var.
+const DEFAULT_CACHE_TTL_MS = 4 * 60 * 60 * 1000;
+
+interface CachedModelFile {
+  cachedAt?: string;
+  models?: Array<{
+    modelId: string;
+    providerId: string;
+    engine: string;
+    baseUrl: string;
+    family: string | null;
+    matchType: "variant" | "family" | "unmatched";
+    capabilities: ModelCapabilities;
+    sampling: Record<string, SamplingPreset> | null;
+    thinkingFormat: string | null;
+    compat: ModelCompat;
+  }>;
+}
+
+function resolveCacheTtlMs(): number {
+  const envHours = Number.parseFloat(process.env.PANCODE_CACHE_TTL_HOURS ?? "");
+  if (Number.isFinite(envHours) && envHours > 0) return envHours * 60 * 60 * 1000;
+  return DEFAULT_CACHE_TTL_MS;
+}
+
+/**
+ * Read cached model profiles from model-cache.yaml. Returns null if the
+ * cache is missing, empty, corrupt, or stale (older than the configured TTL).
+ * Used for cache-first warm boot that skips network discovery.
+ */
+export function readModelCacheYaml(pancodeHome: string): MergedModelProfile[] | null {
+  const filePath = join(pancodeHome, "model-cache.yaml");
+  try {
+    const content = readFileSync(filePath, "utf8");
+    const parsed = YAML.parse(content) as CachedModelFile;
+
+    if (!parsed?.cachedAt || !Array.isArray(parsed.models) || parsed.models.length === 0) {
+      return null;
+    }
+
+    const cachedAt = new Date(parsed.cachedAt).getTime();
+    if (!Number.isFinite(cachedAt) || Date.now() - cachedAt > resolveCacheTtlMs()) {
+      return null;
+    }
+
+    return parsed.models.map((m) => ({
+      modelId: m.modelId,
+      providerId: m.providerId,
+      engine: m.engine,
+      baseUrl: m.baseUrl,
+      family: m.family,
+      matchType: m.matchType,
+      capabilities: m.capabilities,
+      sampling: m.sampling,
+      thinkingFormat: m.thinkingFormat,
+      compat: m.compat ?? buildCompat(m.engine, m.thinkingFormat),
+    }));
+  } catch {
+    return null;
+  }
 }
 
 let cachedProfiles: MergedModelProfile[] = [];

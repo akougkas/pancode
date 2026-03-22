@@ -1,3 +1,4 @@
+import { performance } from "node:perf_hooks";
 import { join } from "node:path";
 import { type PanCodeConfig, type SafetyLevel, loadConfig } from "../core/config";
 import { ensurePresetsFile, loadPreset } from "../core/presets";
@@ -15,13 +16,16 @@ import {
   discoverEngines,
   loadModelKnowledgeBase,
   matchAllModels,
+  readModelCacheYaml,
   registerApiProvidersOnRegistry,
   registerDiscoveredModels,
   resolveConfiguredModel,
   setModelProfileCache,
   writeModelCacheYaml,
   writeProvidersYaml,
+  type MergedModelProfile,
 } from "../domains/providers";
+import type { DiscoveryResult } from "../domains/providers";
 import { DefaultResourceLoader, SessionManager, SettingsManager } from "../engine/resources";
 import { codingTools, createAgentSession, readOnlyTools } from "../engine/session";
 import { PanCodeInteractiveShell } from "../engine/shell";
@@ -34,6 +38,7 @@ interface ParsedArgs {
   preset: string | null;
   safety: SafetyLevel | null;
   theme: string | null;
+  rediscover: boolean;
   help: boolean;
 }
 
@@ -51,6 +56,7 @@ Options:
   --profile <name>     Config profile name
   --safety <level>     suggest | auto-edit | full-auto
   --theme <name>       Pi TUI theme name
+  --rediscover         Force full engine discovery (ignore cache)
   --help               Show this help
 
 Presets are defined in ~/.pancode/presets.yaml. Edit freely.`);
@@ -76,6 +82,7 @@ function parseArgs(argv: string[]): ParsedArgs {
     preset: null,
     safety: null,
     theme: null,
+    rediscover: false,
     help: false,
   };
 
@@ -84,6 +91,10 @@ function parseArgs(argv: string[]): ParsedArgs {
 
     if (arg === "--help" || arg === "-h") {
       parsed.help = true;
+      continue;
+    }
+    if (arg === "--rediscover") {
+      parsed.rediscover = true;
       continue;
     }
     if (arg === "--cwd") {
@@ -123,8 +134,54 @@ function parseArgs(argv: string[]): ParsedArgs {
   return parsed;
 }
 
-function resolveToolset(config: PanCodeConfig) {
+function resolveToolset(config: PanCodeConfig): typeof codingTools {
   return config.safety === "suggest" ? readOnlyTools : codingTools;
+}
+
+// Boot performance instrumentation. Always-on to stderr.
+//
+// Measurements (2026-03-21, zbook, 3 machines x 3 services, 4 dead endpoints):
+//   ORIGINAL:  avg 3183ms (PROBE_TIMEOUT_MS=3000, WebSocket SDK enrichment)
+//   OPTIMIZED: avg 1150ms (tiered probes 500/1000ms, native API, parallel show)
+//   CACHED:    avg  120ms (warm boot from model-cache.yaml, zero network I/O)
+interface BootPhase {
+  name: string;
+  label: string;
+  startMs: number;
+  endMs: number;
+}
+
+function printBootTimingTable(mode: "warm" | "cold", phases: BootPhase[]): void {
+  process.stderr.write(`[pancode:boot] mode: ${mode}\n`);
+  const maxName = Math.max(...phases.map((p) => p.name.length));
+  const maxLabel = Math.max(...phases.map((p) => p.label.length));
+  let total = 0;
+  for (const phase of phases) {
+    const elapsed = phase.endMs - phase.startMs;
+    total += elapsed;
+    const namePad = phase.name.padEnd(maxName);
+    const labelPad = " ".repeat(maxLabel - phase.label.length);
+    const flag = elapsed > 500 ? "  <<<" : "";
+    process.stderr.write(`[pancode:boot] ${namePad}  ${phase.label}:${labelPad} ${elapsed.toFixed(0).padStart(6)}ms${flag}\n`);
+  }
+  process.stderr.write(`[pancode:boot] ${"TOTAL:".padEnd(maxName + maxLabel + 3)} ${total.toFixed(0).padStart(6)}ms\n`);
+}
+
+// Full discovery: probe endpoints, match against knowledge base, write cache.
+// Used by cold boot and background refresh.
+async function runFullDiscovery(): Promise<{ results: DiscoveryResult[]; profiles: MergedModelProfile[] }> {
+  const results = await discoverEngines();
+  writeProvidersYaml(results, PANCODE_HOME);
+
+  const packageRoot = resolvePackageRoot(import.meta.url);
+  const modelsDir = join(packageRoot, "models");
+  const knowledgeBase = loadModelKnowledgeBase(modelsDir);
+
+  const allModels = results.flatMap((r) => r.models);
+  const profiles = matchAllModels(allModels, knowledgeBase);
+  writeModelCacheYaml(profiles, PANCODE_HOME);
+
+  return { results, profiles };
 }
 
 export async function runOrchestratorEntry(): Promise<void> {
@@ -193,36 +250,63 @@ export async function runOrchestratorEntry(): Promise<void> {
 
   ensureProjectRuntime(config);
 
+  const bootPhases: BootPhase[] = [];
+
+  function phase(name: string, label: string): { end: () => void } {
+    const startMs = performance.now();
+    return {
+      end() {
+        bootPhases.push({ name, label, startMs, endMs: performance.now() });
+      },
+    };
+  }
+
   // === Bootstrap Phase 1: Domain resolution ===
+  const p1 = phase("Phase 1", "domains");
   const orderedDomains = resolveDomainOrder(config.domains, DOMAIN_REGISTRY);
   const extensionFactories = collectDomainExtensions(config.domains, DOMAIN_REGISTRY);
   process.env.PANCODE_ENABLED_DOMAINS = orderedDomains.map((domain) => domain.manifest.name).join(",");
+  p1.end();
 
   // === Bootstrap Phase 2: Auth & API providers ===
+  const p2 = phase("Phase 2", "auth");
   const { agentDir, authStorage, modelRegistry } = await createSharedAuth();
   registerApiProvidersOnRegistry(modelRegistry, config.cwd);
+  p2.end();
 
-  // === Bootstrap Phase 3: Engine discovery via native SDKs ===
-  const discoveryResults = await discoverEngines();
-  writeProvidersYaml(discoveryResults, PANCODE_HOME);
+  // === Phase 3: Model loading (warm from cache or cold via discovery) ===
+  // --rediscover forces cold boot regardless of cache state.
+  let mergedProfiles: MergedModelProfile[];
+  let discoveryConnections: DiscoveryResult[] = [];
+  let bootMode: "warm" | "cold";
 
-  // === Bootstrap Phase 4: Model matching against knowledge base ===
-  const packageRoot = resolvePackageRoot(import.meta.url);
-  const modelsDir = join(packageRoot, "models");
-  const knowledgeBase = loadModelKnowledgeBase(modelsDir);
+  const cachedProfiles = args.rediscover ? null : readModelCacheYaml(PANCODE_HOME);
 
-  const allDiscoveredModels = discoveryResults.flatMap((r) => r.models);
-  const mergedProfiles = matchAllModels(allDiscoveredModels, knowledgeBase);
-  setModelProfileCache(mergedProfiles);
-  writeModelCacheYaml(mergedProfiles, PANCODE_HOME);
+  if (cachedProfiles) {
+    bootMode = "warm";
+    const p3 = phase("Phase 3", "cache-load");
+    mergedProfiles = cachedProfiles;
+    setModelProfileCache(mergedProfiles);
+    registerDiscoveredModels(modelRegistry, mergedProfiles);
+    p3.end();
+  } else {
+    bootMode = "cold";
+    const p3 = phase("Phase 3", "discovery");
+    const { results, profiles } = await runFullDiscovery();
+    discoveryConnections = results;
+    mergedProfiles = profiles;
+    setModelProfileCache(mergedProfiles);
+    registerDiscoveredModels(modelRegistry, mergedProfiles);
+    p3.end();
+  }
 
-  // === Bootstrap Phase 5: Register with Pi AI ModelRegistry ===
-  registerDiscoveredModels(modelRegistry, mergedProfiles);
-
-  // === Bootstrap Phase 6: Agent config ===
+  // === Phase 4: Agent config ===
+  const p4 = phase("Phase 4", "agents");
   ensureAgentsYaml(PANCODE_HOME);
+  p4.end();
 
-  // === Resolve model ===
+  // === Phase 5: Model resolution ===
+  const p5 = phase("Phase 5", "model-resolve");
   // Failure here is non-fatal: no local engines and no API keys means no models at boot.
   // PanCode starts in degraded mode and surfaces the issue in the shell rather than crashing.
   let model: Awaited<ReturnType<typeof resolveConfiguredModel>> | undefined;
@@ -242,8 +326,10 @@ export async function runOrchestratorEntry(): Promise<void> {
   }
   const effectiveThinkingLevel = resolveThinkingLevelForPreference(model ?? null, config.reasoningPreference);
   process.env.PANCODE_EFFECTIVE_THINKING = effectiveThinkingLevel;
+  p5.end();
 
-  // === Session setup ===
+  // === Phase 6: Resource loader ===
+  const p6 = phase("Phase 6", "resource-loader");
   const settingsManager = SettingsManager.inMemory({
     quietStartup: true,
     theme: config.theme,
@@ -262,7 +348,10 @@ export async function runOrchestratorEntry(): Promise<void> {
     noThemes: true,
   });
   await resourceLoader.reload();
+  p6.end();
 
+  // === Phase 7: Session creation ===
+  const p7 = phase("Phase 7", "session");
   const sessionManager = SessionManager.create(config.cwd, join(agentDir, "sessions"));
   const { session, modelFallbackMessage: sessionFallback } = await createAgentSession({
     cwd: config.cwd,
@@ -275,13 +364,56 @@ export async function runOrchestratorEntry(): Promise<void> {
     sessionManager,
     settingsManager,
   });
+  p7.end();
 
-  // Prefer the boot fallback message (no models at all) over any session-level fallback.
-  const shell = new PanCodeInteractiveShell(session, { modelFallbackMessage: bootFallbackMessage ?? sessionFallback });
+  // === Phase 8: Shell startup ===
+  const p8 = phase("Phase 8", "shell-init");
+  const shell = new PanCodeInteractiveShell(session, {
+    modelFallbackMessage: bootFallbackMessage ?? sessionFallback,
+  });
+  p8.end();
+
+  printBootTimingTable(bootMode, bootPhases);
+
+  // -----------------------------------------------------------------------
+  // Background discovery (warm boot only)
+  // -----------------------------------------------------------------------
+  // After the shell is interactive, refresh the provider cache so the NEXT
+  // boot uses fresh data. Does not modify the current session's model
+  // registry to avoid mid-session instability.
+  let backgroundConnections: DiscoveryResult[] = [];
+
+  if (bootMode === "warm") {
+    const bgRefresh = async () => {
+      try {
+        const { results, profiles } = await runFullDiscovery();
+        backgroundConnections = results;
+        setModelProfileCache(profiles);
+
+        const cachedCount = mergedProfiles.length;
+        const freshCount = profiles.length;
+        if (cachedCount !== freshCount) {
+          process.stderr.write(
+            `[pancode:boot] Background refresh: ${freshCount} models (was ${cachedCount}). ` +
+              `Changes take effect on next boot or with --rediscover.\n`,
+          );
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        process.stderr.write(`[pancode:boot] Background refresh failed: ${msg}\n`);
+      }
+    };
+
+    // Delay 500ms to avoid contention with initial TUI render.
+    setTimeout(() => void bgRefresh(), 500);
+  }
+
+  // -----------------------------------------------------------------------
+  // Shutdown handlers
+  // -----------------------------------------------------------------------
 
   shutdownCoordinator.onTerminate(async () => {
-    // Disconnect engine connections after domain terminate handlers run.
-    for (const result of discoveryResults) {
+    for (const result of [...discoveryConnections, ...backgroundConnections]) {
       result.connection.disconnect();
     }
   });

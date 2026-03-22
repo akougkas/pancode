@@ -4,9 +4,14 @@ import type { DiscoveredModel, EngineConnection, EngineHealth, ModelCapabilities
 import { emptyCapabilities } from "./types";
 
 const DEFAULT_PORT = 1234;
-const PROBE_TIMEOUT_MS = 3000;
+const DEFAULT_PROBE_TIMEOUT_MS = 1000;
+const RUNTIME_TIMEOUT_MS = 3000;
 
-export function createLmStudioConnection(baseUrl: string, providerId: string): EngineConnection {
+export function createLmStudioConnection(
+  baseUrl: string,
+  providerId: string,
+  probeTimeoutMs = DEFAULT_PROBE_TIMEOUT_MS,
+): EngineConnection {
   let client: LMStudioClient | null = null;
 
   function parseHost(): { host: string; port: number } {
@@ -29,13 +34,45 @@ export function createLmStudioConnection(baseUrl: string, providerId: string): E
     return client;
   }
 
+  async function listModelsViaRest(): Promise<DiscoveredModel[]> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), probeTimeoutMs);
+
+    try {
+      const response = await fetch(`${baseUrl}/v1/models`, {
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+
+      if (!response.ok) return [];
+
+      const body = (await response.json()) as {
+        data?: Array<{ id?: string }>;
+      };
+      if (!Array.isArray(body.data)) return [];
+
+      return body.data
+        .filter((entry): entry is { id: string } => typeof entry.id === "string" && entry.id.trim().length > 0)
+        .map((entry) => ({
+          id: entry.id,
+          engine: "lmstudio" as const,
+          providerId,
+          baseUrl,
+          capabilities: emptyCapabilities(),
+        }));
+    } catch {
+      clearTimeout(timeout);
+      return [];
+    }
+  }
+
   return {
     type: "lmstudio",
     baseUrl,
 
     async connect(): Promise<boolean> {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
+      const timeout = setTimeout(() => controller.abort(), probeTimeoutMs);
 
       try {
         const response = await fetch(`${baseUrl}/v1/models`, {
@@ -50,84 +87,57 @@ export function createLmStudioConnection(baseUrl: string, providerId: string): E
     },
 
     async listModels(): Promise<DiscoveredModel[]> {
-      // Discover ALL available models via REST, then enrich loaded ones via SDK.
-      // LM Studio loads models on demand, so unloaded models are still usable.
-      // Previously this only called sdk.llm.listLoaded(), which missed unloaded
-      // models and caused scout/worker model resolution to silently fall back
-      // to the orchestrator model.
-      const restModels = await this.listModelsViaRest();
-      const modelsById = new Map<string, DiscoveredModel>();
-      for (const m of restModels) {
-        modelsById.set(m.id, m);
-      }
+      // Use the native API (/api/v0/models) that returns context window, vision,
+      // tool_use, quantization, and architecture in a single REST call (~40ms).
+      // This replaces the previous approach of /v1/models + WebSocket SDK
+      // enrichment which required a per-model getModelInfo() round trip.
+      const controller = new AbortController();
+      const nativeTimeout = setTimeout(() => controller.abort(), probeTimeoutMs);
 
-      // Enrich loaded models with SDK capabilities (context window, vision, etc.)
       try {
-        const sdk = ensureClient();
-        const loaded = await sdk.llm.listLoaded();
+        const response = await fetch(`${baseUrl}/api/v0/models`, {
+          signal: controller.signal,
+        });
+        clearTimeout(nativeTimeout);
 
-        for (const model of loaded) {
-          const caps = modelsById.get(model.identifier)?.capabilities ?? emptyCapabilities();
+        if (!response.ok) return listModelsViaRest();
 
-          try {
-            const info = await model.getModelInfo();
-            caps.contextWindow = info.contextLength ?? null;
-            caps.vision = info.vision ?? null;
-            caps.toolCalling = info.trainedForToolUse ?? null;
-            if (info.paramsString) {
-              caps.parameterCount = parseParamCount(info.paramsString);
-            }
-            if (info.quantization) {
-              caps.quantization = String(info.quantization);
-            }
-          } catch {
-            // Model info unavailable; caps stay at REST defaults
-          }
+        const body = (await response.json()) as {
+          data?: Array<{
+            id?: string;
+            type?: string;
+            arch?: string;
+            quantization?: string;
+            max_context_length?: number;
+            loaded_context_length?: number;
+            capabilities?: string[];
+            state?: string;
+          }>;
+        };
+        if (!Array.isArray(body.data)) return listModelsViaRest();
 
-          modelsById.set(model.identifier, {
-            id: model.identifier,
+        const models: DiscoveredModel[] = [];
+        for (const entry of body.data) {
+          if (typeof entry.id !== "string" || !entry.id.trim()) continue;
+          const caps = emptyCapabilities();
+          caps.contextWindow = entry.max_context_length ?? null;
+          caps.vision = entry.type === "vlm";
+          caps.toolCalling = entry.capabilities?.includes("tool_use") ?? null;
+          caps.quantization = entry.quantization ?? null;
+          caps.family = entry.arch ?? null;
+          models.push({
+            id: entry.id,
             engine: "lmstudio",
             providerId,
             baseUrl,
             capabilities: caps,
           });
         }
+        return models;
       } catch {
-        // SDK connection failed; REST models are still valid
-      }
-
-      return [...modelsById.values()];
-    },
-
-    async listModelsViaRest(): Promise<DiscoveredModel[]> {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
-
-      try {
-        const response = await fetch(`${baseUrl}/v1/models`, {
-          signal: controller.signal,
-        });
-        clearTimeout(timeout);
-
-        if (!response.ok) return [];
-
-        const body = (await response.json()) as {
-          data?: Array<{ id?: string }>;
-        };
-        if (!Array.isArray(body.data)) return [];
-
-        return body.data
-          .filter((entry): entry is { id: string } => typeof entry.id === "string" && entry.id.trim().length > 0)
-          .map((entry) => ({
-            id: entry.id,
-            engine: "lmstudio" as const,
-            providerId,
-            baseUrl,
-            capabilities: emptyCapabilities(),
-          }));
-      } catch {
-        clearTimeout(timeout);
-        return [];
+        clearTimeout(nativeTimeout);
+        // Native API unavailable (older LM Studio); fall back to REST
+        return listModelsViaRest();
       }
     },
 
@@ -157,7 +167,7 @@ export function createLmStudioConnection(baseUrl: string, providerId: string): E
     async health(): Promise<EngineHealth> {
       const start = Date.now();
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
+      const timeout = setTimeout(() => controller.abort(), RUNTIME_TIMEOUT_MS);
 
       try {
         const response = await fetch(`${baseUrl}/v1/models`, {
@@ -188,5 +198,5 @@ export function createLmStudioConnection(baseUrl: string, providerId: string): E
         client = null;
       }
     },
-  } as EngineConnection & { listModelsViaRest(): Promise<DiscoveredModel[]> };
+  };
 }

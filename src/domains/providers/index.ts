@@ -7,6 +7,7 @@ export {
 export {
   loadModelKnowledgeBase,
   matchAllModels,
+  readModelCacheYaml,
   writeModelCacheYaml,
   setModelProfileCache,
   getModelProfileCache,

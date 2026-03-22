@@ -1,17 +1,21 @@
 import type { DiscoveredModel, EngineConnection, EngineHealth, ModelCapabilities } from "./types";
 import { emptyCapabilities } from "./types";
 
-const DEFAULT_PORT = 8080;
-const PROBE_TIMEOUT_MS = 3000;
+const DEFAULT_PROBE_TIMEOUT_MS = 1000;
+const RUNTIME_TIMEOUT_MS = 3000;
 
-export function createLlamaCppConnection(baseUrl: string, providerId: string): EngineConnection {
+export function createLlamaCppConnection(
+  baseUrl: string,
+  providerId: string,
+  probeTimeoutMs = DEFAULT_PROBE_TIMEOUT_MS,
+): EngineConnection {
   return {
     type: "llamacpp",
     baseUrl,
 
     async connect(): Promise<boolean> {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
+      const timeout = setTimeout(() => controller.abort(), probeTimeoutMs);
 
       try {
         const response = await fetch(`${baseUrl}/v1/models`, {
@@ -27,7 +31,7 @@ export function createLlamaCppConnection(baseUrl: string, providerId: string): E
 
     async listModels(): Promise<DiscoveredModel[]> {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
+      const timeout = setTimeout(() => controller.abort(), probeTimeoutMs);
 
       try {
         const response = await fetch(`${baseUrl}/v1/models`, {
@@ -71,7 +75,7 @@ export function createLlamaCppConnection(baseUrl: string, providerId: string): E
     async getModelCapabilities(modelId: string): Promise<ModelCapabilities> {
       // Re-fetch /v1/models and find the specific model's args
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
+      const timeout = setTimeout(() => controller.abort(), RUNTIME_TIMEOUT_MS);
 
       try {
         const response = await fetch(`${baseUrl}/v1/models`, {
@@ -102,7 +106,7 @@ export function createLlamaCppConnection(baseUrl: string, providerId: string): E
     async health(): Promise<EngineHealth> {
       const start = Date.now();
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
+      const timeout = setTimeout(() => controller.abort(), RUNTIME_TIMEOUT_MS);
 
       try {
         const response = await fetch(`${baseUrl}/v1/models`, {

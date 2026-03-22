@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import YAML from "yaml";
 import { createLlamaCppConnection } from "./engines/llamacpp";
@@ -10,7 +10,7 @@ interface KnownService {
   type: EngineType;
   name: string;
   defaultPort: number;
-  factory: (baseUrl: string, providerId: string) => EngineConnection;
+  factory: (baseUrl: string, providerId: string, probeTimeoutMs?: number) => EngineConnection;
 }
 
 interface LocalMachine {
@@ -92,15 +92,48 @@ function buildServiceUrl(address: string, port: number): string {
   return `http://${address}:${port}`;
 }
 
+// Tiered probe timeouts: known-good endpoints from last boot get a fast
+// timeout since they should respond in <50ms on a LAN. Unknown or previously
+// unreachable endpoints get a standard timeout. This eliminates the 3-second
+// wall time from dead endpoint timeouts that dominated boot latency.
+const FAST_PROBE_TIMEOUT_MS = 500;
+const DEFAULT_PROBE_TIMEOUT_MS = 1000;
+
+function loadCachedProviderUrls(): Set<string> {
+  const pancodeHome = process.env.PANCODE_HOME;
+  if (!pancodeHome) return new Set();
+
+  const filePath = join(pancodeHome, "providers.yaml");
+  try {
+    const content = readFileSync(filePath, "utf8");
+    const parsed = YAML.parse(content) as { providers?: Array<{ baseUrl?: string }> };
+    const urls = new Set<string>();
+    for (const p of parsed?.providers ?? []) {
+      if (p.baseUrl) urls.add(p.baseUrl);
+    }
+    return urls;
+  } catch {
+    return new Set();
+  }
+}
+
+function resolveProbeTimeout(baseUrl: string, cachedUrls: Set<string>): number {
+  const envTimeout = Number.parseInt(process.env.PANCODE_PROBE_TIMEOUT_MS ?? "", 10);
+  if (Number.isFinite(envTimeout) && envTimeout > 0) return envTimeout;
+  return cachedUrls.has(baseUrl) ? FAST_PROBE_TIMEOUT_MS : DEFAULT_PROBE_TIMEOUT_MS;
+}
+
 export async function discoverEngines(): Promise<DiscoveryResult[]> {
   const machines = getLocalMachines();
+  const cachedUrls = loadCachedProviderUrls();
   const results: DiscoveryResult[] = [];
 
   const tasks = machines.flatMap((machine) =>
     KNOWN_SERVICES.map(async (service) => {
       const baseUrl = buildServiceUrl(machine.address, service.defaultPort);
       const providerId = buildProviderId(machine, service);
-      const connection = service.factory(baseUrl, providerId);
+      const timeout = resolveProbeTimeout(baseUrl, cachedUrls);
+      const connection = service.factory(baseUrl, providerId, timeout);
 
       const reachable = await connection.connect();
       if (!reachable) {

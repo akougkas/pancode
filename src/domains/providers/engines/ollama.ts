@@ -3,10 +3,14 @@ import { parseParamCount } from "./parse-params";
 import type { DiscoveredModel, EngineConnection, EngineHealth, ModelCapabilities } from "./types";
 import { emptyCapabilities } from "./types";
 
-const DEFAULT_PORT = 11434;
-const PROBE_TIMEOUT_MS = 3000;
+const DEFAULT_PROBE_TIMEOUT_MS = 1000;
+const RUNTIME_TIMEOUT_MS = 3000;
 
-export function createOllamaConnection(baseUrl: string, providerId: string): EngineConnection {
+export function createOllamaConnection(
+  baseUrl: string,
+  providerId: string,
+  probeTimeoutMs = DEFAULT_PROBE_TIMEOUT_MS,
+): EngineConnection {
   let client: Ollama | null = null;
 
   function ensureClient(): Ollama {
@@ -22,7 +26,7 @@ export function createOllamaConnection(baseUrl: string, providerId: string): Eng
 
     async connect(): Promise<boolean> {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
+      const timeout = setTimeout(() => controller.abort(), probeTimeoutMs);
 
       try {
         const response = await fetch(`${baseUrl}/api/tags`, {
@@ -42,17 +46,24 @@ export function createOllamaConnection(baseUrl: string, providerId: string): Eng
         const response = await ollama.list();
         if (!response.models) return [];
 
-        const models: DiscoveredModel[] = [];
-        for (const entry of response.models) {
-          if (!entry.name) continue;
+        // Parallelize per-model show() calls instead of running them
+        // sequentially. Each show() is an independent API call to the
+        // same Ollama instance. On mini with 3 models, this saves ~200ms.
+        const entries = response.models.filter((entry) => !!entry.name);
+        const capResults = await Promise.allSettled(
+          entries.map((entry) => this.getModelCapabilities(entry.name)),
+        );
 
-          const capabilities = await this.getModelCapabilities(entry.name);
+        const models: DiscoveredModel[] = [];
+        for (let i = 0; i < entries.length; i++) {
+          const entry = entries[i];
+          const capResult = capResults[i];
           models.push({
             id: entry.name,
             engine: "ollama",
             providerId,
             baseUrl,
-            capabilities,
+            capabilities: capResult.status === "fulfilled" ? capResult.value : emptyCapabilities(),
           });
         }
 
@@ -113,7 +124,7 @@ export function createOllamaConnection(baseUrl: string, providerId: string): Eng
     async health(): Promise<EngineHealth> {
       const start = Date.now();
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
+      const timeout = setTimeout(() => controller.abort(), RUNTIME_TIMEOUT_MS);
 
       try {
         const response = await fetch(`${baseUrl}/api/tags`, {
