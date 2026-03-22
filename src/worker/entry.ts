@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { type PanCodeConfig, loadConfig } from "../core/config";
 import { ensureProjectRuntime } from "../core/init";
@@ -239,6 +240,38 @@ interface WorkerPiConfig extends Pick<PanCodeConfig, "tools" | "provider" | "mod
   safetyExtPath: string | null;
 }
 
+/** Threshold for writing prompts/system prompts to temp files instead of CLI args. */
+const LONG_TEXT_THRESHOLD = 8000;
+
+/** Tracks temp files created during a run so they can be cleaned up afterward. */
+const tempFilesToCleanup: string[] = [];
+
+/**
+ * Write text to a temp file and return the path. Registers the path for cleanup.
+ * Files are created with 0o600 permissions so prompt content is not world-readable.
+ */
+function writeTempFile(prefix: string, content: string): string {
+  const dir = join(tmpdir(), "pancode-worker");
+  mkdirSync(dir, { recursive: true });
+  const filename = `${prefix}-${process.pid}-${Date.now()}.txt`;
+  const filepath = join(dir, filename);
+  writeFileSync(filepath, content, { encoding: "utf8", mode: 0o600 });
+  tempFilesToCleanup.push(filepath);
+  return filepath;
+}
+
+/** Remove all temp files created during this worker run. */
+function cleanupTempFiles(): void {
+  for (const filepath of tempFilesToCleanup) {
+    try {
+      unlinkSync(filepath);
+    } catch {
+      // File may already be gone; ignore.
+    }
+  }
+  tempFilesToCleanup.length = 0;
+}
+
 function buildPiArgs(config: WorkerPiConfig, prompt: string): string[] {
   const args = [
     "--mode",
@@ -260,17 +293,36 @@ function buildPiArgs(config: WorkerPiConfig, prompt: string): string[] {
     args.push("--no-extensions");
   }
 
-  // System prompt (agent identity + context)
+  // System prompt: use temp file for long prompts to avoid arg length limits
+  // and prevent prompt content from appearing in process listings.
   if (config.systemPrompt) {
-    args.push("--system-prompt", config.systemPrompt);
+    if (config.systemPrompt.length > LONG_TEXT_THRESHOLD) {
+      const sysPromptPath = writeTempFile("sys-prompt", config.systemPrompt);
+      args.push("--system-prompt", `@${sysPromptPath}`);
+    } else {
+      args.push("--system-prompt", config.systemPrompt);
+    }
   }
 
   // Append additional context
   if (config.appendSystemPrompt) {
-    args.push("--append-system-prompt", config.appendSystemPrompt);
+    if (config.appendSystemPrompt.length > LONG_TEXT_THRESHOLD) {
+      const appendPath = writeTempFile("append-prompt", config.appendSystemPrompt);
+      args.push("--append-system-prompt", `@${appendPath}`);
+    } else {
+      args.push("--append-system-prompt", config.appendSystemPrompt);
+    }
   }
 
-  args.push(prompt);
+  // Task prompt: use temp file for long tasks to avoid OS arg length limits.
+  // Pi CLI reads file content when the argument starts with "@".
+  if (prompt.length > LONG_TEXT_THRESHOLD) {
+    const taskPath = writeTempFile("task", prompt);
+    args.push(`@${taskPath}`);
+  } else {
+    args.push(prompt);
+  }
+
   return args;
 }
 
@@ -365,6 +417,22 @@ function writeResultFile(resultFile: string, payload: Record<string, unknown>): 
   writeFileSync(resultFile, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
 }
 
+/**
+ * Resolve a value that may be a `@/path/to/file` file reference.
+ * Only absolute paths qualify as file refs (must start with `@/`).
+ * This prevents false positives when a legitimate prompt starts with `@`.
+ */
+function resolveFileRef(value: string | null): string | null {
+  if (!value || !value.startsWith("@/")) return value;
+  const filepath = value.slice(1);
+  try {
+    return readFileSync(filepath, "utf8");
+  } catch {
+    // If the file does not exist, return the raw value as a fallback.
+    return value;
+  }
+}
+
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   if (args.help) {
@@ -372,6 +440,10 @@ async function main(): Promise<void> {
     return;
   }
   if (!args.resultFile) throw new Error("Missing required --result-file argument.");
+
+  // Resolve @file references for system prompts passed from PiRuntime.
+  args.systemPrompt = resolveFileRef(args.systemPrompt);
+  args.appendSystemPrompt = resolveFileRef(args.appendSystemPrompt);
 
   const baseConfig = loadConfig({
     prompt: args.prompt ?? undefined,
@@ -437,6 +509,8 @@ async function main(): Promise<void> {
       stderrPath: "",
     });
     process.exitCode = 1;
+  } finally {
+    cleanupTempFiles();
   }
 }
 

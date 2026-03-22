@@ -60,6 +60,14 @@ export interface WorkerProgressEvent {
   inputTokens: number;
   outputTokens: number;
   turns: number;
+  /** Name of the tool currently executing (null when between tool calls). */
+  currentTool: string | null;
+  /** Preview of the current tool's arguments (truncated). */
+  currentToolArgs: string | null;
+  /** Ring buffer of recently completed tool names (max 5, newest last). */
+  recentTools: string[];
+  /** Total tool calls observed so far. */
+  toolCount: number;
 }
 
 export interface WarningEvent {

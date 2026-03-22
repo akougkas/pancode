@@ -23,6 +23,16 @@ export interface ParallelResult {
 
 const DEFAULT_CONCURRENCY = 4;
 
+/**
+ * Stagger delay between concurrent subprocess spawns. Avoids file-lock
+ * contention on shared Pi config and thundering-herd on the LLM API.
+ */
+const STAGGER_MS = 150;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export async function runParallel(
   tasks: ParallelTask[],
   concurrency: number = DEFAULT_CONCURRENCY,
@@ -56,8 +66,11 @@ export async function runParallel(
     }
   };
 
+  // Stagger runner launches to avoid thundering-herd on the LLM API
+  // and file-lock contention on shared Pi config files.
   const effectiveConcurrency = Math.min(concurrency, tasks.length);
   for (let i = 0; i < effectiveConcurrency; i++) {
+    if (i > 0) await sleep(STAGGER_MS);
     active.push(runNext());
   }
 

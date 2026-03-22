@@ -56,10 +56,19 @@ export abstract class CliRuntime implements AgentRuntime {
       ? ["--import", "tsx", entryPath, ...wrapperArgs]
       : [entryPath, ...wrapperArgs];
 
+    // Recursion depth guard: increment depth for child subprocess so nested
+    // dispatch_agent calls can be blocked at the configured maximum depth.
+    // Without this, CLI-dispatched workers could recurse without limit.
+    const currentDepth = Number.parseInt(process.env.PANCODE_DISPATCH_DEPTH ?? "0", 10);
+
     return {
       command: process.execPath,
       args,
-      env: options?.env ?? {},
+      env: {
+        PANCODE_DISPATCH_DEPTH: String(currentDepth + 1),
+        PANCODE_DISPATCH_MAX_DEPTH: process.env.PANCODE_DISPATCH_MAX_DEPTH ?? "2",
+        ...options?.env,
+      },
       cwd: config.cwd,
       outputFormat: options?.outputFormat ?? "text",
     };

@@ -52,6 +52,9 @@ export async function stopAllWorkers(): Promise<void> {
   liveWorkerProcesses.clear();
 }
 
+/** Default worker timeout: 5 minutes. Override with PANCODE_WORKER_TIMEOUT_MS env var. */
+const DEFAULT_TIMEOUT_MS = 300_000;
+
 interface SpawnOptions {
   task: string;
   tools: string;
@@ -65,6 +68,7 @@ interface SpawnOptions {
   runtime?: string; // Runtime ID, default "pi"
   runtimeArgs?: string[]; // Extra args for the runtime
   readonly?: boolean; // Agent readonly flag
+  timeoutMs?: number; // Per-task timeout in milliseconds (0 = no timeout)
 }
 
 function emptyUsage(): RuntimeUsage {
@@ -75,6 +79,9 @@ export function spawnWorker(options: SpawnOptions): Promise<WorkerResult> {
   const runtimeId = options.runtime ?? "pi";
   const runtime = runtimeRegistry.getOrThrow(runtimeId);
 
+  const envTimeout = Number.parseInt(process.env.PANCODE_WORKER_TIMEOUT_MS ?? "", 10);
+  const resolvedTimeout = options.timeoutMs ?? (Number.isFinite(envTimeout) ? envTimeout : DEFAULT_TIMEOUT_MS);
+
   const taskConfig: RuntimeTaskConfig = {
     task: options.task,
     tools: options.tools,
@@ -84,7 +91,7 @@ export function spawnWorker(options: SpawnOptions): Promise<WorkerResult> {
     agentName: options.agentName ?? "worker",
     readonly: options.readonly ?? false,
     runtimeArgs: options.runtimeArgs ?? [],
-    timeoutMs: 0,
+    timeoutMs: resolvedTimeout,
     sampling: options.sampling ?? null,
     runId: options.runId,
   };
@@ -146,9 +153,21 @@ function spawnWorkerNdjsonPath(
   let buffer = "";
   let stderr = "";
 
+  // Tool-level progress tracking
+  const MAX_RECENT_TOOLS = 5;
+  const MAX_TOOL_ARGS_PREVIEW = 120;
+  let currentTool: string | null = null;
+  let currentToolArgs: string | null = null;
+  const recentTools: string[] = [];
+  let toolCount = 0;
+
   // Keep stdout streaming for live updates during execution
-  interface WorkerMessageEvent {
+  // biome-ignore lint: Pi SDK JSON events use dynamic shapes across event types
+  interface WorkerNdjsonEvent {
     type: string;
+    /** Pi CLI emits toolName at the top level for tool_execution_start/end events. */
+    toolName?: string;
+    args?: Record<string, unknown>;
     message?: {
       role?: string;
       content?: Array<{ type?: string; text?: string }>;
@@ -165,15 +184,72 @@ function spawnWorkerNdjsonPath(
     };
   }
 
+  /** Emit a progress update to the bus with tool-level detail. Throttled to 50ms. */
+  let lastProgressEmit = 0;
+  const emitProgress = (force?: boolean) => {
+    if (!options.runId) return;
+    const now = Date.now();
+    if (!force && now - lastProgressEmit < 50) return;
+    lastProgressEmit = now;
+
+    const progress: WorkerProgressEvent = {
+      runId: options.runId,
+      inputTokens: result.usage.inputTokens,
+      outputTokens: result.usage.outputTokens,
+      turns: result.usage.turns,
+      currentTool,
+      currentToolArgs,
+      recentTools: [...recentTools],
+      toolCount,
+    };
+    sharedBus.emit(BusChannel.WORKER_PROGRESS, progress);
+  };
+
   const processLine = (line: string) => {
     const trimmed = line.trim();
     if (!trimmed || (trimmed[0] !== "{" && trimmed[0] !== "[")) return;
 
-    let event: WorkerMessageEvent;
+    let event: WorkerNdjsonEvent;
     try {
-      event = JSON.parse(trimmed) as WorkerMessageEvent;
+      event = JSON.parse(trimmed) as WorkerNdjsonEvent;
     } catch {
       // Non-JSON output from worker subprocess (startup noise, warnings)
+      return;
+    }
+
+    // Tool execution tracking: parse start/end events for live progress display
+    if (event.type === "tool_execution_start") {
+      const toolName = event.toolName ?? "unknown";
+      currentTool = toolName;
+      // Build a truncated args preview for display
+      if (event.args) {
+        try {
+          const argsStr = JSON.stringify(event.args);
+          currentToolArgs = argsStr.length > MAX_TOOL_ARGS_PREVIEW
+            ? `${argsStr.slice(0, MAX_TOOL_ARGS_PREVIEW)}...`
+            : argsStr;
+        } catch {
+          currentToolArgs = null;
+        }
+      } else {
+        currentToolArgs = null;
+      }
+      toolCount++;
+      emitProgress();
+      return;
+    }
+
+    if (event.type === "tool_execution_end") {
+      // Rotate completed tool into recent ring buffer
+      if (currentTool) {
+        recentTools.push(currentTool);
+        if (recentTools.length > MAX_RECENT_TOOLS) {
+          recentTools.shift();
+        }
+      }
+      currentTool = null;
+      currentToolArgs = null;
+      emitProgress();
       return;
     }
 
@@ -202,17 +278,8 @@ function spawnWorkerNdjsonPath(
         result.usage.cost += usage.cost?.total ?? 0;
       }
 
-      // Emit live progress so the UI can display per-worker token counts
-      // on active cards during execution.
-      if (options.runId) {
-        const progress: WorkerProgressEvent = {
-          runId: options.runId,
-          inputTokens: result.usage.inputTokens,
-          outputTokens: result.usage.outputTokens,
-          turns: result.usage.turns,
-        };
-        sharedBus.emit(BusChannel.WORKER_PROGRESS, progress);
-      }
+      // Emit live progress with full context including tool tracking.
+      emitProgress(true);
 
       if (!result.model && msg.model) {
         result.model = msg.model;
@@ -239,6 +306,12 @@ function spawnWorkerNdjsonPath(
     liveWorkerProcesses.delete(proc);
     if (buffer.trim()) processLine(buffer);
     result.exitCode = code ?? 0;
+
+    // Emit a final progress event so the TUI clears any stale "tool running" state.
+    // The 50ms throttle could swallow the last tool_execution_end event.
+    currentTool = null;
+    currentToolArgs = null;
+    emitProgress(true);
 
     const runtimeResult = runtime.parseResult("", stderr, result.exitCode, resultFile);
     if (runtimeResult.result) {

@@ -28,6 +28,10 @@ export interface LiveWorkerState {
   outputTokens: number;
   turns: number;
   runtime?: string; // Runtime ID for display badge
+  currentTool: string | null; // Tool currently executing
+  currentToolArgs: string | null; // Truncated preview of current tool args
+  recentTools: string[]; // Ring buffer of recently completed tools (max 5)
+  toolCount: number; // Total tool calls observed
 }
 
 // ---------------------------------------------------------------------------
@@ -60,15 +64,32 @@ export function trackWorkerStart(
     outputTokens: 0,
     turns: 0,
     runtime,
+    currentTool: null,
+    currentToolArgs: null,
+    recentTools: [],
+    toolCount: 0,
   });
 }
 
-export function updateWorkerProgress(runId: string, inputTokens: number, outputTokens: number, turns: number): void {
+export function updateWorkerProgress(
+  runId: string,
+  inputTokens: number,
+  outputTokens: number,
+  turns: number,
+  currentTool?: string | null,
+  currentToolArgs?: string | null,
+  recentTools?: string[],
+  toolCount?: number,
+): void {
   const worker = liveWorkers.get(runId);
   if (worker) {
     worker.inputTokens = inputTokens;
     worker.outputTokens = outputTokens;
     worker.turns = turns;
+    if (currentTool !== undefined) worker.currentTool = currentTool;
+    if (currentToolArgs !== undefined) worker.currentToolArgs = currentToolArgs;
+    if (recentTools !== undefined) worker.recentTools = recentTools;
+    if (toolCount !== undefined) worker.toolCount = toolCount;
   }
 }
 

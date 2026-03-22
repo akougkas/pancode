@@ -1,7 +1,27 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentRuntime, RuntimeResult, RuntimeTaskConfig, SpawnConfig } from "./types";
+
+/** Threshold for writing system prompts to temp files instead of CLI args. */
+const LONG_PROMPT_THRESHOLD = 8000;
+
+/**
+ * Write a system prompt to a temp file when it exceeds the threshold.
+ * Returns the file path. The worker entry owns cleanup of its own temp files,
+ * and these files are in the OS temp dir with a short TTL.
+ */
+let tempFileCounter = 0;
+
+function writePromptTempFile(prefix: string, content: string): string {
+  const dir = join(tmpdir(), "pancode-dispatch");
+  mkdirSync(dir, { recursive: true });
+  const filename = `${prefix}-${process.pid}-${Date.now()}-${tempFileCounter++}.txt`;
+  const filepath = join(dir, filename);
+  writeFileSync(filepath, content, { encoding: "utf8", mode: 0o600 });
+  return filepath;
+}
 
 function resolveWorkerEntryPath(): string {
   // In dev mode: src/worker/entry.ts (run via tsx)
@@ -61,8 +81,20 @@ export class PiRuntime implements AgentRuntime {
       }
     }
 
+    // System prompt: use temp file for long prompts to avoid OS arg length
+    // limits and prevent prompt content from appearing in process listings.
     if (config.systemPrompt.trim()) {
-      args.push("--system-prompt", config.systemPrompt);
+      if (config.systemPrompt.length > LONG_PROMPT_THRESHOLD) {
+        const promptPath = writePromptTempFile("sys-prompt", config.systemPrompt);
+        args.push("--system-prompt", `@${promptPath}`);
+      } else {
+        args.push("--system-prompt", config.systemPrompt);
+      }
+    }
+
+    // Forward timeout to worker entry so it enforces a hard deadline on the pi subprocess.
+    if (config.timeoutMs > 0) {
+      args.push("--timeout-ms", String(config.timeoutMs));
     }
 
     // Ensure worker agent dir exists and has auth (set by loader.ts at boot)
@@ -81,6 +113,10 @@ export class PiRuntime implements AgentRuntime {
       samplingEnv.PANCODE_SAMPLING_PRESENCE_PENALTY = String(config.sampling.presence_penalty);
     }
 
+    // Recursion depth guard: increment depth for child subprocess so nested
+    // dispatch_agent calls can be blocked at the configured maximum depth.
+    const currentDepth = Number.parseInt(process.env.PANCODE_DISPATCH_DEPTH ?? "0", 10);
+
     return {
       command: process.execPath,
       args,
@@ -91,6 +127,8 @@ export class PiRuntime implements AgentRuntime {
         PANCODE_BOARD_FILE: join(runtimeRoot, "board.json"),
         PANCODE_CONTEXT_FILE: join(runtimeRoot, "context.json"),
         PANCODE_AGENT_NAME: config.agentName,
+        PANCODE_DISPATCH_DEPTH: String(currentDepth + 1),
+        PANCODE_DISPATCH_MAX_DEPTH: process.env.PANCODE_DISPATCH_MAX_DEPTH ?? "2",
         PI_CODING_AGENT_DIR: process.env.PI_CODING_AGENT_DIR ?? agentDir,
         PI_SKIP_VERSION_CHECK: "1",
       },

@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
+import { existsSync, readdirSync, statSync, unlinkSync } from "node:fs";
+import { join } from "node:path";
 import { Type } from "@sinclair/typebox";
-import { BusChannel, type RunStartedEvent } from "../../core/bus-events";
+import { BusChannel } from "../../core/bus-events";
 import { getModeDefinition } from "../../core/modes";
 import { sharedBus } from "../../core/shared-bus";
 import { ToolName } from "../../core/tool-names";
@@ -13,9 +15,11 @@ import { compileWorkerPrompt } from "../prompts";
 import { findModelProfile } from "../providers";
 import { registerSafetyPreFlightChecks } from "../safety";
 import { registerPreFlightCheck, runPreFlightChecks } from "./admission";
+import { type BackoffManager, createBackoffManager } from "./backoff";
 import { batchTracker } from "./batch-tracker";
 import { cleanupAllWorktrees, createWorktreeIsolation, mergeDeltaPatches } from "./isolation";
 import { dispatchChain, runParallel } from "./primitives";
+import { type ResilienceTracker, createResilienceTracker } from "./resilience";
 import { resolveWorkerRouting } from "./routing";
 import { DEFAULT_DISPATCH_RULES, type DispatchRule, evaluateRules } from "./rules";
 import { RunLedger, createRunEnvelope } from "./state";
@@ -37,6 +41,89 @@ function resolveModelProfile(modelRef: string | null) {
 let ledger: RunLedger | null = null;
 const dispatchRules: DispatchRule[] = [...DEFAULT_DISPATCH_RULES];
 let draining = false;
+
+// Provider resilience: backoff on repeated failures, health tracking.
+const backoff: BackoffManager = createBackoffManager();
+const resilience: ResilienceTracker = createResilienceTracker();
+
+/** Extract provider ID from a "provider/model-id" string. */
+function extractProvider(model: string | null): string | null {
+  if (!model) return null;
+  const slash = model.indexOf("/");
+  return slash > 0 ? model.slice(0, slash) : null;
+}
+
+/** Max age for worker artifacts before cleanup: 24 hours. */
+const ARTIFACT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Remove stale worker session files and result files.
+ * Pi sessions accumulate in PI_CODING_AGENT_DIR/sessions/ with no built-in cleanup.
+ * Worker result files accumulate in PANCODE_RUNTIME_ROOT.
+ */
+function cleanupStaleArtifacts(): void {
+  const cutoff = Date.now() - ARTIFACT_MAX_AGE_MS;
+
+  // 1. Clean Pi session files
+  const agentDir = process.env.PI_CODING_AGENT_DIR;
+  if (agentDir) {
+    const sessionsDir = join(agentDir, "sessions");
+    cleanupDir(sessionsDir, cutoff);
+  }
+
+  // 2. Clean worker result files
+  const runtimeRoot = process.env.PANCODE_RUNTIME_ROOT;
+  if (runtimeRoot) {
+    cleanupDir(runtimeRoot, cutoff, /^worker-.*\.result\.json$/);
+  }
+}
+
+/** Remove files older than cutoff from a directory. Optional filename pattern filter. */
+function cleanupDir(dir: string, cutoffMs: number, pattern?: RegExp): void {
+  if (!existsSync(dir)) return;
+  try {
+    const entries = readdirSync(dir);
+    let removed = 0;
+    for (const entry of entries) {
+      if (pattern && !pattern.test(entry)) continue;
+      const filepath = join(dir, entry);
+      try {
+        const stat = statSync(filepath);
+        if (stat.isFile() && stat.mtimeMs < cutoffMs) {
+          unlinkSync(filepath);
+          removed++;
+        }
+      } catch {
+        // File may have been removed by another process; ignore.
+      }
+    }
+    if (removed > 0 && process.env.PANCODE_VERBOSE) {
+      console.error(`[pancode:dispatch] Cleaned ${removed} stale files from ${dir}`);
+    }
+  } catch {
+    // Directory listing failed; ignore.
+  }
+}
+
+/** Record a dispatch result in backoff and resilience trackers. */
+function recordDispatchOutcome(model: string | null, exitCode: number, error: string): void {
+  const provider = extractProvider(model);
+  if (!provider) return;
+
+  if (exitCode === 0 && !error) {
+    backoff.signalSuccess(provider);
+    resilience.recordSuccess(provider);
+  } else {
+    // Detect rate limiting from error text
+    const is429 = error.includes("429") || error.includes("rate limit") || error.includes("Rate limit");
+    if (is429) {
+      backoff.signal429(provider);
+    } else {
+      backoff.signalFailure(provider);
+    }
+    resilience.recordFailure(provider, error.slice(0, 200));
+  }
+}
 
 export function getRunLedger(): RunLedger | null {
   return ledger;
@@ -83,6 +170,9 @@ export const extension = defineExtension((pi) => {
   pi.on(PiEvent.SESSION_SHUTDOWN, async () => {
     const sessionId = process.env.PANCODE_SESSION_ID ?? "unknown";
     ledger?.addSessionMarker({ type: "session_end", timestamp: new Date().toISOString(), sessionId });
+
+    // Cleanup stale worker artifacts: Pi session files and result files older than 24 hours.
+    cleanupStaleArtifacts();
   });
 
   pi.registerTool({
@@ -125,6 +215,15 @@ export const extension = defineExtension((pi) => {
         return textResult("Dispatch blocked: system is shutting down.");
       }
 
+      // Recursion depth guard: prevent unbounded subprocess trees.
+      const dispatchDepth = Number.parseInt(process.env.PANCODE_DISPATCH_DEPTH ?? "0", 10);
+      const maxDepth = Number.parseInt(process.env.PANCODE_DISPATCH_MAX_DEPTH ?? "2", 10);
+      if (dispatchDepth >= maxDepth) {
+        return textResult(
+          `Dispatch blocked: recursion depth ${dispatchDepth} exceeds maximum ${maxDepth}. Complete the current task directly.`,
+        );
+      }
+
       if (!task?.trim()) {
         return textResult("Error: empty task");
       }
@@ -151,6 +250,16 @@ export const extension = defineExtension((pi) => {
       }
 
       const routing = resolveWorkerRouting(dispatchAction.agent);
+
+      // Provider backoff: reject dispatch if the provider is in a backoff window.
+      const routingProvider = extractProvider(routing.model);
+      if (routingProvider && backoff.isBackedOff(routingProvider)) {
+        const waitSec = Math.ceil(backoff.getWaitMs(routingProvider) / 1000);
+        return textResult(
+          `Dispatch throttled: provider "${routingProvider}" is backed off for ${waitSec}s due to repeated failures.`,
+        );
+      }
+
       const run = createRunEnvelope(task, dispatchAction.agent, ctx.cwd, undefined, routing.runtime);
       run.model = routing.model;
       run.status = "running";
@@ -238,6 +347,9 @@ export const extension = defineExtension((pi) => {
       run.completedAt = new Date().toISOString();
       ledger?.update(run.id, run);
 
+      // Record outcome for provider health tracking and backoff.
+      recordDispatchOutcome(run.model, workerResult.exitCode, workerResult.error);
+
       // Spec originally defined separate run-completed and run-failed events.
       // Unified to run-finished with status field for simpler subscriber logic.
       sharedBus.emit(BusChannel.RUN_FINISHED, {
@@ -310,6 +422,15 @@ export const extension = defineExtension((pi) => {
         return textResult("Batch dispatch blocked: system is shutting down.");
       }
 
+      // Recursion depth guard for batch dispatch
+      const batchDepth = Number.parseInt(process.env.PANCODE_DISPATCH_DEPTH ?? "0", 10);
+      const batchMaxDepth = Number.parseInt(process.env.PANCODE_DISPATCH_MAX_DEPTH ?? "2", 10);
+      if (batchDepth >= batchMaxDepth) {
+        return textResult(
+          `Batch dispatch blocked: recursion depth ${batchDepth} exceeds maximum ${batchMaxDepth}. Complete the current task directly.`,
+        );
+      }
+
       // Pre-flight admission checks for batch dispatch
       const batchPreflight = runPreFlightChecks({
         task: tasks[0],
@@ -326,6 +447,16 @@ export const extension = defineExtension((pi) => {
       }
 
       const routing = resolveWorkerRouting(agentName);
+
+      // Provider backoff check for batch dispatch
+      const batchProvider = extractProvider(routing.model);
+      if (batchProvider && backoff.isBackedOff(batchProvider)) {
+        const waitSec = Math.ceil(backoff.getWaitMs(batchProvider) / 1000);
+        return textResult(
+          `Batch dispatch throttled: provider "${batchProvider}" is backed off for ${waitSec}s due to repeated failures.`,
+        );
+      }
+
       const batch = batchTracker.create(tasks.length);
       const runs = tasks.map((task) => {
         const run = createRunEnvelope(task, agentName, ctx.cwd, batch.id, routing.runtime);
@@ -396,6 +527,9 @@ export const extension = defineExtension((pi) => {
         ledger?.update(run.id, run);
         batchTracker.markCompleted(batch.id, run.status === "done");
         totalCost += workerResult.usage.cost;
+
+        // Record outcome for provider health tracking.
+        recordDispatchOutcome(run.model, workerResult.exitCode, workerResult.error);
 
         sharedBus.emit(BusChannel.RUN_FINISHED, {
           runId: run.id,
@@ -474,6 +608,15 @@ export const extension = defineExtension((pi) => {
         return textResult("Chain dispatch blocked: system is shutting down.");
       }
 
+      // Recursion depth guard for chain dispatch
+      const chainDepth = Number.parseInt(process.env.PANCODE_DISPATCH_DEPTH ?? "0", 10);
+      const chainMaxDepth = Number.parseInt(process.env.PANCODE_DISPATCH_MAX_DEPTH ?? "2", 10);
+      if (chainDepth >= chainMaxDepth) {
+        return textResult(
+          `Chain dispatch blocked: recursion depth ${chainDepth} exceeds maximum ${chainMaxDepth}. Complete the current task directly.`,
+        );
+      }
+
       // Pre-flight
       const preflight = runPreFlightChecks({
         task: params.originalTask,
@@ -494,6 +637,20 @@ export const extension = defineExtension((pi) => {
         defaultAgent,
         async (task, agent) => {
           const routing = resolveWorkerRouting(agent);
+
+          // Per-step backoff check: the provider may have entered backoff during earlier chain steps.
+          const stepProvider = extractProvider(routing.model);
+          if (stepProvider && backoff.isBackedOff(stepProvider)) {
+            const waitSec = Math.ceil(backoff.getWaitMs(stepProvider) / 1000);
+            return {
+              exitCode: 1,
+              result: "",
+              error: `Chain step throttled: provider "${stepProvider}" is backed off for ${waitSec}s due to repeated failures.`,
+              usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, cost: 0, turns: 0 },
+              model: routing.model,
+            };
+          }
+
           const run = createRunEnvelope(task, agent, ctx.cwd, undefined, routing.runtime);
           run.model = routing.model;
           run.status = "running";
@@ -540,6 +697,9 @@ export const extension = defineExtension((pi) => {
           run.model = result.model ?? run.model;
           run.completedAt = new Date().toISOString();
           ledger?.update(run.id, run);
+
+          // Record outcome for provider health tracking.
+          recordDispatchOutcome(run.model, result.exitCode, result.error);
 
           sharedBus.emit(BusChannel.RUN_FINISHED, {
             runId: run.id,
