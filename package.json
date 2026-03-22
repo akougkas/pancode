@@ -1,6 +1,6 @@
 {
   "name": "pancode",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "Composable multi-agent runtime for software engineering",
   "type": "module",
   "author": "Anthony Kougkas <akougkas@gmail.com>",

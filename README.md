@@ -2,367 +2,181 @@
 
 Universal agent control plane for software engineering.
 
-PanCode orchestrates any coding agent installed on your machine through one
-composable runtime. Claude Code, Codex, Gemini CLI, OpenCode, Cline, and
-GitHub Copilot CLI all become dispatchable workers alongside PanCode's native
-agents. Every agent runs under the same formal safety model, uses the same
-dispatch system, and reports through the same observability surface. No other
-tool dispatches to heterogeneous CLI agents through a unified runtime
-abstraction with scope enforcement.
+PanCode orchestrates coding agents through one tmux-first shell, one dispatch
+system, and one safety model. The current tree ships 148 TypeScript files,
+about 17.2k LOC, 9 composable domains, and 6 CLI runtime adapters. Native Pi
+workers and installed CLI agents all run through the same runtime boundary.
 
-## What It Looks Like
+See [docs/](./docs/README.md) for the full guide set.
 
-### Agent configuration with mixed runtimes
+## Highlights
 
-```yaml
-# ~/.pancode/agents.yaml
-agents:
-  dev:
-    description: "General-purpose coding agent"
-    model: ${PANCODE_WORKER_MODEL}
-    tools: [read, bash, grep, find, ls, write, edit]
-    sampling: coding
-    readonly: false
+- Tmux-first launcher: `pancode` starts a session, `pancode up` reattaches,
+  `pancode down` stops, and `pancode version` prints the installed version.
+- Shared runtime boundary: `src/engine/` is the only place that imports the
+  vendored Pi SDK packages.
+- Dispatch hardening: recursion depth guard, provider backoff and resilience,
+  hard worker timeouts, long-prompt temp files, NDJSON progress parsing,
+  staggered parallel launches, worktree isolation, and stale artifact cleanup.
+- 9 composable domains: safety, session, agents, prompts, dispatch,
+  observability, scheduling, intelligence, and ui.
+- 6 CLI runtime adapters plus native Pi: Claude Code, Codex, Gemini, OpenCode,
+  Cline, and Copilot CLI.
+- Model presets in `~/.pancode/presets.yaml`.
+- Agent specs in `~/.pancode/agents.yaml`.
+- User settings in `~/.pancode/settings.json`.
 
-  claude-reviewer:
-    runtime: cli:claude-code
-    description: "Claude Code for deep code review"
-    runtime_args: ["--allowedTools", "Read,Grep,Glob"]
-    readonly: true
+## Documentation
 
-  codex-fixer:
-    runtime: cli:codex
-    description: "Codex for quick targeted edits"
-    runtime_args: ["--full-auto"]
-    readonly: false
+- [Getting Started](./docs/getting-started.md)
+- [Architecture](./docs/architecture.md)
+- [Configuration](./docs/configuration.md)
+- [Domains](./docs/domains.md)
+- [Dispatch](./docs/dispatch.md)
+- [Development](./docs/development.md)
 
-  opencode-scout:
-    runtime: cli:opencode
-    description: "opencode explore agent for codebase research"
-    readonly: true
-```
-
-### Runtime discovery at boot
-
-```
-/runtimes
-
-  NATIVE
-  pi                Available   built-in
-
-  CLI
-  cli:claude-code   Available   claude
-  cli:codex         Available   codex
-  cli:gemini        Available   gemini
-  cli:opencode      Available   opencode
-  cli:cline         Available   cline
-  cli:copilot-cli   Available   copilot
-```
-
-### Dispatch
-
-```
-> Review the dispatch admission logic for edge cases
-
-dispatch_agent(agent: "claude-reviewer", task: "Review admission.ts for edge cases")
-  runtime: cli:claude-code
-  tools: Read, Grep, Glob (readonly)
-  scope: read (cannot exceed orchestrator)
-
-Result: 3 findings, 0 critical, 47s, 12,400 tokens
-```
-
-## Key Features
-
-- **Universal Agent Dispatch.** 6 CLI runtime adapters plus native Pi agents. Dispatch to Claude Code, Codex, Gemini CLI, OpenCode, Cline, or Copilot CLI as subprocess workers.
-- **Runtime Abstraction.** `AgentRuntime` interface with `buildSpawnConfig` and `parseResult`. Auto-discovery scans PATH at boot and registers available runtimes.
-- **Formal Safety Model.** 4 scope levels (`read < suggest < write < admin`), 9 action classes, 3 autonomy modes. Workers cannot exceed the orchestrator's scope. Enforced before dispatch and inside the worker process.
-- **9 Composable Domains.** Topological loading, independent persistence, safe event bus. Each domain owns its commands and state.
-- **Provider Agnostic.** 16+ LLM providers. Local-first with LM Studio, Ollama, llama.cpp, vLLM, SGLang. Cloud APIs (Anthropic, OpenAI, Google, Mistral) supported in the same session.
-- **Chain and Batch Dispatch.** Sequential pipelines with `$INPUT`/`$ORIGINAL` token substitution. Parallel batch execution with configurable concurrency.
-- **Live Dispatch Board.** Worker cards with runtime badges, token tracking, duration, and error details. Updated in real time via event bus.
-- **37 Slash Commands** across 7 categories (session, dispatch, agents, observe, schedule, display, utility).
-- **Cost Tracking.** Per-run, per-agent, per-model token and cost breakdown. Budget ceiling with admission gating.
-- **5 Orchestrator Modes.** Capture (blue), plan (purple), build (green), ask (orange), review (red). Mode gating controls which tools and dispatches are allowed.
-- **PanPrompt Engine.** Fragment-based prompt compilation with model tiering (frontier/mid/small). 36 fragments across orchestrator, worker, and scout roles. Token-budget-aware selection.
-- **Boot Presets.** Named model configurations (local, openai, hybrid) in `~/.pancode/presets.yaml`. Switch at boot with `--preset` or at runtime with `/preset`. All model IDs live in `.env`, never in source code.
-
-## Supported Runtimes
-
-| Runtime | Tier | Binary | Output Parsing | Status |
-|---------|------|--------|----------------|--------|
-| Pi (native) | Native | built-in | NDJSON streaming | Shipped |
-| Claude Code | CLI | `claude` | JSON structured | Shipped |
-| Codex CLI | CLI | `codex` | JSON | Shipped |
-| Gemini CLI | CLI | `gemini` | Text | Shipped |
-| OpenCode | CLI | `opencode` | NDJSON (gold-tier) | Shipped |
-| Cline CLI 2.0 | CLI | `cline` | Text/JSON | Shipped |
-| Copilot CLI | CLI | `copilot` | Text | Shipped |
-
-Adapter quality tiers: Gold (full NDJSON/JSON parsing with token/cost tracking), Silver (basic JSON), Bronze (text-only). OpenCode is the gold standard reference adapter.
-
-## Architecture
-
-### Domain Stack
-
-```
-Level 0: core/
-  Config loading, SafeEventBus, domain loader, termination coordinator,
-  config validator, atomic config writer, package root discovery
-
-Level 2: safety (independent)
-  Formal scope model (4 levels, 9 action classes, 3 autonomy modes)
-  Action classifier, scope enforcement, YAML rules engine, loop detector
-
-Level 2: session (independent)
-  Context registry (file-backed cross-agent state)
-  Shared board (in-memory IPC with namespaced keys)
-  Three-tier memory (temporal, persistent, shared)
-
-Level 3: agents (depends on nothing)
-  Agent spec registry, YAML agent loading with env var expansion
-  Runtime field support for CLI agent dispatch
-
-Level 3: prompts (depends on nothing)
-  PanPrompt fragment library, tiered compilation (frontier/mid/small)
-  36 fragments: orchestrator identity (Panos), modes, dispatch, safety, tools, output
-  Worker and scout prompt compilation with dynamic variable expansion
-
-Level 4: dispatch (depends on safety, agents, prompts)
-  Worker subprocess spawning, NDJSON event stream parsing
-  Declarative routing rules, batch tracking, chain dispatch
-  Dispatch admission gating, run ledger persistence
-
-Level 5: observability (depends on dispatch)
-  Structured audit trail, 8-probe health diagnostics
-  Per-run metrics (token counts, durations, exit codes)
-
-Level 5: scheduling (depends on dispatch, agents)
-  Token-native budget accounting, cost estimation
-  Cluster node awareness, provider resilience tracking
-
-Level 6: intelligence (disabled, experimental)
-  Intent detection, dispatch plan generation, adaptive learning
-
-Level 6: ui (depends on all above)
-  Dispatch board, worker cards, PanCode themes
-  Shell overrides, categorized help, mode cycling
-```
-
-### Dependency Graph
-
-```
-            +------------------------------------+
-            |           core/ (Level 0)          |
-            |  config, event-bus, domain-loader  |
-            |  termination, init, package-root   |
-            +------------------+-----------------+
-                               |
-                 +-------------+-------------+
-                 v             v             v
-           +----------+  +----------+  +-----+----+  +----------+
-           |  safety  |  | session  |  |  agents  |  | prompts  |
-           | Level 2  |  | Level 2  |  | Level 3  |  | Level 3  |
-           +-----+----+  +----+-----+  +-----+----+  +-----+----+
-                 |             |              |              |
-                 +------+------+---------+----+------+-------+
-                        v                v
-                 +--------------------------+
-                 |       dispatch (L4)      |
-                 | uses: safety, agents,    |
-                 |       prompts            |
-                 +-------------+------------+
-                        +------+-------+
-                        v              v
-                 +-------------+  +--------------+
-                 |observability|  |  scheduling  |
-                 |   Level 5   |  |   Level 5    |
-                 +------+------+  +------+-------+
-                        |                |
-                        +--------+-------+
-                                 v
-                 +------------------------------+
-                 |  intelligence (L6, disabled) |
-                 |  ui (L6, reads all above)    |
-                 +------------------------------+
-```
-
-### Engine Boundary
-
-`src/engine/` is the sole import surface for the underlying Pi coding agent
-SDK. No file outside `src/engine/` imports from `@pancode/pi-coding-agent`,
-`@pancode/pi-ai`, `@pancode/pi-tui`, or `@pancode/pi-agent-core`. A build-time
-check (`npm run check-boundaries`) enforces this. An SDK version upgrade changes
-only `src/engine/` files. The runtime abstraction layer lives in
-`src/engine/runtimes/`, where each CLI adapter implements the `AgentRuntime`
-interface to translate PanCode dispatch into subprocess invocations.
-
-### Worker Isolation
-
-`src/worker/` is physically separated from `src/domains/`. Workers are Node.js
-subprocesses spawned via `child_process.spawn`. Each worker receives its task,
-agent spec, model configuration, and safety constraints via environment variables
-and CLI arguments. Communication is one-directional: workers emit events on
-stdout, the orchestrator parses them into structured `RuntimeResult` objects.
-For CLI runtimes, the adapter builds the spawn config and the dispatcher handles
-process lifecycle.
-
-## Getting Started
+## Quick Start
 
 ### Prerequisites
 
-- Node.js >= 20
-- npm (workspaces for vendored SDK packages)
-- At least one of: a local inference engine (LM Studio, Ollama, llama.cpp) or a cloud API key (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`)
-- Optional: any combination of `claude`, `codex`, `gemini`, `opencode`, `cline`, `copilot` on your PATH for CLI agent dispatch
+- Node.js 20 or newer
+- npm
+- `tmux`
+- At least one provider:
+  - Local: LM Studio, Ollama, or llama.cpp
+  - Cloud: a supported API key
 
-### Installation
-
-```bash
-git clone https://github.com/akougkas/pancode.git
-cd pancode
-npm install
-npm run build
-```
-
-### Configuration
-
-On first boot, PanCode creates `~/.pancode/` with:
-- `agents.yaml` containing two native agents (dev, reviewer) and commented CLI agent examples
-- `presets.yaml` with named model configurations seeded from your `.env`
-- `model-cache.yaml` with discovered model profiles (refreshed in background)
-
-Configure models in the project `.env` file:
+### Install
 
 ```bash
-# Orchestrator model (provider-id/model-id from engine discovery)
-PANCODE_MODEL=lmstudio/qwen3.5-35b-a3b
-
-# Worker model for dispatched tasks
-PANCODE_WORKER_MODEL=lmstudio/qwen3.5-35b-a3b
-
-# Scout model for shadow_explore reconnaissance
-PANCODE_SCOUT_MODEL=ollama/qwen3:2b
+npm install -g pancode
 ```
 
-Edit `~/.pancode/presets.yaml` to define named configurations for different providers. Switch at boot with `--preset local` or at runtime with `/preset openai`.
-
-### First Boot
+For local development, use a workspace link instead:
 
 ```bash
-# Start interactive TUI
-npm start
-
-# Or run from built output
-node dist/loader.js
-
-# Start in a tmux session (detachable)
-npm run up
-
-# Boot with a specific preset
-npm start -- --preset local
-
-# Fast paths (no SDK loaded)
-npm start -- --help
-npm start -- --version
+npm link
 ```
 
-PanCode probes `localhost:1234` (LM Studio), `localhost:11434` (Ollama), and
-`localhost:8080` (llama.cpp) for running engines, registers discovered models
-with capability profiles, and boots the TUI. If no engines or API keys are
-found, PanCode starts in degraded mode with guidance.
+### Launch
 
-### First Dispatch
-
-Inside the TUI, the orchestrator LLM dispatches workers via tool calls:
-
-```
-> Review the routing module for security issues
-
-The orchestrator uses dispatch_agent:
-  agent: reviewer
-  task: "Review routing.ts for security issues"
-  mode: read-only, scope: read
+```bash
+pancode
+pancode --preset local
 ```
 
-## Commands
+`pancode` always starts inside tmux. Use `pancode up` to reattach to an
+existing session and `pancode down` to stop it cleanly.
 
-37 commands across 7 categories:
+### Core Commands
 
-| Category | Commands |
-|----------|----------|
-| **SESSION** | `/new`, `/compact`, `/fork`, `/tree`, `/session`, `/resume`, `/checkpoint`, `/context`, `/reset` |
-| **DISPATCH** | `/runs`, `/batches`, `/stoprun`, `/cost`, `/dispatch-insights` |
-| **AGENTS** | `/agents`, `/runtimes`, `/skills` |
-| **OBSERVE** | `/audit`, `/doctor`, `/metrics` |
-| **SCHEDULE** | `/budget`, `/cluster` |
-| **DISPLAY** | `/dashboard`, `/status`, `/models`, `/settings`, `/theme`, `/mode`, `/reasoning`, `/help`, `/exit` |
-| **UTILITY** | `/export`, `/copy`, `/login`, `/logout`, `/reload`, `/hotkeys` |
+| Command | Purpose |
+|---------|---------|
+| `pancode` | Start a new tmux session |
+| `pancode up` | Reattach to the most recent session or a named session |
+| `pancode down` | Stop the current session, a named session, or `--all` |
+| `pancode sessions` | List running sessions |
+| `pancode login` | Show the in-shell login instructions |
+| `pancode version` | Print the installed version |
+| `pancode --help` | Show the full CLI help |
+| `pancode --version` | Print the version without starting the shell |
 
-CLI subcommands: `pancode`, `pancode up`, `pancode down`, `pancode login`, `pancode --help`, `pancode --version`.
+## Supported Runtimes
 
-## Configuration Reference
+| Runtime | Tier | Binary | Output Parsing |
+|---------|------|--------|----------------|
+| Pi (native) | Native | built-in | NDJSON streaming + result file |
+| Claude Code | CLI | `claude` | JSON structured output |
+| Codex CLI | CLI | `codex` | JSON lines |
+| Gemini CLI | CLI | `gemini` | JSON output |
+| OpenCode | CLI | `opencode` | NDJSON |
+| Cline CLI | CLI | `cline` | NDJSON |
+| Copilot CLI | CLI | `copilot` | Text |
 
-### agents.yaml
+## Configuration
+
+PanCode reads configuration from `.env`, environment variables, and user files
+under `~/.pancode/`. The full reference lives in
+[docs/configuration.md](./docs/configuration.md).
+
+### Common Environment Variables
+
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `PANCODE_MODEL` | Orchestrator model | Sample `.env` value |
+| `PANCODE_WORKER_MODEL` | Default dispatched worker model | Sample `.env` value |
+| `PANCODE_SCOUT_MODEL` | Shadow scout model | Sample `.env` value |
+| `PANCODE_LOCAL_MACHINES` | Extra local discovery targets | Unset |
+| `PANCODE_DEFAULT_AGENT` | Default dispatch agent | `dev` |
+| `PANCODE_WORKER_TIMEOUT_MS` | Hard worker timeout in milliseconds | `300000` |
+| `PANCODE_DISPATCH_MAX_DEPTH` | Dispatch recursion limit | `2` |
+| `PANCODE_NODE_CONCURRENCY` | Max workers per node | `4` |
+| `PANCODE_SAFETY` | Autonomy mode | `auto-edit` |
+| `PANCODE_BUDGET_CEILING` | Session budget ceiling | `10.0` |
+| `PANCODE_THEME` | UI theme | `pancode-dark` |
+| `PANCODE_REASONING` | Reasoning preference | `medium` |
+| `PANCODE_INTELLIGENCE` | Opt-in intelligence gate | `enabled` |
+
+### Advanced Plumbing
+
+The internal runtime surface also includes `PANCODE_HOME`,
+`PANCODE_PACKAGE_ROOT`, `PANCODE_PROJECT`, `PANCODE_PROFILE`,
+`PANCODE_PROVIDER`, `PANCODE_PRESET`, `PANCODE_RUNTIME_ROOT`,
+`PANCODE_INSIDE_TMUX`, `PANCODE_PARENT_PID`, `PANCODE_AGENT_NAME`,
+`PANCODE_BOARD_FILE`, `PANCODE_CONTEXT_FILE`, `PI_CODING_AGENT_DIR`, and
+`PI_SKIP_VERSION_CHECK`. See the configuration guide for where each one is
+read and written.
+
+## agents.yaml
+
+`~/.pancode/agents.yaml` defines dispatchable agents.
+
+### Fields
+
+| Field | Meaning |
+|-------|---------|
+| `name` | Agent key in the registry |
+| `description` | Human-readable summary |
+| `tools` | Tool allowlist, stored as a comma-separated string after normalization |
+| `system_prompt` | Custom system prompt for the agent |
+| `model` | Explicit model override |
+| `sampling` | Sampling profile or overrides |
+| `readonly` | Whether the agent may mutate files |
+| `runtime` | Runtime ID, default `pi` |
+| `runtime_args` | Extra CLI arguments, default `[]` |
+
+### Default Agents
+
+The template seeds two native agents:
+
+- `dev` - mutable general-purpose worker
+- `reviewer` - readonly review worker
+
+The file also includes commented examples for CLI runtimes:
+
+- `cli:claude-code`
+- `cli:codex`
+- `cli:gemini`
+- `cli:opencode`
+- `cli:cline`
+- `cli:copilot-cli`
+
+### Minimal Example
 
 ```yaml
 agents:
-  # Native agent (uses Pi SDK subprocess)
   dev:
     description: "General-purpose coding agent"
     model: ${PANCODE_WORKER_MODEL}
     tools: [read, bash, grep, find, ls, write, edit]
     sampling: coding
     readonly: false
-    system_prompt: "You are a skilled software developer."
 
-  # CLI agent (uses installed binary)
-  claude-reviewer:
-    runtime: cli:claude-code
-    description: "Claude Code for deep code review"
-    runtime_args: ["--allowedTools", "Read,Grep,Glob"]
+  reviewer:
+    description: "Readonly review agent"
+    model: ${PANCODE_WORKER_MODEL}
+    tools: [read, bash, grep, find, ls]
     readonly: true
-    system_prompt: "Review the code for bugs and security issues."
-
-  # Supported runtime values:
-  #   cli:claude-code, cli:codex, cli:gemini,
-  #   cli:opencode, cli:cline, cli:copilot-cli
-```
-
-### Environment Variables
-
-| Variable | Purpose | Example |
-|----------|---------|---------|
-| `PANCODE_MODEL` | Orchestrator model override | `ollama/qwen3:8b` |
-| `PANCODE_WORKER_MODEL` | Default model for dispatched workers | `lmstudio/gpt-oss-20b` |
-| `PANCODE_SCOUT_MODEL` | Model for scout agents | `ollama/granite-4-h-micro` |
-| `PANCODE_SAFETY` | Safety level | `suggest`, `auto-edit`, `full-auto` |
-| `PANCODE_THEME` | UI theme | `pancode-dark`, `pancode-light` |
-| `PANCODE_REASONING` | Enable model reasoning | `on`, `off` |
-| `PANCODE_INTELLIGENCE` | Enable intelligence subsystem | `enabled` |
-| `PANCODE_LOCAL_MACHINES` | Additional engine discovery targets | `gpu1=10.0.0.5,gpu2=10.0.0.6` |
-| `PANCODE_BUDGET_CEILING` | Session budget cap (dollars) | `10.0` |
-| `PANCODE_NODE_CONCURRENCY` | Max concurrent workers per node | `4` |
-
-### Safety Rules
-
-Project-level rules in `.pancode/safety-rules.yaml`:
-
-```yaml
-rules:
-  - type: path
-    pattern: "packages/**"
-    action: block
-    reason: "Vendored SDK is read-only"
-
-  - type: command
-    pattern: "rm -rf /"
-    action: block
-
-  - type: path
-    pattern: "*.env"
-    action: block
-    agents: ["*"]
 ```
 
 ## Local AI Setup
@@ -370,187 +184,63 @@ rules:
 ### LM Studio
 
 ```bash
-# Start LM Studio on default port 1234
-# Load a model (e.g., Qwen 3.5 35B)
-# PanCode auto-discovers at localhost:1234
-
 export PANCODE_WORKER_MODEL=lmstudio/qwen3.5-35b-a3b
-npm start
+pancode
 ```
 
 ### Ollama
 
 ```bash
-# Start Ollama (default port 11434)
 ollama serve
 ollama pull qwen3:8b
 
 export PANCODE_WORKER_MODEL=ollama/qwen3:8b
-npm start
+pancode
 ```
 
 ### llama.cpp
 
 ```bash
-# Start llama-server on default port 8080
 llama-server -m model.gguf --port 8080
 
 export PANCODE_WORKER_MODEL=llamacpp/model
-npm start
+pancode
 ```
 
-### Auto-Discovery
+## Dispatch
 
-PanCode probes three default endpoints at boot:
+Inside the shell, PanCode interprets a task, compiles the orchestrator prompt,
+and dispatches a worker when the current mode allows it.
 
-| Engine | SDK | Default Port |
-|--------|-----|-------------|
-| LM Studio | `@lmstudio/sdk` | 1234 |
-| Ollama | `ollama` (npm) | 11434 |
-| llama.cpp | HTTP API | 8080 |
+Example:
 
-For additional machines, set `PANCODE_LOCAL_MACHINES`:
+```text
+You: Review the dispatch admission logic for edge cases.
 
-```bash
-export PANCODE_LOCAL_MACHINES="gpu1=192.168.1.10,gpu2=192.168.1.11"
+PanCode: Dispatching to reviewer worker...
+         worker completed with 3 findings
+         open /audit for the full run history
 ```
 
-Cloud API providers (Anthropic, OpenAI, Google, Mistral, any OpenAI-compatible endpoint) work alongside local engines in the same session.
+Mode gating controls whether dispatch is allowed:
 
-## Development
-
-### Build Commands
-
-```bash
-npm install              # Install dependencies (workspaces)
-npm run typecheck        # TypeScript strict check (tsc --noEmit)
-npm run check-boundaries # Engine + worker isolation enforcement
-npm run build            # Compile to dist/ via tsup
-npm run lint             # Biome lint
-npm run dev              # Run from source with tsx
-```
-
-### Project Structure
-
-```
-src/
-  loader.ts                           Bin entry: env vars, fast paths, entry routing
-  entry/orchestrator.ts               Interactive TUI: domain composition, boot sequence
-
-  engine/                             Sole Pi SDK import boundary
-    types.ts                          Re-exported SDK types
-    session.ts                        createAgentSession wrapper
-    tools.ts                          registerTool, tool result types
-    extensions.ts                     ExtensionFactory, ExtensionContext, hooks
-    resources.ts                      ResourceLoader, SessionManager, SettingsManager
-    tui.ts                            Pi TUI components (Box, Text, Container)
-    shell.ts                          Shell utilities
-    shell-overrides.ts                PanCode command overrides for native commands
-    runtimes/                         Runtime abstraction layer
-      types.ts                        AgentRuntime interface, SpawnConfig, RuntimeResult
-      registry.ts                     RuntimeRegistry singleton
-      cli-base.ts                     CliRuntime abstract base class, PATH scanner
-      pi-runtime.ts                   Native Pi runtime adapter
-      discovery.ts                    Boot-time auto-discovery
-      adapters/                       CLI runtime adapters
-        claude-code.ts                Claude Code (JSON structured output)
-        codex.ts                      Codex CLI (JSON output)
-        gemini.ts                     Gemini CLI (text parsing)
-        opencode.ts                   OpenCode (NDJSON gold-tier)
-        cline.ts                      Cline CLI 2.0 (act/plan modes)
-        copilot-cli.ts                Copilot CLI (timeout handling)
-
-  core/                               Host infrastructure
-    config.ts                         Config loading, profile resolution
-    config-validator.ts               TypeBox schema validation
-    config-writer.ts                  Atomic writes (temp + fsync + rename)
-    domain-loader.ts                  Topological sort and domain loading
-    event-bus.ts                      SafeEventBus (error-isolating emitter)
-    termination.ts                    Multi-phase shutdown coordinator
-
-  domains/
-    safety/          (9 files)        Scope, classifier, enforcement, rules, loop
-    session/         (6 files)        Context registry, shared board, memory
-    agents/          (5 files)        Spec registry, teams, YAML loading, skills
-    prompts/         (7 files)        PanPrompt fragments, tiered compiler, worker prompts
-    dispatch/       (12 files)        Spawn, routing, admission, rules, state, batch
-    providers/      (11 files)        LM Studio, Ollama, llama.cpp, cloud, matching
-    observability/   (5 files)        Metrics, health, audit trail
-    scheduling/      (5 files)        Budget, cluster, resilience
-    intelligence/    (7 files)        Intent, solver, learner (experimental)
-    ui/              (9 files)        Board, widgets, themes, branding, renderers
-
-  worker/                             Physically isolated from domains/
-    entry.ts                          Worker subprocess bootstrap
-    provider-bridge.ts                Worker model connection
-    safety-ext.ts                     Worker-side scope enforcement
-
-  cli/                                Thin launcher
-    index.ts                          Subcommand router
-    up.ts, down.ts                    tmux session lifecycle
-    login.ts                          Provider authentication
-    version.ts                        Version display
-```
-
-145 TypeScript source files. Strict mode. ~16,700 LOC.
-
-### Adding a New Runtime Adapter
-
-1. Create `src/engine/runtimes/adapters/your-agent.ts`
-2. Implement the `AgentRuntime` interface: `id`, `displayName`, `tier`, `isAvailable()`, `buildSpawnConfig()`, `parseResult()`
-3. Extend `CliRuntime` base class for common PATH scanning and process lifecycle
-4. Register in `src/engine/runtimes/discovery.ts`
-5. Export from `src/engine/runtimes/index.ts`
-
-### Adding a New Domain
-
-1. Create `src/domains/your-domain/manifest.ts` declaring name and dependencies
-2. Create `src/domains/your-domain/extension.ts` implementing the Pi SDK `ExtensionFactory` interface
-3. Register commands, tools, and event listeners in the extension factory
-4. Add to `src/domains/index.ts`
-5. The domain loader handles initialization order via topological sort
+- `capture` - record tasks only
+- `plan` - analyze and plan, no dispatch
+- `build` - full dispatch and edits
+- `ask` - readonly research
+- `review` - readonly review workers
 
 ## Changelog
 
-### v0.2.0 (2026-03-19)
+### v0.2.4
 
-Universal agent control plane release. Runtime abstraction layer with 6 CLI
-adapters. Any coding agent installed on the machine becomes a dispatchable worker.
+- Dispatch hardening: recursion guard, provider backoff and resilience,
+  hard worker timeouts, long-prompt temp files, NDJSON progress tracking,
+  staggered batch starts, worktree isolation, and stale artifact cleanup.
+- CLI simplification: tmux-first launcher, smaller command surface, clean
+  reattach path through `pancode up`.
+- Singleton cleanup: shared bus and shared types consolidated, dead code
+  removed from the docs-facing surface.
+- Cluster isolation: `/cluster` stays hidden while the SSH redesign is still
+  pending.
 
-Highlights:
-- `AgentRuntime` interface with `buildSpawnConfig`/`parseResult` contract
-- Auto-discovery scans PATH at boot for known agent binaries
-- 6 CLI adapters: Claude Code, Codex, Gemini CLI, OpenCode, Cline, Copilot CLI
-- OpenCode gold-tier adapter with NDJSON token/cost tracking
-- Architectural review: 89-file boundary compliance fix
-- 13/13 e2e smoke tests, 6/6 integration test scenarios
-- `runtime` and `runtime_args` fields in agent YAML specs
-- `/runtimes` command with availability status display
-- Runtime badges on dispatch board worker cards
-
-### v0.1.0 (2026-03-19)
-
-Foundation release. 8 composable domains, subprocess dispatch, formal safety
-model, provider-agnostic local engines.
-
-Highlights:
-- 8 domains: safety, agents, dispatch, session, observability, scheduling, intelligence, ui
-- Engine boundary at `src/engine/` with build-time enforcement
-- Worker isolation (`src/worker/` separate from `src/domains/`)
-- Two-layer safety (formal scope model + YAML rules)
-- Local inference: LM Studio, Ollama, llama.cpp via native SDKs
-- Live dispatch board with worker cards and telemetry
-- 5 orchestrator modes, 4 task tools, chain dispatch
-- 37 slash commands across 7 categories
-- Multi-phase shutdown coordinator
-- CI + release GitHub workflows
-
-Full build log: `.claude/prompts/PROGRESS.md`
-
-## License
-
-Apache 2.0
-
-## Author
-
-[Anthony Kougkas](https://github.com/akougkas)
