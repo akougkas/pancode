@@ -25,11 +25,30 @@ Read this before editing code:
 
 - `src/engine/` is the only place that imports `@pancode/pi-*`
 - `src/worker/` never imports from `src/domains/`
-- Each domain owns its own commands via `pi.registerCommand()`
+- Most PanCode-specific slash commands are registered by domains via `pi.registerCommand()`
+- Pi builtin slash commands are hidden, passed through, or rerouted in `src/engine/shell-overrides.ts`
 - No domain mutates another domain's state directly
 - Shared cross-domain events go through `src/core/bus-events.ts` and `src/core/shared-bus.ts`
 - Tool names live in `src/core/tool-names.ts`
 - Bus channel names live in `src/core/bus-events.ts`
+
+## Source Of Truth
+
+When documentation, `/help`, and runtime behavior disagree, trust the code in
+this order:
+
+1. Command handlers in domain extension files
+   For example: `src/domains/session/extension.ts` or `src/domains/ui/extension.ts`
+2. Pi builtin patches in `src/engine/shell-overrides.ts`
+3. Runtime and worker entry points in `src/engine/runtimes/` and `src/worker/`
+4. Display metadata in `src/core/shell-metadata.ts`
+
+Important distinction:
+
+- `src/core/shell-metadata.ts` is the categorized help registry
+- It is not the execution source of truth
+- Some command names there are wrappers over Pi builtins or prototype patches
+- Document behavior from handlers and patches, not from labels
 
 ## Adding A New Domain
 

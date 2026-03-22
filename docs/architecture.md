@@ -364,6 +364,30 @@ Responsibilities:
 - The CLI is tmux-first, so `pancode` starts a tmux session and `pancode up`
   reattaches later
 
+## Command Ownership
+
+The shell command surface has three different truth layers:
+
+1. Domain extension files such as `src/domains/session/extension.ts`
+   and `src/domains/ui/extension.ts`
+   Most PanCode-specific slash commands are implemented there.
+2. `src/engine/shell-overrides.ts`
+   Pi builtins are hidden, passed through, or rerouted here by patching
+   `InteractiveMode.prototype`.
+3. `src/core/shell-metadata.ts`
+   This powers categorized `/help`, but it is not authoritative about runtime
+   behavior.
+
+Examples:
+
+- `/session` is implemented by the session domain, but the visible command name
+  also shadows a Pi builtin and is routed through `shell-overrides.ts`
+- `/settings` and `/models` are implemented by the ui domain and also shadow
+  Pi builtins
+- `/new`, `/compact`, `/fork`, `/tree`, `/resume`, `/copy`, `/export`,
+  `/login`, `/logout`, `/reload`, and `/hotkeys` remain Pi builtin execution
+  paths
+
 ## Dispatch Hardening Notes
 
 The current dispatch stack includes several protections that should be kept in

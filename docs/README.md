@@ -16,3 +16,7 @@ PanCode orchestrates coding agents the way Kubernetes orchestrates containers.
 If you are an AI coding agent working on this codebase, start with
 [Development](./development.md) for build commands and architectural
 constraints, then [Architecture](./architecture.md) for the layer model.
+
+If behavior and help text disagree, trust domain extension files such as
+`src/domains/session/extension.ts` and `src/domains/ui/extension.ts`, plus
+`src/engine/shell-overrides.ts`, over `src/core/shell-metadata.ts`.

@@ -1,6 +1,11 @@
 # Domains
 
-PanCode has 9 composable domains. Each domain owns its own commands and state.
+PanCode has 9 composable domains. Each domain owns its own state. Most
+PanCode-specific slash commands are registered in domain extension files such
+as `src/domains/session/extension.ts` and `src/domains/ui/extension.ts`,
+but some visible slash names are Pi builtins that are hidden or rerouted in
+`src/engine/shell-overrides.ts`.
+
 Cross-domain coordination happens through `src/core/shared-bus.ts`.
 
 ## safety
@@ -53,9 +58,11 @@ Commands registered:
 - `/session` - Show session info with PanCode state summary
 - `/checkpoint [label]` - Mark a session checkpoint
 - `/checkpoint list` - List checkpoints
-- `/checkpoint restore <id>` - Display checkpoint data
+- `/checkpoint restore <id>` - Warn that full restore is not implemented yet
 - `/context [key|source]` - Show the context registry
-- `/reset [context|all]` - Reset board, registry, and memory state
+- `/reset` - Clear board and temporal memory, preserve the context registry
+- `/reset context` - Clear only the context registry after confirmation
+- `/reset all` - Clear board, registry, and temporal memory after confirmation
 
 Pi hooks:
 
@@ -344,3 +351,27 @@ Dependencies:
 - `session`
 - `scheduling`
 - `observability`
+
+## Builtin Command Boundary
+
+These visible slash names are not registered by the domain extensions in this
+file. They come from Pi and are hidden, passed through, or rerouted in
+`src/engine/shell-overrides.ts`:
+
+- `/new`
+- `/compact`
+- `/fork`
+- `/tree`
+- `/resume`
+- `/export`
+- `/copy`
+- `/login`
+- `/logout`
+- `/reload`
+- `/hotkeys`
+
+These names shadow Pi builtins but eventually land in PanCode domain handlers:
+
+- `/session`
+- `/settings`
+- `/models`
