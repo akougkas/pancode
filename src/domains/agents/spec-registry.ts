@@ -13,6 +13,15 @@ export interface AgentSpec {
   // Runtime selection
   runtime: string; // "pi" (default) | "cli:claude-code" | "cli:codex" | etc.
   runtimeArgs: string[]; // Extra args passed to the runtime CLI
+  // Operational fields
+  prompt: string; // "default" uses PanPrompt engine, or custom text
+  speed: "fast" | "balanced" | "thorough";
+  tokenBudget: number; // Max output tokens for this agent
+  autonomy: "autonomous" | "supervised" | "confirmatory";
+  isolation: "none" | "worktree" | "container";
+  maxTurns: number; // Max conversation turns before timeout
+  retryOnFailure: boolean; // Auto-retry on non-zero exit
+  tags: string[]; // For routing and filtering
 }
 
 export class AgentSpecRegistry {
@@ -54,6 +63,15 @@ interface YamlAgentEntry {
   system_prompt?: string;
   runtime?: string;
   runtime_args?: string[];
+  // Operational fields (all optional, YAML uses snake_case)
+  prompt?: string;
+  speed?: "fast" | "balanced" | "thorough";
+  token_budget?: number;
+  autonomy?: "autonomous" | "supervised" | "confirmatory";
+  isolation?: "none" | "worktree" | "container";
+  max_turns?: number;
+  retry_on_failure?: boolean;
+  tags?: string[];
 }
 
 interface YamlAgentsFile {
@@ -71,6 +89,14 @@ agents:
     tools: [read, bash, grep, find, ls, write, edit]
     sampling: coding
     readonly: false
+    prompt: default
+    speed: balanced
+    token_budget: 8000
+    autonomy: supervised
+    isolation: none
+    max_turns: 20
+    retry_on_failure: true
+    tags: [coding, mutable]
     system_prompt: "You are a skilled software developer. Complete the task efficiently. Use tools to read, understand, and modify code. Be concise in responses."
   reviewer:
     description: "Code review with read-only tools"
@@ -78,6 +104,14 @@ agents:
     tools: [read, grep, find, ls]
     sampling: general
     readonly: true
+    prompt: default
+    speed: thorough
+    token_budget: 4000
+    autonomy: autonomous
+    isolation: none
+    max_turns: 10
+    retry_on_failure: false
+    tags: [review, readonly]
     system_prompt: "You are a code reviewer. Analyze the code for bugs, security issues, and improvements. Do not modify any files. Report findings clearly."
   # Scout is NOT a dispatchable agent. It runs as a shadow tool (shadow_explore)
   # inside the orchestrator process using PANCODE_SCOUT_MODEL. Users cannot
@@ -189,6 +223,14 @@ export function loadAgentsFromYaml(pancodeHome: string): AgentSpec[] {
       readonly: entry.readonly ?? false,
       runtime: entry.runtime ?? "pi",
       runtimeArgs: Array.isArray(entry.runtime_args) ? entry.runtime_args : [],
+      prompt: entry.prompt ?? "default",
+      speed: entry.speed ?? "balanced",
+      tokenBudget: entry.token_budget ?? 8000,
+      autonomy: entry.autonomy ?? "supervised",
+      isolation: entry.isolation ?? "none",
+      maxTurns: entry.max_turns ?? 20,
+      retryOnFailure: entry.retry_on_failure ?? true,
+      tags: Array.isArray(entry.tags) ? entry.tags : [],
     });
   }
 
