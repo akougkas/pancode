@@ -51,7 +51,6 @@ export const PANCODE_SHELL_COMMANDS: readonly PanCodeShellCommand[] = [
 
   // SCHEDULE
   { name: "budget", args: "[set <amount>]", description: "Show or set dispatch budget", category: "schedule" },
-  { name: "cluster", description: "Show cluster node status (coming soon)", category: "schedule" },
 
   // DISPLAY
   { name: "dashboard", description: "Open the PanCode dashboard", category: "display" },
@@ -151,9 +150,8 @@ function formatOption(flag: string, description: string): string {
   return `  ${flag.padEnd(24, " ")}${description}`;
 }
 
-export function formatPanCodeCliUsage(target: "orchestrator" | "worker" = "orchestrator"): string {
-  if (target === "worker") {
-    return `Usage:
+export function formatWorkerCliUsage(): string {
+  return `Usage:
   pancode --worker --prompt "list files" --result-file result.json
 
 Options:
@@ -163,22 +161,5 @@ ${formatOption("--provider <name>", "Explicit provider override")}
 ${formatOption("--model <id>", "Explicit model override")}
 ${formatOption("--cwd <path>", "Working directory for the worker")}
 ${formatOption("--tools <csv>", "Tool allowlist passed to the worker")}
-${formatOption("--timeout-ms <ms>", "Kill the worker if it exceeds the timeout")}
-${formatOption("--help", "Show this help")}
-${formatOption("--version", "Show PanCode version")}`;
-  }
-
-  return `Usage:
-  pancode
-  pancode --model provider/model-id
-
-Options:
-${formatOption("--cwd <path>", "Working directory for the session")}
-${formatOption("--provider <name>", "Preferred provider for model resolution")}
-${formatOption("--model <id>", "Model override, usually provider/model-id")}
-${formatOption("--profile <name>", "Config profile name")}
-${formatOption("--safety <level>", "suggest | auto-edit | full-auto")}
-${formatOption("--theme <name>", "PanCode theme name")}
-${formatOption("--help", "Show this help")}
-${formatOption("--version", "Show PanCode version")}`;
+${formatOption("--timeout-ms <ms>", "Kill the worker if it exceeds the timeout")}`;
 }
