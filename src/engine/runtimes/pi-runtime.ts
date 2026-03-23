@@ -127,6 +127,7 @@ export class PiRuntime implements AgentRuntime {
       args,
       env: {
         ...samplingEnv,
+        PANCODE_RUN_ID: runId,
         PANCODE_PARENT_PID: String(process.pid),
         PANCODE_SAFETY: process.env.PANCODE_SAFETY ?? "auto-edit",
         PANCODE_BOARD_FILE: join(runtimeRoot, "board.json"),

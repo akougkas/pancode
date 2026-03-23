@@ -30,6 +30,7 @@ export interface DispatchCardData {
   outputTokens?: number | null;
   turns?: number | null;
   runtime?: string; // Runtime ID for badge display (omit or "pi" for no badge)
+  healthState?: "healthy" | "stale" | "dead" | "recovered" | null; // Heartbeat health classification
 }
 
 export interface AgentStat {
@@ -194,15 +195,33 @@ export function renderDispatchCard(card: DispatchCardData, cardWidth: number, c:
 
   const statusIcon = STATUS_ICONS[card.status] ?? "\u25CB";
   const elapsed = formatDuration(card.elapsedMs);
-  const statusText = card.status;
+  // Append health indicator for non-healthy running workers.
+  const healthSuffix =
+    card.healthState === "stale"
+      ? " [stale]"
+      : card.healthState === "dead"
+        ? " [dead]"
+        : card.healthState === "recovered"
+          ? " [recovered]"
+          : "";
+  const statusText = `${card.status}${healthSuffix}`;
   const plainPrefix = `${statusIcon} ${statusText}`;
   const gap = Math.max(1, inner - plainPrefix.length - elapsed.length);
   // Pad the full plain line to inner width, then rebuild with colors.
   const plainStatusLine = padRight(`${plainPrefix}${" ".repeat(gap)}${elapsed}`, inner);
   // Compute any trailing padding from padRight (if line was shorter than inner).
   const trailingPad = plainStatusLine.length - `${plainPrefix}${" ".repeat(gap)}${elapsed}`.length;
+  // Use warning color for stale/dead health states.
+  const coloredHealthSuffix =
+    card.healthState === "stale"
+      ? c.warning(" [stale]")
+      : card.healthState === "dead"
+        ? c.error(" [dead]")
+        : card.healthState === "recovered"
+          ? c.success(" [recovered]")
+          : "";
   const statusLine =
-    `${colorizeStatusIcon(statusIcon, card.status, c)} ${c.muted(statusText)}` +
+    `${colorizeStatusIcon(statusIcon, card.status, c)} ${c.muted(card.status)}${coloredHealthSuffix}` +
     `${" ".repeat(gap)}${c.dim(elapsed)}${" ".repeat(Math.max(0, trailingPad))}`;
 
   // Pad plain text first, then apply color to the padded result.

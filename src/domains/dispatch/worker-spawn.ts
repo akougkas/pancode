@@ -3,6 +3,7 @@ import { BusChannel, type WorkerProgressEvent } from "../../core/bus-events";
 import { sharedBus } from "../../core/shared-bus";
 import { runtimeRegistry } from "../../engine/runtimes/registry";
 import type { AgentRuntime, RuntimeSamplingConfig, RuntimeTaskConfig, RuntimeUsage } from "../../engine/runtimes/types";
+import { healthMonitor } from "./health";
 
 export interface WorkerResult {
   exitCode: number;
@@ -184,7 +185,6 @@ function spawnWorkerNdjsonPath(
   let toolCount = 0;
 
   // Keep stdout streaming for live updates during execution
-  // biome-ignore lint: Pi SDK JSON events use dynamic shapes across event types
   interface WorkerNdjsonEvent {
     type: string;
     /** Pi CLI emits toolName at the top level for tool_execution_start/end events. */
@@ -239,6 +239,32 @@ function spawnWorkerNdjsonPath(
       return;
     }
 
+    // Heartbeat events from worker entry.ts: feed to health monitor.
+    if (event.type === "heartbeat") {
+      const raw = event as unknown as Record<string, unknown>;
+      const heartbeatRunId = (raw.runId as string | undefined) ?? options.runId ?? "";
+      if (heartbeatRunId) {
+        healthMonitor.recordHeartbeat(heartbeatRunId);
+      }
+      sharedBus.emit(BusChannel.WORKER_HEARTBEAT, {
+        runId: heartbeatRunId,
+        ts: (raw.ts as string) ?? new Date().toISOString(),
+        turns: (raw.turns as number) ?? 0,
+        lastToolCall: (raw.lastToolCall as string | null) ?? null,
+        tokensThisBeat: (raw.tokensThisBeat as { in: number; out: number }) ?? { in: 0, out: 0 },
+      });
+      return;
+    }
+
+    // Lifecycle events from worker entry.ts: informational, logged if verbose.
+    if (event.type === "lifecycle") {
+      if (process.env.PANCODE_VERBOSE) {
+        const raw = event as unknown as Record<string, unknown>;
+        console.error(`[pancode:dispatch] lifecycle: ${raw.event} runId=${raw.runId}`);
+      }
+      return;
+    }
+
     // Tool execution tracking: parse start/end events for live progress display
     if (event.type === "tool_execution_start") {
       const toolName = event.toolName ?? "unknown";
@@ -247,9 +273,8 @@ function spawnWorkerNdjsonPath(
       if (event.args) {
         try {
           const argsStr = JSON.stringify(event.args);
-          currentToolArgs = argsStr.length > MAX_TOOL_ARGS_PREVIEW
-            ? `${argsStr.slice(0, MAX_TOOL_ARGS_PREVIEW)}...`
-            : argsStr;
+          currentToolArgs =
+            argsStr.length > MAX_TOOL_ARGS_PREVIEW ? `${argsStr.slice(0, MAX_TOOL_ARGS_PREVIEW)}...` : argsStr;
         } catch {
           currentToolArgs = null;
         }
@@ -329,6 +354,11 @@ function spawnWorkerNdjsonPath(
     if (buffer.trim()) processLine(buffer);
     result.exitCode = code ?? 0;
 
+    // Record process exit in health monitor so it transitions to "dead".
+    if (options.runId) {
+      healthMonitor.recordProcessExit(options.runId);
+    }
+
     // Write accumulated usage to result before resolving.
     result.usage = {
       inputTokens: accInputTokens,
@@ -358,6 +388,9 @@ function spawnWorkerNdjsonPath(
 
   proc.on("error", (err) => {
     liveWorkerProcesses.delete(proc);
+    if (options.runId) {
+      healthMonitor.recordProcessExit(options.runId);
+    }
     result.exitCode = 1;
     result.error = err.message;
     resolve(result);
