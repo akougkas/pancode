@@ -28,3 +28,5 @@ export type { DashboardColorizer, DashboardState, DashboardConfig } from "./dash
 export { pushLog, logNow, getRecentLogs, resetLogs } from "./dashboard-logs";
 export { getView, setView, toggleView, resetViewRouter } from "./view-router";
 export type { ViewName } from "./view-router";
+export { renderPanel, formatPanelBody, sendPanelSpec, kv, text, blank } from "./panel-renderer";
+export type { PanelSpec, PanelSection, PanelRow, KvRow, TextRow, BlankRow, ColumnAlign } from "./panel-renderer";

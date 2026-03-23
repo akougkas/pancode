@@ -9,6 +9,7 @@ import { defineExtension } from "../../engine/extensions";
 import { discoverAndRegisterRuntimes } from "../../engine/runtimes/discovery";
 import { runtimeRegistry } from "../../engine/runtimes/registry";
 import { PANCODE_HOME, getModelProfileCache } from "../providers";
+import { kv, sendPanelSpec, text } from "../ui/panel-renderer";
 import { registerShadowExplore } from "./shadow-explore";
 import { type SkillDefinition, discoverSkills, validateSkillTools } from "./skills";
 import { agentRegistry, loadAgentsFromYaml } from "./spec-registry";
@@ -64,6 +65,16 @@ function suggestAgentsForUnconfiguredRuntimes(): void {
 }
 
 export const extension = defineExtension((pi) => {
+  /** Local panel emitter for agents domain commands. */
+  function emitPanel(title: string, body: string): void {
+    pi.sendMessage({
+      customType: PanMessageType.PANEL,
+      content: body,
+      display: true,
+      details: { title },
+    });
+  }
+
   // Register shadow_explore as an orchestrator-internal tool.
   // Shadow agents are not visible in /agents and are not part of the dispatch system.
   registerShadowExplore(pi.registerTool.bind(pi));
@@ -181,12 +192,7 @@ export const extension = defineExtension((pi) => {
       // List agents
       const specs = agentRegistry.getAll();
       if (specs.length === 0) {
-        pi.sendMessage({
-          customType: PanMessageType.PANEL,
-          content: "No agents registered.",
-          display: true,
-          details: { title: "PanCode Agents" },
-        });
+        sendPanelSpec(emitPanel, { title: "PanCode Agents", sections: [{ rows: [text("No agents registered.")] }] });
         return;
       }
 
@@ -195,9 +201,13 @@ export const extension = defineExtension((pi) => {
       const autoAbbrev: Record<string, string> = { autonomous: "auto", supervised: "supv", confirmatory: "conf" };
 
       // Table header (fits 80-column terminals)
-      const lines: string[] = [
-        `${"AGENT".padEnd(14)} ${"MODEL".padEnd(22)} ${"SPD".padEnd(8)} ${"AUTO".padEnd(8)} ${"TAGS".padEnd(18)} RO`,
-        `${"-----".padEnd(14)} ${"-----".padEnd(22)} ${"---".padEnd(8)} ${"----".padEnd(8)} ${"----".padEnd(18)} --`,
+      const tableRows = [
+        text(
+          `${"AGENT".padEnd(14)} ${"MODEL".padEnd(22)} ${"SPD".padEnd(8)} ${"AUTO".padEnd(8)} ${"TAGS".padEnd(18)} RO`,
+        ),
+        text(
+          `${"-----".padEnd(14)} ${"-----".padEnd(22)} ${"---".padEnd(8)} ${"----".padEnd(8)} ${"----".padEnd(18)} --`,
+        ),
       ];
 
       for (const spec of specs) {
@@ -209,14 +219,12 @@ export const extension = defineExtension((pi) => {
         const tagsStr = spec.tags.join(",");
         const tags = (tagsStr.length > 18 ? `${tagsStr.slice(0, 15)}...` : tagsStr).padEnd(18);
         const ro = spec.readonly ? "yes" : "no";
-        lines.push(`${agent} ${model} ${spd} ${auto} ${tags} ${ro}`);
+        tableRows.push(text(`${agent} ${model} ${spd} ${auto} ${tags} ${ro}`));
       }
 
-      pi.sendMessage({
-        customType: PanMessageType.PANEL,
-        content: lines.join("\n"),
-        display: true,
-        details: { title: "PanCode Agents" },
+      sendPanelSpec(emitPanel, {
+        title: "PanCode Agents",
+        sections: [{ rows: [kv("Registered:", `${specs.length} agents`)] }, { rows: tableRows }],
       });
     },
   });
@@ -226,18 +234,20 @@ export const extension = defineExtension((pi) => {
     async handler(_args, _ctx) {
       const allRuntimes = runtimeRegistry.all();
       if (allRuntimes.length === 0) {
-        pi.sendMessage({
-          customType: PanMessageType.PANEL,
-          content: "No runtimes registered. Run /agents to trigger discovery.",
-          display: true,
-          details: { title: "PanCode Runtimes" },
+        sendPanelSpec(emitPanel, {
+          title: "PanCode Runtimes",
+          sections: [{ rows: [text("No runtimes registered. Run /agents to trigger discovery.")] }],
         });
         return;
       }
 
-      const lines: string[] = [
-        `${"RUNTIME".padEnd(20)} ${"TYPE".padEnd(9)} ${"TIER".padEnd(11)} ${"VERSION".padEnd(12)} ${"STATUS".padEnd(10)} BINARY`,
-        `${"-------".padEnd(20)} ${"----".padEnd(9)} ${"----".padEnd(11)} ${"-------".padEnd(12)} ${"------".padEnd(10)} ------`,
+      const tableRows = [
+        text(
+          `${"RUNTIME".padEnd(20)} ${"TYPE".padEnd(9)} ${"TIER".padEnd(11)} ${"VERSION".padEnd(12)} ${"STATUS".padEnd(10)} BINARY`,
+        ),
+        text(
+          `${"-------".padEnd(20)} ${"----".padEnd(9)} ${"----".padEnd(11)} ${"-------".padEnd(12)} ${"------".padEnd(10)} ------`,
+        ),
       ];
 
       for (const rt of allRuntimes) {
@@ -248,14 +258,12 @@ export const extension = defineExtension((pi) => {
         const available = rt.isAvailable();
         const status = (available ? "active" : "missing").padEnd(10);
         const binary = rt.tier === "native" ? "(built-in)" : ((rt as { binaryName?: string }).binaryName ?? "unknown");
-        lines.push(`${id} ${tier} ${telemetry} ${version} ${status} ${binary}`);
+        tableRows.push(text(`${id} ${tier} ${telemetry} ${version} ${status} ${binary}`));
       }
 
-      pi.sendMessage({
-        customType: PanMessageType.PANEL,
-        content: lines.join("\n"),
-        display: true,
-        details: { title: "PanCode Runtimes" },
+      sendPanelSpec(emitPanel, {
+        title: "PanCode Runtimes",
+        sections: [{ rows: [kv("Registered:", `${allRuntimes.length} runtimes`)] }, { rows: tableRows }],
       });
     },
   });
@@ -265,18 +273,20 @@ export const extension = defineExtension((pi) => {
     async handler(_args, _ctx) {
       const workers = workerPool.all();
       if (workers.length === 0) {
-        pi.sendMessage({
-          customType: PanMessageType.PANEL,
-          content: "No workers materialized. Run /agents to trigger discovery.",
-          display: true,
-          details: { title: "PanCode Workers" },
+        sendPanelSpec(emitPanel, {
+          title: "PanCode Workers",
+          sections: [{ rows: [text("No workers materialized. Run /agents to trigger discovery.")] }],
         });
         return;
       }
 
-      const lines: string[] = [
-        `${"WORKER".padEnd(30)} ${"TIER".padEnd(10)} ${"AVAIL".padEnd(7)} ${"CAP".padEnd(7)} ${"LOAD".padEnd(7)} ${"SKILL".padEnd(7)} ${"COST".padEnd(7)} SCORE`,
-        `${"------".padEnd(30)} ${"----".padEnd(10)} ${"-----".padEnd(7)} ${"---".padEnd(7)} ${"----".padEnd(7)} ${"-----".padEnd(7)} ${"----".padEnd(7)} -----`,
+      const tableRows = [
+        text(
+          `${"WORKER".padEnd(30)} ${"TIER".padEnd(10)} ${"AVAIL".padEnd(7)} ${"CAP".padEnd(7)} ${"LOAD".padEnd(7)} ${"SKILL".padEnd(7)} ${"COST".padEnd(7)} SCORE`,
+        ),
+        text(
+          `${"------".padEnd(30)} ${"----".padEnd(10)} ${"-----".padEnd(7)} ${"---".padEnd(7)} ${"----".padEnd(7)} ${"-----".padEnd(7)} ${"----".padEnd(7)} -----`,
+        ),
       ];
 
       for (const w of workers) {
@@ -288,14 +298,12 @@ export const extension = defineExtension((pi) => {
         const skill = w.score.capability.toFixed(2).padEnd(7);
         const cost = w.score.cost.toFixed(1).padEnd(7);
         const overall = w.score.overall.toFixed(3);
-        lines.push(`${id} ${tier} ${avail} ${cap} ${load} ${skill} ${cost} ${overall}`);
+        tableRows.push(text(`${id} ${tier} ${avail} ${cap} ${load} ${skill} ${cost} ${overall}`));
       }
 
-      pi.sendMessage({
-        customType: PanMessageType.PANEL,
-        content: lines.join("\n"),
-        display: true,
-        details: { title: "PanCode Worker Pool" },
+      sendPanelSpec(emitPanel, {
+        title: "PanCode Worker Pool",
+        sections: [{ rows: [kv("Materialized:", `${workers.length} workers`)] }, { rows: tableRows }],
       });
     },
   });

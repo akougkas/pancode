@@ -35,6 +35,7 @@ import { renderDashboard } from "./dashboard-layout";
 import { getRecentLogs } from "./dashboard-logs";
 import { buildDashboardConfig, buildDashboardState } from "./dashboard-state";
 import { PLAIN_COLORIZER } from "./dashboard-theme";
+import { type PanelRow, type PanelSection, blank, kv, sendPanelSpec, text } from "./panel-renderer";
 import { getLiveWorkers } from "./worker-widgets";
 
 // ---------------------------------------------------------------------------
@@ -449,34 +450,39 @@ export function createCommandHandlers(state: UiCommandState, cb: UiCommandCallba
     const currentRef = ctx.model ? modelRef(ctx.model) : "unresolved";
 
     if (!request || request === "list") {
-      const lines: string[] = [
-        `Current: ${currentRef}`,
-        "",
-        "Active (loaded on connected engines):",
-        ...formatActiveModelLines(currentRef, profiles),
-        ...formatAvailableSummary(registry.available),
+      const activeLines = formatActiveModelLines(currentRef, profiles);
+      const availableLines = formatAvailableSummary(registry.available).filter((l) => l.length > 0);
+      const sections: PanelSection[] = [
+        { rows: [kv("Current:", currentRef)] },
+        { heading: "Active (loaded on connected engines):", rows: activeLines.map((line) => text(line)) },
       ];
-      sendPanel(cb.emitPanel, `${PANCODE_PRODUCT_NAME} Models`, lines);
+      if (availableLines.length > 0) {
+        sections.push({ rows: availableLines.map((line) => text(line)) });
+      }
+      sendPanelSpec(cb.emitPanel, { title: `${PANCODE_PRODUCT_NAME} Models`, sections });
       return;
     }
 
     if (request === "all") {
-      sendPanel(cb.emitPanel, `${PANCODE_PRODUCT_NAME} Models`, [
-        `Current: ${currentRef}`,
-        `Total available: ${registry.available.length} models`,
-        "",
-        ...formatAllAvailableLines(currentRef, registry.available, profiles),
-      ]);
+      sendPanelSpec(cb.emitPanel, {
+        title: `${PANCODE_PRODUCT_NAME} Models`,
+        sections: [
+          { rows: [kv("Current:", currentRef), kv("Total available:", `${registry.available.length} models`)] },
+          { rows: formatAllAvailableLines(currentRef, registry.available, profiles).map((line) => text(line)) },
+        ],
+      });
       return;
     }
 
     const providerModels = registry.available.filter((m) => m.provider === request);
     if (providerModels.length > 0) {
-      sendPanel(cb.emitPanel, `${PANCODE_PRODUCT_NAME} Models`, [
-        `Current: ${currentRef}`,
-        "",
-        ...formatProviderModelLines(currentRef, request, providerModels, profiles),
-      ]);
+      sendPanelSpec(cb.emitPanel, {
+        title: `${PANCODE_PRODUCT_NAME} Models`,
+        sections: [
+          { rows: [kv("Current:", currentRef)] },
+          { rows: formatProviderModelLines(currentRef, request, providerModels, profiles).map((line) => text(line)) },
+        ],
+      });
       return;
     }
 
@@ -503,13 +509,21 @@ export function createCommandHandlers(state: UiCommandState, cb: UiCommandCallba
   const handleReasoningCommand: CommandHandler = async (args, ctx) => {
     const request = args.trim();
     if (!request) {
-      sendPanel(cb.emitPanel, `${PANCODE_PRODUCT_NAME} Reasoning`, [
-        `Preference: ${state.currentReasoningPreference}`,
-        `Applied engine setting: ${cb.getThinkingLevel()}`,
-        `Model: ${ctx.model ? modelRef(ctx.model) : "unresolved"}`,
-        `Capability: ${describeReasoningCapability(ctx.model)}`,
-        "PanCode values: off, minimal, low, medium, high, xhigh (or legacy: on)",
-      ]);
+      sendPanelSpec(cb.emitPanel, {
+        title: `${PANCODE_PRODUCT_NAME} Reasoning`,
+        sections: [
+          {
+            rows: [
+              kv("Preference:", state.currentReasoningPreference),
+              kv("Engine setting:", cb.getThinkingLevel()),
+              kv("Model:", ctx.model ? modelRef(ctx.model) : "unresolved"),
+              kv("Capability:", describeReasoningCapability(ctx.model)),
+              blank(),
+              text("Values: off, minimal, low, medium, high, xhigh (or legacy: on)"),
+            ],
+          },
+        ],
+      });
       return;
     }
 
@@ -543,27 +557,39 @@ export function createCommandHandlers(state: UiCommandState, cb: UiCommandCallba
       const budgetCeiling = process.env.PANCODE_BUDGET_CEILING ?? "10.0";
       const modeInfo = getModeDefinition();
 
-      sendPanel(cb.emitPanel, `${PANCODE_PRODUCT_NAME} Settings`, [
-        "Configuration:",
-        `  Safety mode:           ${process.env.PANCODE_SAFETY ?? DEFAULT_SAFETY}`,
-        `  Orchestrator model:    ${ctx.model ? modelRef(ctx.model) : "unresolved"}`,
-        `  Worker model:          ${process.env.PANCODE_WORKER_MODEL ?? "(inherit from routing)"}`,
-        `  Reasoning:             ${state.currentReasoningPreference}`,
-        `  Theme:                 ${ctx.ui.theme.name ?? state.currentThemeName}`,
-        `  Budget ceiling:        $${budgetCeiling}`,
-        `  Active domains:        ${enabledDomains}`,
-        `  Intelligence:          ${intelligenceEnabled ? "enabled" : "disabled"}`,
-        `  Mode:                  ${modeInfo.name}`,
-        "",
-        "Subcommands:",
-        "  /settings safety <suggest|auto-edit|full-auto>",
-        "  /settings model <provider/model-id>",
-        "  /settings worker-model <provider/model-id>",
-        "  /settings reasoning <off|on>",
-        "  /settings theme <name>",
-        "  /settings budget <amount>",
-        "  /settings intelligence <on|off>",
-      ]);
+      sendPanelSpec(cb.emitPanel, {
+        title: `${PANCODE_PRODUCT_NAME} Settings`,
+        sections: [
+          {
+            heading: "Configuration:",
+            indent: 2,
+            rows: [
+              kv("Safety mode:", process.env.PANCODE_SAFETY ?? DEFAULT_SAFETY),
+              kv("Orchestrator model:", ctx.model ? modelRef(ctx.model) : "unresolved"),
+              kv("Worker model:", process.env.PANCODE_WORKER_MODEL ?? "(inherit from routing)"),
+              kv("Reasoning:", state.currentReasoningPreference),
+              kv("Theme:", ctx.ui.theme.name ?? state.currentThemeName),
+              kv("Budget ceiling:", `$${budgetCeiling}`),
+              kv("Active domains:", enabledDomains),
+              kv("Intelligence:", intelligenceEnabled ? "enabled" : "disabled"),
+              kv("Mode:", modeInfo.name),
+            ],
+          },
+          {
+            heading: "Subcommands:",
+            indent: 2,
+            rows: [
+              text("/settings safety <suggest|auto-edit|full-auto>"),
+              text("/settings model <provider/model-id>"),
+              text("/settings worker-model <provider/model-id>"),
+              text("/settings reasoning <off|on>"),
+              text("/settings theme <name>"),
+              text("/settings budget <amount>"),
+              text("/settings intelligence <on|off>"),
+            ],
+          },
+        ],
+      });
       return;
     }
 
@@ -668,15 +694,21 @@ export function createCommandHandlers(state: UiCommandState, cb: UiCommandCallba
     const request = args.trim().toLowerCase();
     if (!request) {
       const current = getModeDefinition();
-      const lines: string[] = [`Current: ${current.name}`, ""];
+      const modeRows: PanelRow[] = [];
       for (const def of MODE_DEFINITIONS) {
         const marker = def.id === current.id ? "*" : "-";
         const dispatch = def.dispatchEnabled ? "dispatch" : "no dispatch";
         const mutations = def.mutationsAllowed ? "mutations" : "readonly";
-        lines.push(`  ${marker} ${def.name.padEnd(8)} ${def.description} (${dispatch}, ${mutations})`);
+        modeRows.push(text(`${marker} ${def.name.padEnd(8)} ${def.description} (${dispatch}, ${mutations})`));
       }
-      lines.push("", "Use /modes <name> to switch, or Shift+Tab to cycle.");
-      sendPanel(cb.emitPanel, `${PANCODE_PRODUCT_NAME} Modes`, lines);
+      sendPanelSpec(cb.emitPanel, {
+        title: `${PANCODE_PRODUCT_NAME} Modes`,
+        sections: [
+          { rows: [kv("Current:", current.name)] },
+          { indent: 2, rows: modeRows },
+          { rows: [text("Use /modes <name> to switch, or Shift+Tab to cycle.")] },
+        ],
+      });
       return;
     }
 
@@ -695,7 +727,10 @@ export function createCommandHandlers(state: UiCommandState, cb: UiCommandCallba
   };
 
   const handleHelpCommand: CommandHandler = async (_args, _ctx) => {
-    sendPanel(cb.emitPanel, `${PANCODE_PRODUCT_NAME} Commands`, formatCategorizedHelp());
+    sendPanelSpec(cb.emitPanel, {
+      title: `${PANCODE_PRODUCT_NAME} Commands`,
+      sections: [{ rows: formatCategorizedHelp().map((line) => text(line)) }],
+    });
   };
 
   const handlePresetCommand: CommandHandler = async (args, ctx) => {
