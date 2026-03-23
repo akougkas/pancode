@@ -14,6 +14,8 @@ export interface AuditEntry {
   agent?: string;
   detail: string;
   severity: "info" | "warn" | "error";
+  /** Dispatch runId for correlating events within a single dispatch lifecycle. */
+  correlationId?: string;
 }
 
 export interface AuditTrail {
@@ -21,6 +23,7 @@ export interface AuditTrail {
   getRecent(count?: number): AuditEntry[];
   getByDomain(domain: string): AuditEntry[];
   getBySeverity(severity: AuditEntry["severity"]): AuditEntry[];
+  getByCorrelationId(correlationId: string): AuditEntry[];
   size(): number;
   clear(): void;
 }
@@ -47,6 +50,10 @@ export function createAuditTrail(maxEntries: number = DEFAULT_MAX_ENTRIES): Audi
 
     getBySeverity(severity: AuditEntry["severity"]): AuditEntry[] {
       return entries.filter((e) => e.severity === severity);
+    },
+
+    getByCorrelationId(correlationId: string): AuditEntry[] {
+      return entries.filter((e) => e.correlationId === correlationId);
     },
 
     size(): number {

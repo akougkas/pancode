@@ -114,7 +114,7 @@ export const extension = defineExtension((pi) => {
       };
       dispatchLedger?.append(ledgerEntry);
 
-      // Audit trail entry
+      // Audit trail entry with correlation ID for lifecycle reconstruction.
       const severity = event.status === "error" ? "warn" : "info";
       const costLabel = event.usage.cost != null ? `$${event.usage.cost.toFixed(4)}` : "--";
       auditTrail?.record({
@@ -123,6 +123,7 @@ export const extension = defineExtension((pi) => {
         agent: event.agent,
         detail: `Run ${event.runId}: ${event.status} (${(durationMs / 1000).toFixed(1)}s, ${costLabel})`,
         severity,
+        correlationId: event.runId,
       });
 
       // Write reproducibility receipt for this dispatch.
@@ -241,8 +242,11 @@ export const extension = defineExtension((pi) => {
       const filter = args.trim().toLowerCase();
       let entries = auditTrail.getRecent(50);
 
-      // Filter by domain or severity
-      if (filter === "error" || filter === "warn" || filter === "info") {
+      // Filter by correlation ID (run:<runId>), severity, or domain.
+      if (filter.startsWith("run:")) {
+        const runId = filter.slice(4);
+        entries = auditTrail.getByCorrelationId(runId).slice(-50);
+      } else if (filter === "error" || filter === "warn" || filter === "info") {
         entries = auditTrail.getBySeverity(filter).slice(-50);
       } else if (filter) {
         entries = auditTrail.getByDomain(filter).slice(-50);
@@ -273,7 +277,7 @@ export const extension = defineExtension((pi) => {
         lines.push(`${time.padEnd(12)} ${sev} ${domain} ${event} ${detail}`);
       }
 
-      lines.push("", "Filters: /audit <domain>, /audit error, /audit warn, /audit info");
+      lines.push("", "Filters: /audit <domain>, /audit error, /audit warn, /audit info, /audit run:<runId>");
 
       pi.sendMessage({
         customType: PanMessageType.PANEL,

@@ -9,3 +9,5 @@ export type { LoopDetector, LoopDetectorEvent } from "./loop-detector";
 export { createLoopDetector } from "./loop-detector";
 export type { SafetyRules } from "./yaml-rules";
 export { loadSafetyRules } from "./yaml-rules";
+export type { SafetyDecision, SafetyReasonCode } from "./audit";
+export { recordAuditEntry, getAuditLog, getRecentAuditEntries, clearAuditLog } from "./audit";

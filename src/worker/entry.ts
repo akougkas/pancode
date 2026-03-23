@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { type PanCodeConfig, loadConfig } from "../core/config";
 import { ensureProjectRuntime } from "../core/init";
+import { redact } from "../core/redaction";
 import { buildWorkerModelArgs, createWorkerEnvironment } from "./provider-bridge";
 
 interface WorkerArgs {
@@ -433,7 +434,7 @@ async function runPi(config: FullWorkerConfig): Promise<PiRunResult> {
       }
 
       const stdoutText = readFileSync(stdoutPath, "utf8");
-      const stderrText = readFileSync(stderrPath, "utf8");
+      const stderrText = redact(readFileSync(stderrPath, "utf8"));
       const parsed = parseCapturedStdout(stdoutText);
 
       resolve({
@@ -563,7 +564,7 @@ async function main(): Promise<void> {
       assistantText: "",
       assistantError: "",
       stdoutNoise: "",
-      stderr: error instanceof Error ? error.message : String(error),
+      stderr: redact(error instanceof Error ? error.message : String(error)),
       stdoutPath: "",
       stderrPath: "",
     });
@@ -574,6 +575,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((error) => {
-  console.error(`[pancode:worker] ${error instanceof Error ? error.message : String(error)}`);
+  console.error(`[pancode:worker] ${redact(error instanceof Error ? error.message : String(error))}`);
   process.exitCode = 1;
 });

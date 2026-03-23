@@ -3,6 +3,7 @@ import { sharedBus } from "../../core/shared-bus";
 import { PiEvent } from "../../engine/events";
 import { defineExtension } from "../../engine/extensions";
 import { classifyAction, classifyBashCommand, isActionAllowed } from "./action-classifier";
+import { type SafetyReasonCode, recordAuditEntry } from "./audit";
 import { createLoopDetector } from "./loop-detector";
 import { type AutonomyMode, parseAutonomyMode } from "./scope";
 import { checkDispatchAdmission } from "./scope-enforcement";
@@ -35,6 +36,28 @@ export function registerSafetyPreFlightChecks(register: RegisterPreFlight): void
       return { admit: false, reason: `Agent ${context.agent} is blocked by loop detector (too many failures)` };
     }
     return { admit: true };
+  });
+}
+
+/**
+ * Record a safety decision in the audit log with structured reason code.
+ * Every tool call evaluation produces an audit entry, whether allowed or blocked.
+ */
+function recordSafetyDecision(
+  toolName: string,
+  actionClass: string,
+  allowed: boolean,
+  reasonCode: SafetyReasonCode,
+  reasonDetail: string,
+): void {
+  recordAuditEntry({
+    timestamp: new Date().toISOString(),
+    toolName,
+    actionClass: actionClass as import("./scope").ActionClass,
+    autonomyMode,
+    allowed,
+    reason: reasonDetail,
+    reasonCode,
   });
 }
 
@@ -77,9 +100,11 @@ export const extension = defineExtension((pi) => {
     // This is the inner gate (policy). The outer gate (mode/structural) is handled by
     // pi.setActiveTools() which physically hides tools the model should not see.
     if (!isActionAllowed(autonomyMode, actionClass)) {
+      const detail = `Safety level "${autonomyMode}" blocks ${actionClass}. Change safety level to allow this action.`;
+      recordSafetyDecision(event.toolName, actionClass, false, "SAFETY_POLICY", detail);
       return {
         block: true,
-        reason: `[pancode:safety] Safety level "${autonomyMode}" blocks ${actionClass}. Change safety level to allow this action.`,
+        reason: `[pancode:safety] ${detail}`,
       };
     }
 
@@ -88,14 +113,18 @@ export const extension = defineExtension((pi) => {
       const command = event.input.command as string;
       const bashAction = classifyBashCommand(command);
       if (!isActionAllowed(autonomyMode, bashAction)) {
+        const detail = `Safety level "${autonomyMode}" blocks ${bashAction}. Command classified as destructive.`;
+        recordSafetyDecision(event.toolName, bashAction, false, "MODE_GATE", detail);
         return {
           block: true,
-          reason: `[pancode:safety] Safety level "${autonomyMode}" blocks ${bashAction}. Command classified as destructive.`,
+          reason: `[pancode:safety] ${detail}`,
         };
       }
       const yamlCheck = checkBashCommand(command, yamlRules);
       if (yamlCheck.blocked) {
-        return { block: true, reason: `[pancode:safety] YAML rule: ${yamlCheck.reason}` };
+        const detail = `YAML rule: ${yamlCheck.reason}`;
+        recordSafetyDecision(event.toolName, bashAction, false, "YAML_RULE", detail);
+        return { block: true, reason: `[pancode:safety] ${detail}` };
       }
     }
 
@@ -106,9 +135,14 @@ export const extension = defineExtension((pi) => {
       const pathAction = actionClass === "file_delete" ? "delete" : actionClass === "file_write" ? "write" : "read";
       const pathCheck = checkPathAccess(filePath, pathAction, yamlRules);
       if (pathCheck.blocked) {
-        return { block: true, reason: `[pancode:safety] YAML rule: ${pathCheck.reason}` };
+        const detail = `YAML rule: ${pathCheck.reason}`;
+        recordSafetyDecision(event.toolName, actionClass, false, "YAML_RULE", detail);
+        return { block: true, reason: `[pancode:safety] ${detail}` };
       }
     }
+
+    // Action allowed: record audit entry for the allow decision.
+    recordSafetyDecision(event.toolName, actionClass, true, "SAFETY_POLICY", "Allowed by policy");
 
     return undefined;
   });
