@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { existsSync, readdirSync, statSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { Type } from "@sinclair/typebox";
@@ -312,14 +312,23 @@ export const extension = defineExtension((pi) => {
       // Compile dynamic worker prompt from PanPrompt engine.
       const spec = agentRegistry.get(dispatchAction.agent);
       const workerProfile = routing.model ? resolveModelProfile(routing.model) : null;
-      const workerPrompt = compileWorkerPrompt(spec ?? null, {
-        agentName: dispatchAction.agent,
-        task: dispatchAction.task,
-        readonly: routing.readonly,
-        tools: routing.tools,
-        mode: getModeDefinition().id,
-        tier: "mid",
-      }, workerProfile);
+      const workerPrompt = compileWorkerPrompt(
+        spec ?? null,
+        {
+          agentName: dispatchAction.agent,
+          task: dispatchAction.task,
+          readonly: routing.readonly,
+          tools: routing.tools,
+          mode: getModeDefinition().id,
+          tier: "mid",
+        },
+        workerProfile,
+      );
+
+      // Store receipt context on the envelope for post-dispatch receipt generation.
+      run.promptHash = createHash("sha256").update(workerPrompt).digest("hex");
+      run.workerTools = routing.tools;
+      ledger?.update(run.id, run);
 
       // Track worker pool load for scoring
       if (routing.workerId) {
@@ -393,7 +402,9 @@ export const extension = defineExtension((pi) => {
       const usageStr =
         costVal != null && costVal > 0
           ? ` | cost: $${costVal.toFixed(4)} | turns: ${turnsVal ?? "--"}`
-          : turnsVal != null ? ` | turns: ${turnsVal}` : "";
+          : turnsVal != null
+            ? ` | turns: ${turnsVal}`
+            : "";
 
       const statusEmoji = run.status === "done" ? "completed" : "failed";
       const summary = `Worker ${statusEmoji} (${run.id})${usageStr}\n\nAgent: ${run.agent}${run.model ? ` | Model: ${run.model}` : ""}`;
@@ -520,14 +531,18 @@ export const extension = defineExtension((pi) => {
       const batchSpec = agentRegistry.get(agentName);
       const batchProfile = routing.model ? resolveModelProfile(routing.model) : null;
       const parallelTasks = tasks.map((task, i) => {
-        const wp = compileWorkerPrompt(batchSpec ?? null, {
-          agentName,
-          task,
-          readonly: routing.readonly,
-          tools: routing.tools,
-          mode: getModeDefinition().id,
-          tier: "mid",
-        }, batchProfile);
+        const wp = compileWorkerPrompt(
+          batchSpec ?? null,
+          {
+            agentName,
+            task,
+            readonly: routing.readonly,
+            tools: routing.tools,
+            mode: getModeDefinition().id,
+            tier: "mid",
+          },
+          batchProfile,
+        );
         return {
           task,
           tools: routing.tools,
@@ -707,14 +722,18 @@ export const extension = defineExtension((pi) => {
           // Compile dynamic worker prompt from PanPrompt engine.
           const chainSpec = agentRegistry.get(agent);
           const chainProfile = routing.model ? resolveModelProfile(routing.model) : null;
-          const chainPrompt = compileWorkerPrompt(chainSpec ?? null, {
-            agentName: agent,
-            task,
-            readonly: routing.readonly,
-            tools: routing.tools,
-            mode: getModeDefinition().id,
-            tier: "mid",
-          }, chainProfile);
+          const chainPrompt = compileWorkerPrompt(
+            chainSpec ?? null,
+            {
+              agentName: agent,
+              task,
+              readonly: routing.readonly,
+              tools: routing.tools,
+              mode: getModeDefinition().id,
+              tier: "mid",
+            },
+            chainProfile,
+          );
 
           const result = await spawnWorker({
             task,

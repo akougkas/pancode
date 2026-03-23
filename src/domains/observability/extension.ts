@@ -1,5 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { type BudgetUpdatedEvent, BusChannel, type RunFinishedEvent, type WarningEvent } from "../../core/bus-events";
+import {
+  type BudgetUpdatedEvent,
+  BusChannel,
+  type RunFinishedEvent,
+  type WarningEvent,
+  type WorkerProgressEvent,
+} from "../../core/bus-events";
 import { PanMessageType } from "../../core/message-types";
 import { sharedBus } from "../../core/shared-bus";
 import { PiEvent } from "../../engine/events";
@@ -8,11 +14,13 @@ import { getRunLedger } from "../dispatch";
 import { DispatchLedger, type DispatchLedgerEntry } from "./dispatch-ledger";
 import { runHealthChecks } from "./health";
 import { MetricsLedger, type RunMetric } from "./metrics";
+import { ReceiptWriter, listReceipts, verifyReceipt } from "./receipts";
 import { type AuditTrail, createAuditTrail } from "./telemetry";
 
 let metricsLedger: MetricsLedger | null = null;
 let dispatchLedger: DispatchLedger | null = null;
 let auditTrail: AuditTrail | null = null;
+let receiptWriter: ReceiptWriter | null = null;
 let budgetSnapshot = { totalCost: 0, ceiling: 10 };
 
 export function getMetricsLedger(): MetricsLedger | null {
@@ -27,6 +35,10 @@ export function getAuditTrail(): AuditTrail | null {
   return auditTrail;
 }
 
+export function getReceiptWriter(): ReceiptWriter | null {
+  return receiptWriter;
+}
+
 export const extension = defineExtension((pi) => {
   pi.on(PiEvent.SESSION_START, (_event, _ctx) => {
     const packageRoot = process.env.PANCODE_PACKAGE_ROOT;
@@ -37,6 +49,7 @@ export const extension = defineExtension((pi) => {
     metricsLedger = new MetricsLedger(runtimeRoot);
     dispatchLedger = new DispatchLedger(runtimeRoot);
     auditTrail = createAuditTrail(1000);
+    receiptWriter = new ReceiptWriter(runtimeRoot);
 
     // Session boundary marker
     const sessionId = process.env.PANCODE_SESSION_ID ?? randomUUID().slice(0, 8);
@@ -111,6 +124,15 @@ export const extension = defineExtension((pi) => {
         detail: `Run ${event.runId}: ${event.status} (${(durationMs / 1000).toFixed(1)}s, ${costLabel})`,
         severity,
       });
+
+      // Write reproducibility receipt for this dispatch.
+      receiptWriter?.writeReceipt(event, runEnvelope);
+    });
+
+    // Subscribe to worker progress for receipt action tracking
+    sharedBus.on(BusChannel.WORKER_PROGRESS, (payload) => {
+      const event = payload as WorkerProgressEvent;
+      receiptWriter?.recordProgress(event);
     });
 
     // Subscribe to warnings
@@ -307,6 +329,86 @@ export const extension = defineExtension((pi) => {
         content: lines.join("\n"),
         display: true,
         details: { title: "PanCode Doctor" },
+      });
+    },
+  });
+
+  // === /receipt ===
+  pi.registerCommand("receipt", {
+    description: "List or verify reproducibility receipts",
+    async handler(args, _ctx) {
+      if (!receiptWriter) {
+        pi.sendMessage({
+          customType: PanMessageType.PANEL,
+          content: "Receipt writer not initialized.",
+          display: true,
+          details: { title: "PanCode Receipts" },
+        });
+        return;
+      }
+
+      const receiptsDir = receiptWriter.getReceiptsDir();
+      const parts = args.trim().split(/\s+/);
+      const subcommand = parts[0]?.toLowerCase() ?? "";
+      const receiptId = parts[1] ?? "";
+
+      if (subcommand === "verify" && receiptId) {
+        const result = verifyReceipt(receiptsDir, receiptId);
+        const statusLabel =
+          result.status === "PASS" ? "PASS" : result.status === "TAMPERED" ? "TAMPERED" : result.status;
+        const lines: string[] = [`Verification: ${statusLabel}`, "", result.message];
+
+        if (result.receipt && result.status === "PASS") {
+          const r = result.receipt;
+          lines.push(
+            "",
+            `  Run:      ${r.runId}`,
+            `  Agent:    ${r.agent}`,
+            `  Model:    ${r.model ?? "unknown"}`,
+            `  Runtime:  ${r.runtime}`,
+            `  Status:   ${r.status}`,
+            `  Wall:     ${(r.wallMs / 1000).toFixed(1)}s`,
+            `  Cost:     ${r.cost != null ? `$${r.cost.toFixed(4)}` : "n/a"}`,
+          );
+        }
+
+        pi.sendMessage({
+          customType: PanMessageType.PANEL,
+          content: lines.join("\n"),
+          display: true,
+          details: { title: "PanCode Receipt Verify" },
+        });
+        return;
+      }
+
+      // Default: list recent receipts
+      const ids = listReceipts(receiptsDir);
+      if (ids.length === 0) {
+        pi.sendMessage({
+          customType: PanMessageType.PANEL,
+          content: "No receipts found. Receipts are generated after each dispatch completes.",
+          display: true,
+          details: { title: "PanCode Receipts" },
+        });
+        return;
+      }
+
+      const maxShow = 20;
+      const shown = ids.slice(-maxShow);
+      const lines: string[] = [`${ids.length} receipt(s) in ${receiptsDir}:`, ""];
+      for (const id of shown) {
+        lines.push(`  ${id}`);
+      }
+      if (ids.length > maxShow) {
+        lines.push(`  ... and ${ids.length - maxShow} more`);
+      }
+      lines.push("", "Usage: /receipt verify <receipt-id>");
+
+      pi.sendMessage({
+        customType: PanMessageType.PANEL,
+        content: lines.join("\n"),
+        display: true,
+        details: { title: "PanCode Receipts" },
       });
     },
   });
