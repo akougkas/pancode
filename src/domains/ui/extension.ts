@@ -42,18 +42,22 @@ import type { Api, Model } from "../../engine/types";
 import { agentRegistry } from "../agents";
 import { getRunLedger, taskList } from "../dispatch";
 import { getMetricsLedger } from "../observability";
-import { compileOrchestratorPrompt } from "../prompts";
+import { compileOrchestratorPrompt, getLastOrchestratorCompilation } from "../prompts";
 import { type MergedModelProfile, findModelProfile, getModelProfileCache } from "../providers";
 import { getBudgetTracker } from "../scheduling";
 import {
+  addCategoryTokens,
+  getCategoryBreakdown,
   getContextPercent,
   getContextTokens,
   getContextWindow,
+  recordCategoryTokens,
   recordContextFromSdk,
   recordContextUsage,
 } from "./context-tracker";
 import { renderDispatchBoard } from "./dispatch-board";
 import type { AgentStat, BoardColorizer, DispatchCardData } from "./dispatch-board";
+import { type FooterColorizer, type FooterWorker, renderFooterLines } from "./footer-renderer";
 import { PanCodeEditor } from "./pancode-editor";
 import { extractResultSummary, formatTokenCount, truncate } from "./widget-utils";
 import {
@@ -983,110 +987,59 @@ export const extension = defineExtension((pi) => {
       };
     });
 
-    // Two-line mission control footer: telemetry strip + shortcuts/task chips.
+    // Dynamic multi-line footer: mode header, active dispatches, session economics, context bar.
+    // Grows during active dispatches and shrinks back when idle.
     ctx.ui.setFooter((_tui, theme, _footerData) => ({
       invalidate() {},
       render(width) {
         const modeInfo = getModeDefinition();
         const mc = modeThemeColor(modeInfo);
-        const sep = theme.fg("dim", " \u2502 ");
-        const sepW = 3;
 
         const liveWorkers = getLiveWorkers();
-        const activeCount = liveWorkers.filter((w) => w.status === "running").length;
-
-        // Narrow fallback (< 60 cols): single line with mode + activity
-        if (width < 60) {
-          const narrow =
-            theme.fg(mc, `[${modeInfo.name}]`) +
-            (activeCount > 0 ? theme.fg(mc, ` \u25CF ${activeCount}`) : theme.fg("dim", " \u25CB idle"));
-          return [truncateToWidth(narrow, width)];
-        }
-
-        // === LINE 1: Telemetry Strip ===
-        // Provider quota
         const budget = getBudgetTracker();
         const budgetState = budget?.getState();
-        let quotaStr: string;
-        if (budgetState && budgetState.ceiling > 0 && budgetState.totalCost > 0) {
-          quotaStr = theme.fg("muted", `$${budgetState.totalCost.toFixed(2)}/$${budgetState.ceiling.toFixed(0)}`);
-        } else {
-          quotaStr = theme.fg("dim", "cost: local");
-        }
-
-        // Context gauge
-        const pct = Math.round(getContextPercent());
-        const ctxTokens = getContextTokens();
-        const ctxWindow = getContextWindow();
-        const gaugeLen = 8;
-        const filled = Math.round((pct / 100) * gaugeLen);
-        const gauge = theme.fg(mc, "\u2593".repeat(filled)) + theme.fg("dim", "\u2591".repeat(gaugeLen - filled));
-        const ctxCounts =
-          ctxWindow > 0
-            ? theme.fg("muted", ` ${pct}% ${formatTokenCount(ctxTokens)}/${formatTokenCount(ctxWindow)}`)
-            : theme.fg("dim", ` ${pct}%`);
-        const ctxStr = `ctx ${gauge}${ctxCounts}`;
-
-        // Session throughput
         const metrics = getMetricsLedger();
         const summary = metrics?.getSummary();
-        const inputTok = summary?.totalInputTokens ?? 0;
-        const outputTok = summary?.totalOutputTokens ?? 0;
-        const throughput =
-          inputTok > 0 || outputTok > 0
-            ? theme.fg("muted", `\u2191${formatTokenCount(inputTok)} \u2193${formatTokenCount(outputTok)}`)
-            : "";
 
-        // Node status: machine name + filled circles per loaded chat model
-        const profiles = getModelProfileCache();
-        const chatProfiles = profiles.filter((p) => isChatModel(p.modelId));
-        const nodeMap = new Map<string, number>();
-        for (const p of chatProfiles) {
-          const node = p.providerId.split("-")[0] || p.providerId;
-          nodeMap.set(node, (nodeMap.get(node) ?? 0) + 1);
-        }
-        const nodeStr = [...nodeMap.entries()]
-          .map(([node, count]) => theme.fg("muted", `${node}${"\u25CF".repeat(count)}`))
-          .join(" ");
+        const workers: FooterWorker[] = liveWorkers.map((w) => ({
+          agent: w.agent,
+          runtime: w.runtime,
+          model: w.model,
+          elapsedMs: Date.now() - w.startedAt,
+          tokens: w.inputTokens + w.outputTokens,
+          status: w.status,
+        }));
 
-        // Compose line 1
-        const line1Parts = [quotaStr, ctxStr];
-        if (throughput) line1Parts.push(throughput);
-        if (nodeStr) line1Parts.push(nodeStr);
-        const line1 = truncateToWidth(line1Parts.join(sep), width);
+        const totalTokens = (summary?.totalInputTokens ?? 0) + (summary?.totalOutputTokens ?? 0);
 
-        // === LINE 2: Shortcuts + Task Chips ===
-        const shortcuts = theme.fg("dim", "shift+tab mode \u00B7 ctrl+t reasoning \u00B7 ctrl+y safety");
+        const colorizer: FooterColorizer = {
+          mode: (t) => theme.fg(mc, t),
+          accent: (t) => theme.fg("accent", t),
+          bold: (t) => theme.bold(t),
+          muted: (t) => theme.fg("muted", t),
+          dim: (t) => theme.fg("dim", t),
+          success: (t) => theme.fg("success", t),
+          error: (t) => theme.fg("error", t),
+          warning: (t) => theme.fg("warning", t),
+        };
 
-        // Task chips (last 4)
-        const allTasks = taskList();
-        let taskChipStr = "";
-        if (allTasks.length > 0) {
-          const doneTasks = allTasks.filter((t) => t.status === "doing").length;
-          const lastTasks = allTasks.slice(-4);
-          const chips = lastTasks.map((t) => {
-            const icon = t.status === "doing" ? "\u25CF" : t.status === "blocked" ? "\u2717" : "\u25CB";
-            const label = truncate(t.description ?? t.id, 8);
-            return theme.fg("muted", `[${icon} ${label}]`);
-          });
-          taskChipStr = `${chips.join(" ")} ${theme.fg("dim", `${doneTasks}/${allTasks.length}`)}`;
-        }
-
-        let line2: string;
-        if (taskChipStr) {
-          const shortcutsW = visibleWidth(shortcuts);
-          const chipW = visibleWidth(taskChipStr);
-          if (shortcutsW + sepW + chipW + 2 <= width) {
-            const slack = width - shortcutsW - sepW - chipW;
-            line2 = `${shortcuts}${" ".repeat(slack)}${sep}${taskChipStr}`;
-          } else {
-            line2 = truncateToWidth(`${shortcuts}${sep}${taskChipStr}`, width);
-          }
-        } else {
-          line2 = truncateToWidth(shortcuts, width);
-        }
-
-        return [line1, line2];
+        return renderFooterLines(
+          {
+            modeName: modeInfo.name,
+            safety: process.env.PANCODE_SAFETY ?? DEFAULT_SAFETY,
+            modelLabel: currentModelLabel,
+            reasoning: pi.getThinkingLevel() || "off",
+            dispatchCount: summary?.totalRuns ?? 0,
+            totalCost: budgetState?.totalCost ?? 0,
+            totalTokens,
+            budgetRemaining: budget ? budget.remaining() : null,
+            workers,
+            contextPercent: Math.round(getContextPercent()),
+            categories: getCategoryBreakdown(),
+          },
+          width,
+          colorizer,
+        );
       },
     }));
 
@@ -1094,6 +1047,7 @@ export const extension = defineExtension((pi) => {
     // Each "message_end" event triggers a read of the SDK's context estimate.
     // The SDK internally tracks cumulative token usage and model context window.
     // Falls back to raw message usage if getContextUsage() is unavailable.
+    // Also accumulates panos (orchestrator) output tokens for context category tracking.
     pi.on(PiEvent.MESSAGE_END, (event, msgCtx) => {
       const sdkUsage = msgCtx.getContextUsage();
       if (sdkUsage) {
@@ -1103,6 +1057,15 @@ export const extension = defineExtension((pi) => {
         const msg = event.message;
         if (msg && "usage" in msg && msg.role === "assistant" && msgCtx.model?.contextWindow) {
           recordContextUsage(msg.usage.input ?? 0, msgCtx.model.contextWindow);
+        }
+      }
+
+      // Track orchestrator output tokens for the context bar's "panos" category.
+      const msg = event.message;
+      if (msg && "usage" in msg && msg.role === "assistant") {
+        const usage = msg.usage as { output?: number };
+        if (typeof usage.output === "number" && usage.output > 0) {
+          addCategoryTokens("panos", usage.output);
         }
       }
     });
@@ -1130,12 +1093,21 @@ export const extension = defineExtension((pi) => {
     sharedBus.on(BusChannel.RUN_FINISHED, (payload) => {
       const event = payload as RunFinishedEvent;
       trackWorkerEnd(event.runId, event.status as WorkerStatus);
+
+      // Track dispatch result tokens for context bar category.
+      // Worker output tokens represent what gets returned to the orchestrator context.
+      if (event.usage.outputTokens != null && event.usage.outputTokens > 0) {
+        addCategoryTokens("dispatch", event.usage.outputTokens);
+      }
     });
 
     sharedBus.on(BusChannel.WORKER_HEALTH_CHANGED, (payload) => {
       const event = payload as WorkerHealthChangedEvent;
       updateWorkerHealth(event.runId, event.currentState);
     });
+
+    // Track system prompt token estimate from orchestrator prompt compilation.
+    // Updated in BEFORE_AGENT_START after compileOrchestratorPrompt runs.
 
     // Set initial mode status and gate tools to match the active mode.
     const initMode = getModeDefinition();
@@ -1231,6 +1203,13 @@ export const extension = defineExtension((pi) => {
     const model = ctx.model;
     const profile = model ? (findModelProfile(model.provider, model.id) ?? null) : null;
     const compiled = compileOrchestratorPrompt(event.systemPrompt, mode, profile);
+
+    // Record system prompt token estimate for context bar category tracking.
+    const lastCompilation = getLastOrchestratorCompilation();
+    if (lastCompilation) {
+      recordCategoryTokens("system", lastCompilation.estimatedTokens);
+    }
+
     return { systemPrompt: compiled };
   });
 
