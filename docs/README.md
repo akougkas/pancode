@@ -7,9 +7,10 @@ PanCode orchestrates coding agents the way Kubernetes orchestrates containers.
 - [Getting Started](./getting-started.md) - Install, configure, first dispatch
 - [Architecture](./architecture.md) - System layers, domain model, engine boundary
 - [Configuration](./configuration.md) - Environment variables, presets, agent specs
-- [Domains](./domains.md) - The 9 composable domains and their commands
+- [Domains](./domains.md) - The 10 composable domains and their commands
 - [Dispatch](./dispatch.md) - Worker lifecycle, runtimes, batch and chain dispatch
 - [Development](./development.md) - Build, test, contribute, and extend PanCode
+- [Demo Scenarios](./demos.md) - Three reproducible demos for launch
 
 ## For Coding Agents
 

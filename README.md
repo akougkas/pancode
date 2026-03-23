@@ -3,8 +3,8 @@
 Universal agent control plane for software engineering.
 
 PanCode orchestrates coding agents through one tmux-first shell, one dispatch
-system, and one safety model. The current tree ships 148 TypeScript files,
-about 17.2k LOC, 9 composable domains, and 6 CLI runtime adapters. Native Pi
+system, and one safety model. The current tree ships 165 TypeScript files,
+about 22.5k LOC, 10 composable domains, and 6 CLI runtime adapters. Native Pi
 workers and installed CLI agents all run through the same runtime boundary.
 
 See [docs/](./docs/README.md) for the full guide set.
@@ -18,8 +18,8 @@ See [docs/](./docs/README.md) for the full guide set.
 - Dispatch hardening: recursion depth guard, provider backoff and resilience,
   hard worker timeouts, long-prompt temp files, NDJSON progress parsing,
   staggered parallel launches, worktree isolation, and stale artifact cleanup.
-- 9 composable domains: safety, session, agents, prompts, dispatch,
-  observability, scheduling, intelligence, and ui.
+- 10 composable domains: safety, session, agents, prompts, dispatch,
+  observability, scheduling, intelligence, providers, and ui.
 - 6 CLI runtime adapters plus native Pi: Claude Code, Codex, Gemini, OpenCode,
   Cline, and Copilot CLI.
 - Model presets in `~/.pancode/panpresets.yaml`.
@@ -34,6 +34,7 @@ See [docs/](./docs/README.md) for the full guide set.
 - [Domains](./docs/domains.md)
 - [Dispatch](./docs/dispatch.md)
 - [Development](./docs/development.md)
+- [Demo Scenarios](./docs/demos.md)
 
 ## Quick Start
 
@@ -231,6 +232,34 @@ Mode gating controls whether dispatch is allowed:
 - `review` - readonly review workers
 
 ## Changelog
+
+### v0.3.0
+
+- 10 composable domains with manifest-driven registration (agents, dispatch,
+  intelligence, observability, prompts, providers, safety, scheduling,
+  session, ui).
+- 7 runtime adapters (Pi native, Claude Code, Codex, Gemini, OpenCode, Cline,
+  Copilot CLI) with unified discovery, health checks, and adapter parity.
+- 38 slash commands across 7 categories (session, dispatch, agents, observe,
+  schedule, display, utility).
+- Agent spec registry with panagents.yaml supporting per-agent runtime,
+  sampling, isolation, tier, and autonomy configuration.
+- PanModels catalog with offline model metadata for provider-aware routing.
+- Constitution-driven safety with 21 auditable rules, 4 behavioral modes
+  (capture, plan, build, review, ask), and live safety level switching.
+- Dispatch hardening with admission gating, recursion guards, provider
+  backoff, heartbeat monitoring, staggered batch launches, and worktree
+  isolation.
+- Observability layer with dispatch ledger, structured receipts, audit trail,
+  metrics persistence, boot timing, and /perf command.
+- Worker pool with health scoring, heartbeat supervision, and configurable
+  concurrency limits.
+- Session management with checkpoint, resume, fork, tree navigation, and
+  cross-agent context registry.
+- Dynamic multi-line footer with context category visualization and live
+  provider status.
+- Config validation, settings persistence, and secure credential handling.
+- Diagnostic health checks (/doctor) covering 6 verification categories.
 
 ### v0.2.4
 

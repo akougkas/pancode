@@ -1,6 +1,6 @@
 # Domains
 
-PanCode has 9 composable domains. Each domain owns its own state. Most
+PanCode has 10 composable domains. Each domain owns its own state. Most
 PanCode-specific slash commands are registered in domain extension files such
 as `src/domains/session/extension.ts` and `src/domains/ui/extension.ts`,
 but some visible slash names are Pi builtins that are hidden or rerouted in
