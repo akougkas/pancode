@@ -42,21 +42,20 @@ export const extension = defineExtension((pi) => {
         return;
       }
 
-      // Table header
+      // Table header (85 chars wide, fits 90-column terminals)
       const lines: string[] = [
-        `${"AGENT".padEnd(16)} ${"MODEL".padEnd(30)} ${"SPEED".padEnd(10)} ${"AUTONOMY".padEnd(14)} ${"TAGS".padEnd(20)} ${"READONLY"}`,
-        `${"-----".padEnd(16)} ${"-----".padEnd(30)} ${"-----".padEnd(10)} ${"--------".padEnd(14)} ${"----".padEnd(20)} ${"--------"}`,
+        `${"AGENT".padEnd(14)} ${"MODEL".padEnd(25)} ${"SPEED".padEnd(9)} ${"AUTONOMY".padEnd(13)} ${"TAGS"}`,
+        `${"-----".padEnd(14)} ${"-----".padEnd(25)} ${"-----".padEnd(9)} ${"--------".padEnd(13)} ${"----"}`,
       ];
 
       for (const spec of specs) {
-        const agent = spec.name.padEnd(16);
+        const agent = spec.name.padEnd(14);
         const modelName = spec.model ? (spec.model.split("/").pop() ?? spec.model) : "(provider)";
-        const model = modelName.slice(0, 28).padEnd(30);
-        const speed = spec.speed.padEnd(10);
-        const autonomy = spec.autonomy.padEnd(14);
-        const tags = (spec.tags.length > 0 ? spec.tags.join(", ") : "-").slice(0, 18).padEnd(20);
-        const readonly = spec.readonly ? "yes" : "no";
-        lines.push(`${agent} ${model} ${speed} ${autonomy} ${tags} ${readonly}`);
+        const model = modelName.slice(0, 23).padEnd(25);
+        const speed = spec.speed.padEnd(9);
+        const autonomy = spec.autonomy.padEnd(13);
+        const tags = (spec.tags.length > 0 ? spec.tags.join(", ") : "-").slice(0, 20);
+        lines.push(`${agent} ${model} ${speed} ${autonomy} ${tags}`);
       }
 
       pi.sendMessage({
