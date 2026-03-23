@@ -1,3 +1,6 @@
+import { readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import YAML from "yaml";
 import { BusChannel } from "../../core/bus-events";
 import { PanMessageType } from "../../core/message-types";
 import { sharedBus } from "../../core/shared-bus";
@@ -9,6 +12,55 @@ import { PANCODE_HOME } from "../providers";
 import { registerShadowExplore } from "./shadow-explore";
 import { type SkillDefinition, discoverSkills, validateSkillTools } from "./skills";
 import { agentRegistry, loadAgentsFromYaml } from "./spec-registry";
+
+/** Runtime ID to suggested agent name mapping for auto-suggest. */
+const RUNTIME_AGENT_SUGGESTIONS: Record<string, { name: string; description: string }> = {
+  "cli:claude-code": { name: "claude-reviewer", description: "Claude Code for code review" },
+  "cli:codex": { name: "codex-dev", description: "Codex for development tasks" },
+  "cli:gemini": { name: "gemini-reviewer", description: "Gemini CLI for code review" },
+  "cli:opencode": { name: "opencode-scout", description: "opencode for codebase exploration" },
+  "cli:cline": { name: "cline-planner", description: "Cline CLI for planning" },
+  "cli:copilot-cli": { name: "copilot-reviewer", description: "GitHub Copilot CLI for code review" },
+};
+
+function persistAgentChange(agentName: string, field: string, value: string): void {
+  const filePath = join(PANCODE_HOME, "panagents.yaml");
+  try {
+    const content = readFileSync(filePath, "utf8");
+    const doc = YAML.parseDocument(content);
+    const agentsNode = doc.get("agents");
+    if (agentsNode && typeof agentsNode === "object") {
+      const agentNode = (agentsNode as YAML.YAMLMap).get(agentName);
+      if (agentNode && typeof agentNode === "object") {
+        (agentNode as YAML.YAMLMap).set(field, value);
+      }
+    }
+    writeFileSync(filePath, doc.toString(), "utf8");
+  } catch {
+    console.error(`[pancode:agents] Failed to persist ${field} change for ${agentName}`);
+  }
+}
+
+function suggestAgentsForUnconfiguredRuntimes(): void {
+  const availableRuntimes = runtimeRegistry.available();
+  const specs = agentRegistry.getAll();
+  const assignedRuntimes = new Set(specs.map((s) => s.runtime));
+
+  for (const rt of availableRuntimes) {
+    // Skip the built-in pi runtime (always has default agents)
+    if (rt.id === "pi") continue;
+    if (assignedRuntimes.has(rt.id)) continue;
+
+    const suggestion = RUNTIME_AGENT_SUGGESTIONS[rt.id];
+    const agentName = suggestion?.name ?? `${rt.id.replace(/^cli:/, "")}-agent`;
+    const description = suggestion?.description ?? `${rt.id} agent`;
+    const version = rt.getVersion() ?? "unknown";
+
+    console.error(
+      `[pancode:agents] Discovered ${rt.id} (v${version}) with no matching agent.\n  Add to ~/.pancode/panagents.yaml:\n    ${agentName}:\n      runtime: ${rt.id}\n      description: "${description}"\n      readonly: true`,
+    );
+  }
+}
 
 export const extension = defineExtension((pi) => {
   // Register shadow_explore as an orchestrator-internal tool.
@@ -26,11 +78,101 @@ export const extension = defineExtension((pi) => {
         agentRegistry.register(spec);
       }
     }
+
+    // Suggest agent configs for discovered runtimes that no agent references
+    suggestAgentsForUnconfiguredRuntimes();
   });
 
   pi.registerCommand("agents", {
-    description: "List registered PanCode agent specs",
-    async handler(_args, _ctx) {
+    description: "List and configure PanCode agent specs",
+    async handler(args, _ctx) {
+      const parts = args.trim().split(/\s+/);
+
+      // Handle /agents set <name> <field> <value>
+      if (parts[0] === "set" && parts.length >= 4) {
+        const agentName = parts[1];
+        const field = parts[2];
+        const value = parts.slice(3).join(" ");
+
+        const spec = agentRegistry.get(agentName);
+        if (!spec) {
+          pi.sendMessage({
+            customType: PanMessageType.PANEL,
+            content: `Unknown agent: ${agentName}`,
+            display: true,
+            details: { title: "Error" },
+          });
+          return;
+        }
+
+        if (field === "runtime") {
+          if (!runtimeRegistry.has(value)) {
+            const available = runtimeRegistry
+              .all()
+              .map((r) => r.id)
+              .join(", ");
+            pi.sendMessage({
+              customType: PanMessageType.PANEL,
+              content: `Unknown runtime: ${value}\nAvailable: ${available}`,
+              display: true,
+              details: { title: "Error" },
+            });
+            return;
+          }
+          spec.runtime = value;
+          persistAgentChange(agentName, "runtime", value);
+          pi.sendMessage({
+            customType: PanMessageType.PANEL,
+            content: `${agentName}.runtime = ${value}`,
+            display: true,
+            details: { title: "Agent Updated" },
+          });
+          return;
+        }
+
+        if (field === "model") {
+          spec.model = value || undefined;
+          persistAgentChange(agentName, "model", value);
+          pi.sendMessage({
+            customType: PanMessageType.PANEL,
+            content: `${agentName}.model = ${value || "(provider default)"}`,
+            display: true,
+            details: { title: "Agent Updated" },
+          });
+          return;
+        }
+
+        if (field === "tier") {
+          if (!["frontier", "mid", "any"].includes(value)) {
+            pi.sendMessage({
+              customType: PanMessageType.PANEL,
+              content: `Invalid tier: ${value}. Use frontier, mid, or any.`,
+              display: true,
+              details: { title: "Error" },
+            });
+            return;
+          }
+          spec.tier = value as "frontier" | "mid" | "any";
+          persistAgentChange(agentName, "tier", value);
+          pi.sendMessage({
+            customType: PanMessageType.PANEL,
+            content: `${agentName}.tier = ${value}`,
+            display: true,
+            details: { title: "Agent Updated" },
+          });
+          return;
+        }
+
+        pi.sendMessage({
+          customType: PanMessageType.PANEL,
+          content: `Unknown field: ${field}. Use runtime, model, or tier.`,
+          display: true,
+          details: { title: "Error" },
+        });
+        return;
+      }
+
+      // List agents
       const specs = agentRegistry.getAll();
       if (specs.length === 0) {
         pi.sendMessage({
@@ -42,20 +184,20 @@ export const extension = defineExtension((pi) => {
         return;
       }
 
-      // Table header (85 chars wide, fits 90-column terminals)
+      // Table header (fits 90-column terminals)
       const lines: string[] = [
-        `${"AGENT".padEnd(14)} ${"MODEL".padEnd(25)} ${"SPEED".padEnd(9)} ${"AUTONOMY".padEnd(13)} ${"TAGS"}`,
-        `${"-----".padEnd(14)} ${"-----".padEnd(25)} ${"-----".padEnd(9)} ${"--------".padEnd(13)} ${"----"}`,
+        `${"AGENT".padEnd(16)} ${"RUNTIME".padEnd(18)} ${"MODEL".padEnd(16)} ${"TIER".padEnd(10)} ${"READONLY"}`,
+        `${"-----".padEnd(16)} ${"-------".padEnd(18)} ${"-----".padEnd(16)} ${"----".padEnd(10)} ${"--------"}`,
       ];
 
       for (const spec of specs) {
-        const agent = spec.name.padEnd(14);
+        const agent = spec.name.padEnd(16);
+        const runtime = spec.runtime.padEnd(18);
         const modelName = spec.model ? (spec.model.split("/").pop() ?? spec.model) : "(provider)";
-        const model = modelName.slice(0, 23).padEnd(25);
-        const speed = spec.speed.padEnd(9);
-        const autonomy = spec.autonomy.padEnd(13);
-        const tags = (spec.tags.length > 0 ? spec.tags.join(", ") : "-").slice(0, 20);
-        lines.push(`${agent} ${model} ${speed} ${autonomy} ${tags}`);
+        const model = modelName.slice(0, 14).padEnd(16);
+        const tier = spec.tier.padEnd(10);
+        const readonly = spec.readonly ? "yes" : "no";
+        lines.push(`${agent} ${runtime} ${model} ${tier} ${readonly}`);
       }
 
       pi.sendMessage({

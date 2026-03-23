@@ -231,7 +231,13 @@ export const extension = defineExtension((pi) => {
       }
 
       // Pre-flight admission checks (budget, safety, etc. registered by other domains)
-      const preflight = runPreFlightChecks({ task, agent: agentName, model: resolveWorkerRouting(agentName).model });
+      let preflightRouting: ReturnType<typeof resolveWorkerRouting>;
+      try {
+        preflightRouting = resolveWorkerRouting(agentName);
+      } catch (err) {
+        return textResult(err instanceof Error ? err.message : String(err));
+      }
+      const preflight = runPreFlightChecks({ task, agent: agentName, model: preflightRouting.model });
       if (!preflight.admit) {
         return textResult(`Dispatch blocked: ${preflight.reason}`);
       }
@@ -251,7 +257,12 @@ export const extension = defineExtension((pi) => {
         return textResult(`Task skipped by dispatch rules: ${dispatchAction.reason ?? "no reason provided"}`);
       }
 
-      const routing = resolveWorkerRouting(dispatchAction.agent);
+      let routing: ReturnType<typeof resolveWorkerRouting>;
+      try {
+        routing = resolveWorkerRouting(dispatchAction.agent);
+      } catch (err) {
+        return textResult(err instanceof Error ? err.message : String(err));
+      }
 
       // Provider backoff: reject dispatch if the provider is in a backoff window.
       const routingProvider = extractProvider(routing.model);
@@ -436,10 +447,16 @@ export const extension = defineExtension((pi) => {
       }
 
       // Pre-flight admission checks for batch dispatch
+      let batchPreflightRouting: ReturnType<typeof resolveWorkerRouting>;
+      try {
+        batchPreflightRouting = resolveWorkerRouting(agentName);
+      } catch (err) {
+        return textResult(err instanceof Error ? err.message : String(err));
+      }
       const batchPreflight = runPreFlightChecks({
         task: tasks[0],
         agent: agentName,
-        model: resolveWorkerRouting(agentName).model,
+        model: batchPreflightRouting.model,
       });
       if (!batchPreflight.admit) {
         return textResult(`Batch dispatch blocked: ${batchPreflight.reason}`);
@@ -450,7 +467,7 @@ export const extension = defineExtension((pi) => {
         return textResult(`Unknown agent "${agentName}". Available: ${available}`);
       }
 
-      const routing = resolveWorkerRouting(agentName);
+      const routing = batchPreflightRouting;
 
       // Provider backoff check for batch dispatch
       const batchProvider = extractProvider(routing.model);
@@ -623,10 +640,16 @@ export const extension = defineExtension((pi) => {
       }
 
       // Pre-flight
+      let chainPreflightRouting: ReturnType<typeof resolveWorkerRouting>;
+      try {
+        chainPreflightRouting = resolveWorkerRouting(defaultAgent);
+      } catch (err) {
+        return textResult(err instanceof Error ? err.message : String(err));
+      }
       const preflight = runPreFlightChecks({
         task: params.originalTask,
         agent: defaultAgent,
-        model: resolveWorkerRouting(defaultAgent).model,
+        model: chainPreflightRouting.model,
       });
       if (!preflight.admit) {
         return textResult(`Chain dispatch blocked: ${preflight.reason}`);

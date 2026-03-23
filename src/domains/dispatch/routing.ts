@@ -1,6 +1,7 @@
 import { BusChannel, type WarningEvent } from "../../core/bus-events";
 import { sharedBus } from "../../core/shared-bus";
 import { agentRegistry } from "../agents";
+import { classifyModelTier, deriveProviderHint } from "../prompts/tiering";
 import { type SamplingPreset, findModelProfile, getSamplingPreset } from "../providers";
 
 export interface WorkerRouting {
@@ -65,6 +66,29 @@ export function resolveWorkerRouting(agentName: string): WorkerRouting {
         const message = `Model ${model} may not support tool calling. Agent "${agentName}" requires tools: ${spec.tools}`;
         console.error(`[pancode:dispatch] ${message}`);
         sharedBus.emit(BusChannel.WARNING, { source: "dispatch", message } satisfies WarningEvent);
+      }
+    }
+  }
+
+  // Tier advisory: warn when the resolved model is below the agent's recommended tier.
+  if (spec.tier !== "any" && model) {
+    const slashIdx = model.indexOf("/");
+    if (slashIdx !== -1) {
+      const profile = findModelProfile(model.slice(0, slashIdx), model.slice(slashIdx + 1));
+      if (profile) {
+        const hint = deriveProviderHint(model.slice(0, slashIdx));
+        const modelTier = classifyModelTier(profile.capabilities, hint, profile.family);
+        const tierRank: Record<string, number> = { frontier: 3, mid: 2, small: 1 };
+        const requiredRank = tierRank[spec.tier] ?? 0;
+        const actualRank = tierRank[modelTier] ?? 0;
+        if (actualRank < requiredRank) {
+          const message = `Agent "${agentName}" recommends tier "${spec.tier}" but model ${model} is "${modelTier}". Results may be degraded.`;
+          console.error(`[pancode:routing] ${message}`);
+          sharedBus.emit(BusChannel.WARNING, { source: "dispatch", message } satisfies WarningEvent);
+          if (process.env.PANCODE_STRICT_TIERS === "1") {
+            throw new Error(`Dispatch blocked: ${message}`);
+          }
+        }
       }
     }
   }
