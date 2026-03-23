@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { getBootTimings } from "../../core/boot-timing";
 import {
   BusChannel,
   type RunFinishedEvent,
@@ -1372,6 +1373,75 @@ export const extension = defineExtension((pi) => {
         display: true,
         details: { title: `Preset: ${request}` },
       });
+    },
+  });
+
+  pi.registerCommand("perf", {
+    description: "Show boot phase timing breakdown",
+    async handler(_args, _ctx) {
+      const timings = getBootTimings();
+      if (!timings) {
+        sendPanel(emitPanel, `${PANCODE_PRODUCT_NAME} Performance`, ["No boot timing data available."]);
+        return;
+      }
+
+      const lines: string[] = [`Boot mode: ${timings.mode}`, ""];
+      const maxLabel = Math.max(...timings.phases.map((p) => p.label.length));
+      let slowestIdx = 0;
+      for (let i = 1; i < timings.phases.length; i++) {
+        if (timings.phases[i].durationMs > timings.phases[slowestIdx].durationMs) {
+          slowestIdx = i;
+        }
+      }
+
+      for (let i = 0; i < timings.phases.length; i++) {
+        const phase = timings.phases[i];
+        const labelPad = phase.label.padEnd(maxLabel);
+        const ms = phase.durationMs.toFixed(0).padStart(6);
+        const marker = i === slowestIdx ? "  << slowest" : "";
+        lines.push(`  ${labelPad}: ${ms}ms${marker}`);
+      }
+
+      const budgetStatus = timings.budgetExceeded ? "EXCEEDED" : "OK";
+      lines.push("");
+      lines.push(
+        `  ${"TOTAL".padEnd(maxLabel)}: ${timings.totalMs.toFixed(0).padStart(6)}ms  (budget: ${timings.budgetMs}ms ${budgetStatus})`,
+      );
+      sendPanel(emitPanel, `${PANCODE_PRODUCT_NAME} Performance`, lines);
+    },
+  });
+
+  pi.registerCommand("safety", {
+    description: "Show or switch safety level live",
+    async handler(args, ctx) {
+      const request = args.trim().toLowerCase();
+      const currentSafety = (process.env.PANCODE_SAFETY ?? DEFAULT_SAFETY) as SafetyLevel;
+
+      if (!request) {
+        sendPanel(emitPanel, `${PANCODE_PRODUCT_NAME} Safety`, [
+          `Current: ${currentSafety}`,
+          "",
+          "Levels:",
+          `  ${currentSafety === "suggest" ? "*" : "-"} suggest      Read-only. All mutations require confirmation.`,
+          `  ${currentSafety === "auto-edit" ? "*" : "-"} auto-edit    File edits allowed. Destructive actions blocked.`,
+          `  ${currentSafety === "full-auto" ? "*" : "-"} full-auto    All actions allowed. No guardrails.`,
+          "",
+          "Use /safety <level> to switch. Changes take effect immediately.",
+          "Keyboard: ctrl+y to cycle.",
+        ]);
+        return;
+      }
+
+      if (!isSafetyLevel(request)) {
+        ctx.ui.notify("Invalid safety level. Use: suggest, auto-edit, full-auto", "error");
+        return;
+      }
+
+      process.env.PANCODE_SAFETY = request;
+      persistSettings({ safetyMode: request }, (message, level) => ctx.ui.notify(message, level));
+      ctx.ui.setStatus("safety", `Safety: ${request}`);
+      ctx.ui.notify(`Safety level set to ${request} (effective immediately)`, "info");
+      syncEditorDisplay();
     },
   });
 

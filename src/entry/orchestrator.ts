@@ -2,8 +2,10 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 import { resetRuntimeState } from "../cli/reset";
+import { type BootPhaseRecord, setBootTimings } from "../core/boot-timing";
 import { type PanCodeConfig, type SafetyLevel, loadConfig } from "../core/config";
 import { atomicWriteJsonSync } from "../core/config-writer";
+import { DEFAULT_STARTUP_BUDGET_MS } from "../core/defaults";
 import { collectDomainExtensions, filterValidDomains, resolveDomainOrder } from "../core/domain-loader";
 import { createSafeEventBus } from "../core/event-bus";
 import { ensureProjectRuntime } from "../core/init";
@@ -455,6 +457,32 @@ export async function runOrchestratorEntry(): Promise<void> {
   p8.end();
 
   printBootTimingTable(bootMode, bootPhases);
+
+  // Export boot timing data so the /perf command can display it.
+  const phaseRecords: BootPhaseRecord[] = bootPhases.map((p) => ({
+    name: p.name,
+    label: p.label,
+    durationMs: p.endMs - p.startMs,
+  }));
+  const totalBootMs = phaseRecords.reduce((sum, p) => sum + p.durationMs, 0);
+  const budgetMs = Number.parseInt(process.env.PANCODE_STARTUP_BUDGET_MS ?? "", 10) || DEFAULT_STARTUP_BUDGET_MS;
+  const budgetExceeded = totalBootMs > budgetMs;
+
+  setBootTimings({
+    mode: bootMode,
+    phases: phaseRecords,
+    totalMs: totalBootMs,
+    budgetMs,
+    budgetExceeded,
+  });
+
+  if (budgetExceeded) {
+    const slowest = phaseRecords.reduce((a, b) => (b.durationMs > a.durationMs ? b : a));
+    process.stderr.write(
+      `[pancode:boot] WARNING: Startup took ${totalBootMs.toFixed(0)}ms, exceeding budget of ${budgetMs}ms. ` +
+        `Slowest phase: ${slowest.label} (${slowest.durationMs.toFixed(0)}ms).\n`,
+    );
+  }
 
   // -----------------------------------------------------------------------
   // Background discovery (warm boot only)

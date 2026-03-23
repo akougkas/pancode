@@ -10,6 +10,9 @@ export const DEFAULT_THINKING_LEVEL = "medium" as const;
 // PANCODE_MAX_RUNS controls dispatch run history; PANCODE_MAX_METRICS controls metric history.
 export const DEFAULT_MAX_RUNS = 500;
 export const DEFAULT_MAX_METRICS = 1000;
+// Startup performance budget. If total boot time exceeds this value, a warning
+// is logged to stderr identifying the slowest phase. Configurable via env var.
+export const DEFAULT_STARTUP_BUDGET_MS = 3000;
 
 export const DEFAULT_ENABLED_DOMAINS = [
   "safety",

@@ -28,7 +28,9 @@ type RegisterPreFlight = (name: string, fn: (context: SafetyPreFlightContext) =>
 
 export function registerSafetyPreFlightChecks(register: RegisterPreFlight): void {
   register("scope-enforcement", (context) => {
-    const admission = checkDispatchAdmission(autonomyMode, autonomyMode);
+    // Re-read from env so live changes via /safety apply to dispatch admission.
+    const currentMode = parseAutonomyMode(process.env.PANCODE_SAFETY);
+    const admission = checkDispatchAdmission(currentMode, currentMode);
     if (!admission.admitted) {
       return { admit: false, reason: admission.reason };
     }
@@ -94,6 +96,10 @@ export const extension = defineExtension((pi) => {
   });
 
   pi.on(PiEvent.TOOL_CALL, (event, _ctx) => {
+    // Re-read autonomy mode from env on every evaluation so that live changes
+    // from /safety or /settings safety take effect immediately without restart.
+    autonomyMode = parseAutonomyMode(process.env.PANCODE_SAFETY);
+
     const actionClass = classifyAction(event.toolName);
 
     // Safety policy enforcement: check the policy matrix for the current autonomy mode.

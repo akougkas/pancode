@@ -48,6 +48,7 @@ export const PANCODE_SHELL_COMMANDS: readonly PanCodeShellCommand[] = [
   { name: "audit", description: "Structured audit trail", category: "observe" },
   { name: "doctor", description: "Run diagnostic health checks", category: "observe" },
   { name: "metrics", args: "[count]", description: "Show dispatch metrics", category: "observe" },
+  { name: "perf", description: "Show boot phase timing breakdown", category: "observe" },
 
   // SCHEDULE
   { name: "budget", args: "[set <amount>]", description: "Show or set dispatch budget", category: "schedule" },
@@ -70,6 +71,12 @@ export const PANCODE_SHELL_COMMANDS: readonly PanCodeShellCommand[] = [
     category: "display",
   },
   { name: "reasoning", args: "[off|on]", description: "Inspect or change reasoning preference", category: "display" },
+  {
+    name: "safety",
+    args: "[suggest|auto-edit|full-auto]",
+    description: "Show or switch safety level live",
+    category: "display",
+  },
   { name: "help", description: "Show PanCode commands", category: "display" },
   { name: "exit", description: "Exit PanCode", category: "display" },
 
