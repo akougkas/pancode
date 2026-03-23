@@ -66,8 +66,12 @@ export class MetricsLedger {
 
   persist(): void {
     const dir = dirname(this.persistPath);
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(this.persistPath, JSON.stringify(this.entries, null, 2), "utf8");
+    try {
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(this.persistPath, JSON.stringify(this.entries, null, 2), "utf8");
+    } catch (err) {
+      console.error(`[pancode:metrics] Failed to persist metrics: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   record(metric: RunMetric): void {

@@ -28,9 +28,14 @@ import type { RuntimeResult, RuntimeTaskConfig, SpawnConfig } from "../types";
  *     auto-approve (-y), Cline's CLI auto-switches to act mode after
  *     generating a plan. The plan_mode_respond handler does not wait for
  *     user approval when -y is set, so plan mode effectively becomes
- *     "plan then act." PanCode works around this by defaulting non-readonly
- *     agents to act mode (-a) and accepting that readonly agents dispatched
- *     with -p will still execute mutations after planning.
+ *     "plan then act." Non-readonly agents default to act mode (-a).
+ *
+ *     Known limitation: Readonly enforcement for Cline agents is best-effort.
+ *     The upstream plan_mode_respond bug means plan mode agents may execute
+ *     mutations. The ideal fix is to use act mode with Cline's --deny-tool
+ *     flag to block mutation tools, but --deny-tool does not exist in the
+ *     current Cline CLI. When Cline adds tool denial support, this adapter
+ *     should switch readonly agents to -a with --deny-tool.
  *
  *   Model passthrough (-m provider:model-id)
  *     Routes through the configured provider's base URL
@@ -67,8 +72,10 @@ export class ClineRuntime extends CliRuntime {
     const args = ["-y", "--json"];
 
     // Map PanCode readonly to Cline Plan/Act mode.
-    // Note: -p with -y triggers the plan_mode_respond bug where Cline
-    // auto-switches to act after planning. See header comment.
+    // Readonly uses -p (plan mode) as best-effort protection. This is imperfect
+    // because the plan_mode_respond bug causes Cline to auto-switch to act mode
+    // after planning when -y is set. See header comment for known limitation.
+    // TODO: Switch to -a with --deny-tool when Cline adds tool denial support.
     if (config.readonly) {
       args.push("-p");
     } else {
