@@ -74,6 +74,7 @@ import {
   resetViewRouter,
   scheduleAutoTransition,
   setView,
+  toggleView,
 } from "./view-router";
 import { extractResultSummary } from "./widget-utils";
 import {
@@ -568,6 +569,7 @@ export const extension = defineExtension((pi) => {
             workers,
             contextPercent: Math.round(getContextPercent()),
             categories: getCategoryBreakdown(),
+            currentView: getView(),
           },
           width,
           colorizer,
@@ -803,6 +805,25 @@ export const extension = defineExtension((pi) => {
       ctx.ui.setStatus("thinking", `Reasoning: ${next}`);
       ctx.ui.notify(`Reasoning: ${next}`, "info");
       syncEditorDisplay();
+    },
+  });
+
+  // ctrl+d: toggle between editor and dashboard views.
+  pi.registerShortcut("ctrl+d", {
+    description: "Toggle between editor and dashboard views",
+    handler: async (ctx) => {
+      const next = toggleView("editor", "dashboard");
+      ctx.ui.notify(`View: ${next}`, "info");
+    },
+  });
+
+  // ctrl+o: toggle dispatch board overlay.
+  // When currently in dispatch, returns to editor. Otherwise switches to dispatch.
+  pi.registerShortcut("ctrl+o", {
+    description: "Toggle dispatch board overlay",
+    handler: async (ctx) => {
+      const next = toggleView("editor", "dispatch");
+      ctx.ui.notify(`View: ${next}`, "info");
     },
   });
 

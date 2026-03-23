@@ -14,6 +14,7 @@
 import { truncateToWidth, visibleWidth } from "../../engine/tui";
 import type { CategoryBreakdown, ContextCategory } from "./context-tracker";
 import type { TuiColorizer } from "./dashboard-theme";
+import type { ViewName } from "./view-router";
 import { formatCost, formatDuration, formatTokenCount } from "./widget-utils";
 
 /** @deprecated Use TuiColorizer instead. Alias retained for migration. */
@@ -42,6 +43,7 @@ export interface FooterData {
   workers: FooterWorker[];
   contextPercent: number;
   categories: CategoryBreakdown[];
+  currentView?: ViewName;
 }
 
 // ---------------------------------------------------------------------------
@@ -273,6 +275,32 @@ function renderContextBar(data: FooterData, width: number, c: TuiColorizer): str
 }
 
 // ---------------------------------------------------------------------------
+// Shortcut hints line
+// ---------------------------------------------------------------------------
+
+/**
+ * Render contextual keyboard shortcut hints based on the active view.
+ * Shows relevant view-switch shortcuts so the user knows how to navigate.
+ */
+function renderShortcutHints(view: ViewName | undefined, width: number, c: TuiColorizer): string {
+  const hints: string[] = [];
+
+  if (view === "dashboard") {
+    hints.push("ctrl+d:editor", "ctrl+o:dispatch");
+  } else if (view === "dispatch") {
+    hints.push("ctrl+d:dashboard", "ctrl+o:editor");
+  } else {
+    // editor (default)
+    hints.push("ctrl+d:dashboard", "ctrl+o:dispatch");
+  }
+
+  hints.push("ctrl+y:safety", "ctrl+t:reasoning");
+
+  const formatted = hints.map((h) => c.dim(h)).join(c.dim("  \u2502  "));
+  return truncateToWidth(`  ${formatted}`, width);
+}
+
+// ---------------------------------------------------------------------------
 // Main render function
 // ---------------------------------------------------------------------------
 
@@ -301,6 +329,9 @@ export function renderFooterLines(data: FooterData, width: number, c: TuiColoriz
 
   // Context bar with category segments
   lines.push(renderContextBar(data, width, c));
+
+  // Shortcut hints (contextual to active view)
+  lines.push(renderShortcutHints(data.currentView, width, c));
 
   return lines;
 }
