@@ -26,6 +26,10 @@ export interface RunEnvelope {
   completedAt: string | null;
   batchId: string | null;
   cwd: string;
+  /** SHA-256 of compiled system prompt, set at dispatch time for receipt generation. */
+  promptHash?: string;
+  /** CSV tool allowlist sent to the worker, set at dispatch time for receipt generation. */
+  workerTools?: string;
 }
 
 export type LedgerEntry = RunEnvelope | SessionBoundary;
