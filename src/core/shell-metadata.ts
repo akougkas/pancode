@@ -64,7 +64,7 @@ export const PANCODE_SHELL_COMMANDS: readonly PanCodeShellCommand[] = [
   { name: "settings", args: "[subcommand]", description: "Show or change PanCode configuration", category: "display" },
   { name: "theme", args: "[name|list]", description: "Inspect or change the active theme", category: "display" },
   {
-    name: "mode",
+    name: "modes",
     args: "[capture|plan|build|ask|review]",
     description: "Switch orchestrator behavior mode",
     category: "display",

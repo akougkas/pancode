@@ -1253,7 +1253,7 @@ export const extension = defineExtension((pi) => {
     handler: handleReasoningCommand,
   });
 
-  pi.registerCommand("mode", {
+  pi.registerCommand("modes", {
     description: "Switch orchestrator mode (capture, plan, build, ask, review)",
     async handler(args, ctx) {
       const request = args.trim().toLowerCase();
@@ -1266,7 +1266,7 @@ export const extension = defineExtension((pi) => {
           const mutations = def.mutationsAllowed ? "mutations" : "readonly";
           lines.push(`  ${marker} ${def.name.padEnd(8)} ${def.description} (${dispatch}, ${mutations})`);
         }
-        lines.push("", "Use /mode <name> to switch, or Shift+Tab to cycle.");
+        lines.push("", "Use /modes <name> to switch, or Shift+Tab to cycle.");
         sendPanel(emitPanel, `${PANCODE_PRODUCT_NAME} Modes`, lines);
         return;
       }

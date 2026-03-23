@@ -110,30 +110,25 @@ export function installPanCodeShellOverrides(): void {
   }
 
   // === Models ===
-  // Guard against Pi SDK prefix collision: if the SDK matches /mode as /model,
-  // the searchTerm will contain the mode name (e.g., "e build" from "/mode build"
-  // parsed as "/model" + " e build"). Detect this and reroute to /mode.
+  // /modes (plural) avoids the Pi SDK prefix collision entirely: the SDK's
+  // hardcoded check for "/model" or "/model " never matches "/modes".
+  // The defensive reroute below is kept as a safety net in case future SDK
+  // changes introduce new prefix-matching behavior.
   const MODE_NAMES = new Set(["capture", "plan", "build", "ask", "review"]);
   if (typeof prototype.handleModelCommand === "function") {
     prototype.handleModelCommand = async function handleModelCommand(
       this: ShellPatchedInteractiveMode,
       searchTerm?: string,
     ) {
-      // Detect /mode collision: if searchTerm starts with "e " followed by a mode name,
-      // or if searchTerm itself is a mode name (bare /mode → /model with no suffix),
-      // reroute to the /mode command.
+      // Safety net: if Pi SDK somehow routes /modes as /model with searchTerm
+      // "s" or "s <mode>", reroute to the /modes extension command.
       const trimmed = searchTerm?.trim() ?? "";
-      if (trimmed.startsWith("e ")) {
-        const possibleMode = trimmed.slice(2).trim().toLowerCase();
-        if (MODE_NAMES.has(possibleMode) || possibleMode === "") {
-          await routeToShellCommand(this, `/mode ${possibleMode}`.trim());
+      if (trimmed === "s" || trimmed.startsWith("s ")) {
+        const possibleMode = trimmed.slice(1).trim().toLowerCase();
+        if (possibleMode === "" || MODE_NAMES.has(possibleMode)) {
+          await routeToShellCommand(this, `/modes ${possibleMode}`.trim());
           return;
         }
-      }
-      if (trimmed === "e") {
-        // Bare "/mode" → Pi SDK sees "/model" with searchTerm "e"
-        await routeToShellCommand(this, "/mode");
-        return;
       }
       const suffix = trimmed ? ` ${trimmed}` : "";
       await routeToShellCommand(this, `/models${suffix}`);
