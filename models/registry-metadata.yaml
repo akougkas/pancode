@@ -1,0 +1,27 @@
+avoid:
+  - pattern: "falcon-h1r"
+    reason: "Emits text markers instead of structured tool calls"
+  - pattern: "qwen3-coder-30b-a3b"
+    reason: "Jinja template causes Pi SDK streaming failure"
+
+recommended:
+  orchestrator:
+    - family: "qwen3.5"
+      variant: "35b-a3b"
+      reason: "MoE with 3B active, fast inference, strong tool use"
+  worker:
+    - family: "qwen3.5"
+      variant: "35b-a3b-distilled"
+      reason: "Claude reasoning distillation, strong coding"
+  scout:
+    - family: "qwen3.5"
+      variant: "2b"
+      reason: "100% quality at 4.2s avg, optimal for tool-use tasks"
+
+context_caps:
+  - pattern: "qwen3.5-35b-a3b"
+    max_context: 262144
+    reason: "Verified accurate context window for Qwen3.5-35B-A3B"
+  - pattern: "qwen3.5-2b"
+    max_context: 131072
+    reason: "Verified accurate context window for Qwen3.5-2B"

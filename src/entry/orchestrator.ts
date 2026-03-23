@@ -17,12 +17,14 @@ import {
   createSharedAuth,
   discoverEngines,
   loadModelKnowledgeBase,
+  loadRegistryMetadata,
   matchAllModels,
   readModelCacheYaml,
   registerApiProvidersOnRegistry,
   registerDiscoveredModels,
   resolveConfiguredModel,
   setModelProfileCache,
+  setRegistryMetadata,
   writeModelCacheYaml,
   writeProvidersYaml,
 } from "../domains/providers";
@@ -184,9 +186,11 @@ async function runFullDiscovery(): Promise<{ results: DiscoveryResult[]; profile
   const packageRoot = resolvePackageRoot(import.meta.url);
   const modelsDir = join(packageRoot, "models");
   const knowledgeBase = loadModelKnowledgeBase(modelsDir);
+  const registry = loadRegistryMetadata(modelsDir);
+  setRegistryMetadata(registry);
 
   const allModels = results.flatMap((r) => r.models);
-  const profiles = matchAllModels(allModels, knowledgeBase);
+  const profiles = matchAllModels(allModels, knowledgeBase, registry);
   writeModelCacheYaml(profiles, PANCODE_HOME);
 
   return { results, profiles };
