@@ -30,6 +30,12 @@ import { getRunLedger } from "../dispatch";
 import { getMetricsLedger } from "../observability";
 import { type MergedModelProfile, getModelProfileCache } from "../providers";
 import { getBudgetTracker } from "../scheduling";
+import { getContextPercent, getContextTokens, getContextWindow } from "./context-tracker";
+import { renderDashboard } from "./dashboard-layout";
+import { getRecentLogs } from "./dashboard-logs";
+import { buildDashboardConfig, buildDashboardState } from "./dashboard-state";
+import { PLAIN_COLORIZER } from "./dashboard-theme";
+import { getLiveWorkers } from "./worker-widgets";
 
 // ---------------------------------------------------------------------------
 // Shared state and callback interfaces
@@ -623,29 +629,37 @@ export function createCommandHandlers(state: UiCommandState, cb: UiCommandCallba
   };
 
   const showDashboard: CommandHandler = async (_args, ctx) => {
-    const modelLabel = ctx.model ? modelRef(ctx.model) : "unresolved";
-    const dashMode = getModeDefinition();
-    const lines = [...buildWelcomeScreen(modelLabel, dashMode.name)];
-
+    const liveWorkers = getLiveWorkers();
     const ledger = getRunLedger();
-    const metrics = getMetricsLedger();
-    const budget = getBudgetTracker();
-    const summary = metrics?.getSummary();
     const allRuns = ledger?.getAll() ?? [];
-    const activeCount = allRuns.filter((r) => r.status === "running").length;
+    const metrics = getMetricsLedger();
+    const summary = metrics?.getSummary();
+    const budget = getBudgetTracker();
+    const budgetState = budget?.getState();
 
-    if (allRuns.length > 0) {
-      const parts: string[] = [`${allRuns.length} dispatches`];
-      if (activeCount > 0) parts.push(`${activeCount} active`);
-      if (summary && summary.totalCost != null && summary.totalCost > 0) {
-        parts.push(`$${summary.totalCost.toFixed(4)} spent`);
-      }
-      if (budget) {
-        const budgetState = budget.getState();
-        if (budgetState.totalCost > 0) parts.push(`$${budgetState.ceiling.toFixed(2)} ceiling`);
-      }
-      lines.push("", `Session: ${parts.join("  ")}`);
-    }
+    const dashState = buildDashboardState({
+      config: buildDashboardConfig(),
+      liveWorkers,
+      allRuns,
+      agentSpecs: agentRegistry.getAll(),
+      modelProfiles: getModelProfileCache(),
+      contextPercent: Math.round(getContextPercent()),
+      contextTokens: getContextTokens(),
+      contextWindow: getContextWindow(),
+      totalCost: budgetState?.totalCost ?? 0,
+      budgetCeiling: budgetState?.ceiling ?? null,
+      totalRuns: allRuns.length,
+      totalInputTokens: summary?.totalInputTokens ?? 0,
+      totalOutputTokens: summary?.totalOutputTokens ?? 0,
+      currentModelLabel: ctx.model ? modelRef(ctx.model) : "unresolved",
+      reasoningLevel: cb.getThinkingLevel() || "off",
+      runtimeCount: runtimeRegistry.available().length,
+      recentLogs: getRecentLogs(12),
+    });
+
+    const termWidth = process.stdout.columns ?? 120;
+    const termHeight = process.stdout.rows ?? 40;
+    const lines = renderDashboard(dashState, termWidth, termHeight, PLAIN_COLORIZER);
 
     sendPanel(cb.emitPanel, `${PANCODE_PRODUCT_NAME} Dashboard`, lines);
   };

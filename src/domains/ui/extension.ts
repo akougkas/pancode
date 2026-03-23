@@ -259,6 +259,7 @@ export const extension = defineExtension((pi) => {
     state.currentModelLabel = ctx.model ? modelRef(ctx.model) : "no model";
     state.currentThemeName = ctx.ui.theme.name ?? state.currentThemeName;
     state.currentReasoningPreference = readReasoningPreference();
+    logNow("Session started", "info");
 
     // Surface cross-domain warnings from dispatch and other subsystems in the shell.
     sharedBus.on(BusChannel.WARNING, (payload) => {
