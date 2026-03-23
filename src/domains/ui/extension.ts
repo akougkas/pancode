@@ -61,7 +61,7 @@ import {
 } from "./context-tracker";
 import { renderDashboard } from "./dashboard-layout";
 import { clearProgressCounter, getRecentLogs, logNow, shouldLogProgress } from "./dashboard-logs";
-import { buildDashboardConfig, buildDashboardState } from "./dashboard-state";
+import { DashboardStateManager, buildDashboardConfig } from "./dashboard-state";
 import type { TuiColorizer } from "./dashboard-theme";
 import { renderDispatchBoard } from "./dispatch-board";
 import type { AgentStat, DispatchCardData } from "./dispatch-board";
@@ -326,6 +326,22 @@ export const extension = defineExtension((pi) => {
     // and triggers repaints. A 1-second interval timer drives smooth elapsed
     // time updates on active worker cards in the dispatch view.
     const dashboardConfig = buildDashboardConfig();
+    const dashManager = new DashboardStateManager(dashboardConfig, {
+      getAgentSpecs: () => agentRegistry.getAll(),
+      getModelProfiles: () => getModelProfileCache(),
+      getRuntimeCount: () => runtimeRegistry.available().length,
+      getAllRuns: () => getRunLedger()?.getAll() ?? [],
+      getTotalCost: () => getBudgetTracker()?.getState().totalCost ?? 0,
+      getBudgetCeiling: () => getBudgetTracker()?.getState().ceiling ?? null,
+      getMetricsSummary: () => {
+        const m = getMetricsLedger();
+        const s = m?.getSummary();
+        return {
+          totalInputTokens: s?.totalInputTokens ?? 0,
+          totalOutputTokens: s?.totalOutputTokens ?? 0,
+        };
+      },
+    });
     ctx.ui.setWidget("pancode-main", (_tui, theme) => {
       const container = new Container();
       const content = new Text("", 0, 0);
@@ -435,33 +451,15 @@ export const extension = defineExtension((pi) => {
         );
       }
 
-      /** Render the dashboard view. */
+      /** Render the dashboard view using incremental state manager. */
       function renderDashboardView(width: number, colorizer: TuiColorizer): string[] {
-        const liveWorkers = getLiveWorkers();
-        const ledger = getRunLedger();
-        const allRuns = ledger?.getAll() ?? [];
-        const metrics = getMetricsLedger();
-        const summary = metrics?.getSummary();
-        const budget = getBudgetTracker();
-        const budgetState = budget?.getState();
-
-        const dashState = buildDashboardState({
-          config: dashboardConfig,
-          liveWorkers,
-          allRuns,
-          agentSpecs: agentRegistry.getAll(),
-          modelProfiles: getModelProfileCache(),
+        const dashState = dashManager.getState({
+          liveWorkers: getLiveWorkers(),
           contextPercent: Math.round(getContextPercent()),
           contextTokens: getContextTokens(),
           contextWindow: getContextWindow(),
-          totalCost: budgetState?.totalCost ?? 0,
-          budgetCeiling: budgetState?.ceiling ?? null,
-          totalRuns: allRuns.length,
-          totalInputTokens: summary?.totalInputTokens ?? 0,
-          totalOutputTokens: summary?.totalOutputTokens ?? 0,
           currentModelLabel: state.currentModelLabel,
           reasoningLevel: pi.getThinkingLevel() || "off",
-          runtimeCount: runtimeRegistry.available().length,
           recentLogs: getRecentLogs(12),
         });
 
@@ -610,6 +608,7 @@ export const extension = defineExtension((pi) => {
       trackWorkerStart(event.runId, event.agent, event.task, event.model, event.runtime);
       const rt = event.runtime ? ` [${event.runtime}]` : "";
       logNow(`Run started: ${event.agent}${rt}`, "info");
+      dashManager.markStale("runs");
 
       // Auto-switch to dispatch view when workers start running.
       cancelAutoTransition();
@@ -641,6 +640,7 @@ export const extension = defineExtension((pi) => {
       const event = payload as RunFinishedEvent;
       trackWorkerEnd(event.runId, event.status as WorkerStatus);
       clearProgressCounter(event.runId);
+      dashManager.markStale("runs");
 
       const cost = event.usage.cost != null ? ` $${event.usage.cost.toFixed(4)}` : "";
       logNow(`Run finished: ${event.agent} [${event.status}]${cost}`, "info");
@@ -684,6 +684,7 @@ export const extension = defineExtension((pi) => {
     // Budget warnings when spending exceeds 80% of ceiling.
     sharedBus.on(BusChannel.BUDGET_UPDATED, (payload) => {
       const event = payload as BudgetUpdatedEvent;
+      dashManager.markStale("budget");
       if (event.ceiling > 0 && event.totalCost / event.ceiling > 0.8) {
         const pct = Math.round((event.totalCost / event.ceiling) * 100);
         logNow(`Budget ${pct}% used ($${event.totalCost.toFixed(2)}/$${event.ceiling.toFixed(2)})`, "warn", true);
@@ -691,6 +692,7 @@ export const extension = defineExtension((pi) => {
     });
 
     sharedBus.on(BusChannel.RUNTIMES_DISCOVERED, () => {
+      dashManager.markStale("infrastructure");
       logNow("Runtimes discovered", "info");
     });
 

@@ -1,8 +1,13 @@
 /**
- * Dashboard state builder.
+ * Dashboard state builder and incremental state manager.
  *
  * Constructs a DashboardState from live PanCode runtime telemetry.
  * Every field is sourced from a real data API. Nothing is fabricated.
+ *
+ * DashboardStateManager wraps the builder with staleness tracking so that
+ * slow-changing fields (nodes, models, agents, runtimes, budget, run metrics)
+ * recompute only when a bus event marks the corresponding group stale. Fast
+ * fields (time, context, workers, tasks, systemStatus) recompute every render.
  *
  * Imported by extension.ts to power the dashboard widget's render loop.
  */
@@ -215,4 +220,137 @@ export function buildDashboardState(params: {
     tasks,
     logs: recentLogs,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Staleness groups
+// ---------------------------------------------------------------------------
+
+/** Groups of dashboard fields that share staleness tracking. */
+export type StaleGroup = "runs" | "budget" | "infrastructure";
+
+// ---------------------------------------------------------------------------
+// State manager interfaces
+// ---------------------------------------------------------------------------
+
+/** Provider functions for slow-changing data sources. */
+export interface DashboardDataProviders {
+  getAgentSpecs: () => AgentSpec[];
+  getModelProfiles: () => MergedModelProfile[];
+  getRuntimeCount: () => number;
+  getAllRuns: () => RunEnvelope[];
+  getTotalCost: () => number;
+  getBudgetCeiling: () => number | null;
+  getMetricsSummary: () => { totalInputTokens: number; totalOutputTokens: number };
+}
+
+/** Fast-changing parameters provided on every render call. */
+export interface DashboardFastParams {
+  liveWorkers: LiveWorkerState[];
+  contextPercent: number;
+  contextTokens: number;
+  contextWindow: number;
+  currentModelLabel: string;
+  reasoningLevel: string;
+  recentLogs: LogEntry[];
+}
+
+// ---------------------------------------------------------------------------
+// Incremental dashboard state manager
+// ---------------------------------------------------------------------------
+
+/**
+ * Caches dashboard state and refreshes only stale field groups.
+ *
+ * Fast fields (time, context, workers, tasks, systemStatus) recompute every
+ * render via the params passed to getState(). Slow fields (nodes, models,
+ * agents, runtimes, budget, run metrics) recompute only when a bus event
+ * marks the corresponding group stale via markStale().
+ *
+ * All groups start stale so the first getState() call populates everything.
+ */
+export class DashboardStateManager {
+  private cached: DashboardState | null = null;
+  private readonly stale = new Set<StaleGroup>(["runs", "budget", "infrastructure"]);
+  private readonly config: DashboardConfig;
+  private readonly providers: DashboardDataProviders;
+
+  // Cached slow provider results
+  private agentSpecs: AgentSpec[] = [];
+  private modelProfiles: MergedModelProfile[] = [];
+  private runtimeCount = 0;
+  private allRuns: RunEnvelope[] = [];
+  private totalCost = 0;
+  private budgetCeiling: number | null = null;
+  private totalInputTokens = 0;
+  private totalOutputTokens = 0;
+
+  constructor(config: DashboardConfig, providers: DashboardDataProviders) {
+    this.config = config;
+    this.providers = providers;
+  }
+
+  /** Mark a field group as stale so the next getState() call refreshes it. */
+  markStale(group: StaleGroup): void {
+    this.stale.add(group);
+  }
+
+  /** Return the last cached snapshot, or null before first render. */
+  getCached(): DashboardState | null {
+    return this.cached;
+  }
+
+  /**
+   * Build an up-to-date DashboardState.
+   *
+   * Refreshes slow field groups only when marked stale by bus events.
+   * Fast fields (workers, context, time, logs) always recompute from
+   * the provided params.
+   */
+  getState(fast: DashboardFastParams): DashboardState {
+    this.refreshStaleGroups();
+
+    this.cached = buildDashboardState({
+      config: this.config,
+      liveWorkers: fast.liveWorkers,
+      allRuns: this.allRuns,
+      agentSpecs: this.agentSpecs,
+      modelProfiles: this.modelProfiles,
+      contextPercent: fast.contextPercent,
+      contextTokens: fast.contextTokens,
+      contextWindow: fast.contextWindow,
+      totalCost: this.totalCost,
+      budgetCeiling: this.budgetCeiling,
+      totalRuns: this.allRuns.length,
+      totalInputTokens: this.totalInputTokens,
+      totalOutputTokens: this.totalOutputTokens,
+      currentModelLabel: fast.currentModelLabel,
+      reasoningLevel: fast.reasoningLevel,
+      runtimeCount: this.runtimeCount,
+      recentLogs: fast.recentLogs,
+    });
+
+    return this.cached;
+  }
+
+  private refreshStaleGroups(): void {
+    if (this.stale.has("infrastructure")) {
+      this.agentSpecs = this.providers.getAgentSpecs();
+      this.modelProfiles = this.providers.getModelProfiles();
+      this.runtimeCount = this.providers.getRuntimeCount();
+      this.stale.delete("infrastructure");
+    }
+    if (this.stale.has("runs")) {
+      this.allRuns = this.providers.getAllRuns();
+      const summary = this.providers.getMetricsSummary();
+      this.totalInputTokens = summary.totalInputTokens;
+      this.totalOutputTokens = summary.totalOutputTokens;
+      this.stale.delete("runs");
+    }
+    if (this.stale.has("budget")) {
+      this.totalCost = this.providers.getTotalCost();
+      this.budgetCeiling = this.providers.getBudgetCeiling();
+      this.stale.delete("budget");
+    }
+  }
 }
