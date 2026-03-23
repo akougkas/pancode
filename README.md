@@ -114,7 +114,7 @@ under `~/.pancode/`. The full reference lives in
 | `PANCODE_NODE_CONCURRENCY` | Max workers per node | `4` |
 | `PANCODE_SAFETY` | Autonomy mode | `auto-edit` |
 | `PANCODE_BUDGET_CEILING` | Session budget ceiling | `10.0` |
-| `PANCODE_THEME` | UI theme | `pancode-dark` |
+| `PANCODE_THEME` | UI theme | `dark` |
 | `PANCODE_REASONING` | Reasoning preference | `medium` |
 | `PANCODE_INTELLIGENCE` | Opt-in intelligence gate | `enabled` |
 

@@ -97,7 +97,7 @@ the sample file.
 
 - `PANCODE_THEME` - active theme name. Read by `src/core/config.ts`,
   `src/core/settings-state.ts`, and `src/domains/ui/extension.ts`.
-  Default `pancode-dark`.
+  Default `dark`.
 - `PANCODE_REASONING` - reasoning preference. Read by `src/core/config.ts`,
   `src/core/settings-state.ts`, and `src/domains/ui/extension.ts`.
   Valid values: `off`, `minimal`, `low`, `medium`, `high`, `xhigh`.
@@ -229,7 +229,7 @@ Fields and defaults:
 
 - `preferredProvider` - `null`
 - `preferredModel` - `null`
-- `theme` - `pancode-dark`
+- `theme` - `dark`
 - `reasoningPreference` - `medium`
 - `safetyMode` - `null`
 - `workerModel` - `null`
