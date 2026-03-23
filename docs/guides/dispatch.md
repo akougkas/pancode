@@ -164,7 +164,7 @@ tracking:
 
 `src/domains/dispatch/worker-spawn.ts` handles the subprocess lifecycle.
 
-### Pi SDK Native Workers
+### Native Workers
 
 For agents with `runtime: "pi"`, the worker spawn process:
 

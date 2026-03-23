@@ -40,7 +40,7 @@ PanCode supports three runtime tiers for agent execution:
 
 | Tier | Backend | Integration Depth |
 |------|---------|-------------------|
-| Native | Pi SDK agents | Full control: tools, model, prompt, safety, events |
+| Native | PanCode native agents | Full control: tools, model, prompt, safety, events |
 | SDK | Claude Agent SDK, OpenAI Agents SDK, Mastra | Deep control, structured I/O |
 | CLI | Headless subprocess | Task + CWD + system prompt |
 
@@ -61,7 +61,7 @@ system prompts, tool sets, and model assignments.
 
 PanCode applies a unified safety model across all runtimes and agents. The same
 policy matrix governs what actions are allowed, regardless of whether the worker
-is a Pi SDK native agent or a CLI subprocess. Workers cannot escalate their own
+is a native agent or a CLI subprocess. Workers cannot escalate their own
 permissions beyond what the orchestrator grants.
 
 ### Pan-observe
@@ -79,7 +79,7 @@ machine becomes a managed, observable, coordinated PanCode worker.
 
 ### Native Tier
 
-Pi SDK agents run inside PanCode's process model with full control over tools,
+Native agents run inside PanCode's process model with full control over tools,
 model selection, prompt injection, safety enforcement, and lifecycle events.
 This is the highest-fidelity integration.
 
