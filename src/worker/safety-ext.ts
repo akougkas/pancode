@@ -83,24 +83,131 @@ function withFileLock<T>(filePath: string, fn: () => T, timeoutMs = 2000): T {
   }
 }
 
+// Worker-local policy matrix. Mirrors DEFAULT_MODE_POLICIES from src/domains/safety/scope.ts.
+// Duplicated here because worker/ cannot import from domains/ (isolation boundary).
+type ActionClass =
+  | "file_read"
+  | "file_write"
+  | "file_delete"
+  | "bash_exec"
+  | "bash_destructive"
+  | "git_push"
+  | "git_destructive"
+  | "network"
+  | "agent_dispatch"
+  | "system_modify";
+
+type SafetyTier = "block" | "allow";
+
+const WORKER_POLICY: Record<string, Record<ActionClass, SafetyTier>> = {
+  suggest: {
+    file_read: "allow",
+    file_write: "block",
+    file_delete: "block",
+    bash_exec: "block",
+    bash_destructive: "block",
+    git_push: "block",
+    git_destructive: "block",
+    network: "allow",
+    agent_dispatch: "block",
+    system_modify: "block",
+  },
+  "auto-edit": {
+    file_read: "allow",
+    file_write: "allow",
+    file_delete: "block",
+    bash_exec: "allow",
+    bash_destructive: "block",
+    git_push: "block",
+    git_destructive: "block",
+    network: "allow",
+    agent_dispatch: "allow",
+    system_modify: "block",
+  },
+  "full-auto": {
+    file_read: "allow",
+    file_write: "allow",
+    file_delete: "allow",
+    bash_exec: "allow",
+    bash_destructive: "allow",
+    git_push: "allow",
+    git_destructive: "block",
+    network: "allow",
+    agent_dispatch: "allow",
+    system_modify: "block",
+  },
+};
+
+const TOOL_ACTION_MAP: Record<string, ActionClass> = {
+  read: "file_read",
+  grep: "file_read",
+  find: "file_read",
+  ls: "file_read",
+  glob: "file_read",
+  write: "file_write",
+  edit: "file_write",
+  notebook_edit: "file_write",
+  bash: "bash_exec",
+  shell: "bash_exec",
+  web_fetch: "network",
+  web_search: "network",
+};
+
+const DESTRUCTIVE_BASH_PATTERNS = [
+  /rm\s+(-rf|-fr|--force)/,
+  /git\s+reset\s+--hard/,
+  /git\s+push\s+.*--force/,
+  /git\s+clean\s+-[dfx]/,
+  /chmod\s+777/,
+  /sudo\s/,
+];
+
+function classifyWorkerBashCommand(command: string): ActionClass {
+  for (const pattern of DESTRUCTIVE_BASH_PATTERNS) {
+    if (pattern.test(command)) return "bash_destructive";
+  }
+  if (/git\s+push/.test(command)) return "git_push";
+  if (/git\s+(reset|rebase|cherry-pick|merge)/.test(command)) return "git_destructive";
+  if (/rm\s/.test(command)) return "file_delete";
+  return "bash_exec";
+}
+
+function isWorkerActionAllowed(mode: string, action: ActionClass): boolean {
+  const policy = WORKER_POLICY[mode];
+  if (!policy) return false;
+  return policy[action] === "allow";
+}
+
 const safetyExtension: ExtensionFactory = (pi) => {
   const autonomyMode = process.env.PANCODE_SAFETY ?? "auto-edit";
 
-  // Safety gating: enforce autonomy mode on tool calls
+  // Safety gating: enforce full policy matrix on tool calls.
+  // Workers inherit the orchestrator's autonomy mode and cannot exceed it.
   pi.on("tool_call", (event: ToolCallEvent): { block?: boolean; reason?: string } | undefined => {
     const toolName = event.toolName.toLowerCase().replace(/-/g, "_");
+    const actionClass = TOOL_ACTION_MAP[toolName] ?? "file_read";
 
-    const READ_TOOLS = new Set(["read", "grep", "find", "ls", "glob"]);
-    const WRITE_TOOLS = new Set(["write", "edit", "notebook_edit"]);
-    const EXECUTE_TOOLS = new Set(["bash", "shell"]);
+    // Check base action class against policy
+    if (!isWorkerActionAllowed(autonomyMode, actionClass)) {
+      return {
+        block: true,
+        reason: `[pancode:worker-safety] Safety level "${autonomyMode}" blocks ${actionClass}`,
+      };
+    }
 
-    let actionClass = "unknown";
-    if (READ_TOOLS.has(toolName)) actionClass = "read";
-    else if (WRITE_TOOLS.has(toolName)) actionClass = "write";
-    else if (EXECUTE_TOOLS.has(toolName)) actionClass = "execute";
-
-    if (autonomyMode === "suggest" && (actionClass === "write" || actionClass === "execute")) {
-      return { block: true, reason: `[pancode:worker-safety] ${actionClass} blocked in suggest mode` };
+    // Elevated classification for bash/shell commands
+    if (toolName === "bash" || toolName === "shell") {
+      const input = event.input as Record<string, unknown>;
+      const command = typeof input?.command === "string" ? input.command : "";
+      if (command) {
+        const bashAction = classifyWorkerBashCommand(command);
+        if (!isWorkerActionAllowed(autonomyMode, bashAction)) {
+          return {
+            block: true,
+            reason: `[pancode:worker-safety] Safety level "${autonomyMode}" blocks ${bashAction}`,
+          };
+        }
+      }
     }
 
     return undefined;

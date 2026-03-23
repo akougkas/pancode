@@ -108,7 +108,7 @@ export function getToolsetForMode(mode: OrchestratorMode): string[] {
 
   switch (mode) {
     case "capture":
-      return [...tasks];
+      return [ToolName.TASK_WRITE, ToolName.TASK_CHECK, ...shadow];
     case "plan":
       return [...readonly, ...shadow, ...tasks];
     case "build":

@@ -73,17 +73,25 @@ export const extension = defineExtension((pi) => {
   pi.on(PiEvent.TOOL_CALL, (event, _ctx) => {
     const actionClass = classifyAction(event.toolName);
 
-    // Layer 1: Formal scope model
+    // Safety policy enforcement: check the policy matrix for the current autonomy mode.
+    // This is the inner gate (policy). The outer gate (mode/structural) is handled by
+    // pi.setActiveTools() which physically hides tools the model should not see.
     if (!isActionAllowed(autonomyMode, actionClass)) {
-      return { block: true, reason: `[pancode:safety] ${actionClass} blocked in ${autonomyMode} mode` };
+      return {
+        block: true,
+        reason: `[pancode:safety] Safety level "${autonomyMode}" blocks ${actionClass}. Change safety level to allow this action.`,
+      };
     }
 
-    // Layer 2: YAML rules (bash commands)
+    // Layer 2b: Elevated bash classification (destructive patterns, git push, etc.)
     if ((event.toolName === "bash" || event.toolName === "shell") && "command" in event.input) {
       const command = event.input.command as string;
       const bashAction = classifyBashCommand(command);
       if (!isActionAllowed(autonomyMode, bashAction)) {
-        return { block: true, reason: `[pancode:safety] ${bashAction} blocked in ${autonomyMode} mode` };
+        return {
+          block: true,
+          reason: `[pancode:safety] Safety level "${autonomyMode}" blocks ${bashAction}. Command classified as destructive.`,
+        };
       }
       const yamlCheck = checkBashCommand(command, yamlRules);
       if (yamlCheck.blocked) {

@@ -17,6 +17,7 @@ const TOOL_TO_ACTION: Record<string, ActionClass> = {
   web_search: "network",
   [ToolName.DISPATCH_AGENT]: "agent_dispatch",
   [ToolName.BATCH_DISPATCH]: "agent_dispatch",
+  [ToolName.DISPATCH_CHAIN]: "agent_dispatch",
 };
 
 export function classifyAction(toolName: string): ActionClass {
