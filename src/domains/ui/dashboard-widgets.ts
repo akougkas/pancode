@@ -152,7 +152,7 @@ export function renderFooterBar(state: DashboardState, width: number, c: TuiColo
   const fillLen = Math.max(1, width - leftW - rightW);
 
   const border = c.dim(BOX.h.repeat(width));
-  const footerLine = left + " ".repeat(fillLen) + shortcuts;
+  const footerLine = truncateToWidth(left + " ".repeat(fillLen) + shortcuts, width);
 
   return [border, footerLine];
 }

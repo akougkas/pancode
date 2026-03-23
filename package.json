@@ -43,6 +43,7 @@
     "typecheck": "npm run build:pi && node scripts/check-boundaries.mjs && node scripts/check-prompts.mjs && tsc --noEmit",
     "postinstall": "node scripts/link-workspace-packages.cjs",
     "smoke-test": "tsx scripts/smoke-test-baseline.ts",
+    "verify-tui": "tsx src/domains/ui/tui-verify.ts",
     "prepublishOnly": "npm run build"
   },
   "files": [
