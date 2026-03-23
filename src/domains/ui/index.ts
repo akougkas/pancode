@@ -26,3 +26,5 @@ export { renderDashboard, renderPanCodeDashboard } from "./dashboard-layout";
 export { buildDashboardConfig, buildDashboardState } from "./dashboard-state";
 export type { DashboardColorizer, DashboardState, DashboardConfig } from "./dashboard-theme";
 export { pushLog, logNow, getRecentLogs, resetLogs } from "./dashboard-logs";
+export { getView, setView, toggleView, resetViewRouter } from "./view-router";
+export type { ViewName } from "./view-router";

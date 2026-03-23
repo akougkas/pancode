@@ -31,12 +31,14 @@ import {
 } from "../../core/thinking";
 import { PiEvent } from "../../engine/events";
 import { defineExtension } from "../../engine/extensions";
+import { runtimeRegistry } from "../../engine/runtimes";
 import { Container, Text, truncateToWidth, visibleWidth } from "../../engine/tui";
 import type { Api, Model } from "../../engine/types";
+import { agentRegistry } from "../agents";
 import { getRunLedger } from "../dispatch";
 import { getMetricsLedger } from "../observability";
 import { compileOrchestratorPrompt, getLastOrchestratorCompilation } from "../prompts";
-import { findModelProfile } from "../providers";
+import { findModelProfile, getModelProfileCache } from "../providers";
 import { getBudgetTracker } from "../scheduling";
 import {
   type UiCommandState,
@@ -51,16 +53,28 @@ import {
   addCategoryTokens,
   getCategoryBreakdown,
   getContextPercent,
+  getContextTokens,
+  getContextWindow,
   recordCategoryTokens,
   recordContextFromSdk,
   recordContextUsage,
 } from "./context-tracker";
-import { clearProgressCounter, logNow, shouldLogProgress } from "./dashboard-logs";
+import { renderDashboard } from "./dashboard-layout";
+import { clearProgressCounter, getRecentLogs, logNow, shouldLogProgress } from "./dashboard-logs";
+import { buildDashboardConfig, buildDashboardState } from "./dashboard-state";
 import type { TuiColorizer } from "./dashboard-theme";
 import { renderDispatchBoard } from "./dispatch-board";
 import type { AgentStat, DispatchCardData } from "./dispatch-board";
 import { type FooterWorker, renderFooterLines } from "./footer-renderer";
 import { PanCodeEditor } from "./pancode-editor";
+import {
+  type ViewName,
+  cancelAutoTransition,
+  getView,
+  resetViewRouter,
+  scheduleAutoTransition,
+  setView,
+} from "./view-router";
 import { extractResultSummary } from "./widget-utils";
 import {
   getLiveWorkers,
@@ -301,12 +315,16 @@ export const extension = defineExtension((pi) => {
       },
     }));
 
-    // Dispatch board widget: shows active worker cards and recent run history.
-    // Uses Container-based rendering so invalidate() propagates to Pi TUI and
-    // triggers repaints. A 1-second interval timer drives smooth elapsed time
-    // updates on active worker cards. Timer starts when workers are running
-    // and stops when all are idle.
-    ctx.ui.setWidget("pancode-dispatch-board", (_tui, theme) => {
+    // Main widget: delegates rendering to the view router.
+    // In 'editor' view, returns empty (Pi SDK editor is the primary content).
+    // In 'dispatch' view, renders the live dispatch board with worker cards.
+    // In 'dashboard' view, renders the full PanCode dashboard layout.
+    //
+    // Uses Container-based rendering so invalidate() propagates to Pi TUI
+    // and triggers repaints. A 1-second interval timer drives smooth elapsed
+    // time updates on active worker cards in the dispatch view.
+    const dashboardConfig = buildDashboardConfig();
+    ctx.ui.setWidget("pancode-main", (_tui, theme) => {
       const container = new Container();
       const content = new Text("", 0, 0);
       container.addChild(content);
@@ -325,105 +343,167 @@ export const extension = defineExtension((pi) => {
         }
       }
 
+      /** Build theme-backed colorizer for pure renderers. */
+      function buildColorizer(): TuiColorizer {
+        const modeInfo = getModeDefinition();
+        const mc = modeThemeColor(modeInfo);
+        return {
+          accent: (t) => theme.fg("accent", t),
+          bold: (t) => theme.bold(t),
+          muted: (t) => theme.fg("muted", t),
+          dim: (t) => theme.fg("dim", t),
+          success: (t) => theme.fg("success", t),
+          error: (t) => theme.fg("error", t),
+          warning: (t) => theme.fg("warning", t),
+          primary: (t) => theme.fg("accent", t),
+          bright: (t) => theme.bold(t),
+          barFill: (t) => theme.fg("success", t),
+          barEmpty: (t) => theme.fg("dim", t),
+          mode: (t) => theme.fg(mc, t),
+        };
+      }
+
+      /** Render the dispatch board view. */
+      function renderDispatchView(width: number, colorizer: TuiColorizer): string[] {
+        const ledger = getRunLedger();
+        if (!ledger) return [];
+
+        const allRuns = ledger.getAll();
+        const liveWorkers = getLiveWorkers();
+        if (liveWorkers.length === 0 && allRuns.length === 0) return [];
+
+        const active: DispatchCardData[] = liveWorkers.map((w) => ({
+          agent: w.agent,
+          status: w.status,
+          elapsedMs: Date.now() - w.startedAt,
+          model: w.model,
+          taskPreview: w.task,
+          runId: w.runId,
+          batchId: null,
+          inputTokens: w.inputTokens > 0 ? w.inputTokens : undefined,
+          outputTokens: w.outputTokens > 0 ? w.outputTokens : undefined,
+          turns: w.turns > 0 ? w.turns : undefined,
+          runtime: w.runtime,
+          healthState: w.healthState,
+        }));
+
+        const recent: DispatchCardData[] = allRuns
+          .filter((r) => r.status !== "running" && r.status !== "pending")
+          .slice(-5)
+          .map((r) => ({
+            agent: r.agent,
+            status: r.status,
+            elapsedMs: r.completedAt ? new Date(r.completedAt).getTime() - new Date(r.startedAt).getTime() : 0,
+            model: r.model,
+            taskPreview: r.task,
+            resultPreview: r.result ? extractResultSummary(r.result) : undefined,
+            runId: r.id,
+            batchId: r.batchId,
+            cost: r.usage.cost,
+          }));
+
+        const budget = getBudgetTracker();
+        const metrics = getMetricsLedger();
+        const summary = metrics?.getSummary();
+
+        const metricsRuns = summary?.runs ?? [];
+        const agentStats = computeAgentStats(metricsRuns);
+        let totalCacheRead: number | null = null;
+        let totalCacheWrite: number | null = null;
+        for (const m of metricsRuns) {
+          if (m.cacheReadTokens != null) totalCacheRead = (totalCacheRead ?? 0) + m.cacheReadTokens;
+          if (m.cacheWriteTokens != null) totalCacheWrite = (totalCacheWrite ?? 0) + m.cacheWriteTokens;
+        }
+
+        return renderDispatchBoard(
+          {
+            active,
+            recent,
+            totalRuns: allRuns.length,
+            totalCost: budget ? budget.getState().totalCost : null,
+            budgetCeiling: budget ? budget.getState().ceiling : null,
+            totalInputTokens: summary?.totalInputTokens ?? null,
+            totalOutputTokens: summary?.totalOutputTokens ?? null,
+            totalCacheReadTokens: totalCacheRead,
+            totalCacheWriteTokens: totalCacheWrite,
+            agentStats: agentStats.length > 0 ? agentStats : undefined,
+          },
+          width,
+          colorizer,
+        );
+      }
+
+      /** Render the dashboard view. */
+      function renderDashboardView(width: number, colorizer: TuiColorizer): string[] {
+        const liveWorkers = getLiveWorkers();
+        const ledger = getRunLedger();
+        const allRuns = ledger?.getAll() ?? [];
+        const metrics = getMetricsLedger();
+        const summary = metrics?.getSummary();
+        const budget = getBudgetTracker();
+        const budgetState = budget?.getState();
+
+        const dashState = buildDashboardState({
+          config: dashboardConfig,
+          liveWorkers,
+          allRuns,
+          agentSpecs: agentRegistry.getAll(),
+          modelProfiles: getModelProfileCache(),
+          contextPercent: Math.round(getContextPercent()),
+          contextTokens: getContextTokens(),
+          contextWindow: getContextWindow(),
+          totalCost: budgetState?.totalCost ?? 0,
+          budgetCeiling: budgetState?.ceiling ?? null,
+          totalRuns: allRuns.length,
+          totalInputTokens: summary?.totalInputTokens ?? 0,
+          totalOutputTokens: summary?.totalOutputTokens ?? 0,
+          currentModelLabel: state.currentModelLabel,
+          reasoningLevel: pi.getThinkingLevel() || "off",
+          runtimeCount: runtimeRegistry.available().length,
+          recentLogs: getRecentLogs(12),
+        });
+
+        // Render without fixed height; the widget grows to fit content.
+        return renderDashboard(dashState, width, 40, colorizer);
+      }
+
       return {
         dispose() {
           stopTimer();
           resetLiveWorkers();
+          resetViewRouter();
         },
         invalidate() {
           container.invalidate();
         },
         render(width: number): string[] {
-          const ledger = getRunLedger();
-          if (!ledger) return [];
+          const view = getView();
 
-          const allRuns = ledger.getAll();
-          const liveWorkers = getLiveWorkers();
-          if (liveWorkers.length === 0 && allRuns.length === 0) return [];
-
-          const active: DispatchCardData[] = liveWorkers.map((w) => ({
-            agent: w.agent,
-            status: w.status,
-            elapsedMs: Date.now() - w.startedAt,
-            model: w.model,
-            taskPreview: w.task,
-            runId: w.runId,
-            batchId: null,
-            inputTokens: w.inputTokens > 0 ? w.inputTokens : undefined,
-            outputTokens: w.outputTokens > 0 ? w.outputTokens : undefined,
-            turns: w.turns > 0 ? w.turns : undefined,
-            runtime: w.runtime,
-            healthState: w.healthState,
-          }));
-
-          const recent: DispatchCardData[] = allRuns
-            .filter((r) => r.status !== "running" && r.status !== "pending")
-            .slice(-5)
-            .map((r) => ({
-              agent: r.agent,
-              status: r.status,
-              elapsedMs: r.completedAt ? new Date(r.completedAt).getTime() - new Date(r.startedAt).getTime() : 0,
-              model: r.model,
-              taskPreview: r.task,
-              resultPreview: r.result ? extractResultSummary(r.result) : undefined,
-              runId: r.id,
-              batchId: r.batchId,
-              cost: r.usage.cost,
-            }));
-
-          const budget = getBudgetTracker();
-          const metrics = getMetricsLedger();
-          const summary = metrics?.getSummary();
-
-          // Compute per-agent stats and cache totals from the metrics ledger.
-          const metricsRuns = summary?.runs ?? [];
-          const agentStats = computeAgentStats(metricsRuns);
-          let totalCacheRead: number | null = null;
-          let totalCacheWrite: number | null = null;
-          for (const m of metricsRuns) {
-            if (m.cacheReadTokens != null) totalCacheRead = (totalCacheRead ?? 0) + m.cacheReadTokens;
-            if (m.cacheWriteTokens != null) totalCacheWrite = (totalCacheWrite ?? 0) + m.cacheWriteTokens;
+          // Editor view: widget is invisible, Pi SDK editor is the primary content.
+          if (view === "editor") {
+            stopTimer();
+            content.setText("");
+            return [];
           }
 
-          // Construct a theme-backed colorizer so the pure renderer can
-          // apply colors without importing Pi SDK APIs directly.
-          const colorizer: TuiColorizer = {
-            accent: (t) => theme.fg("accent", t),
-            bold: (t) => theme.bold(t),
-            muted: (t) => theme.fg("muted", t),
-            dim: (t) => theme.fg("dim", t),
-            success: (t) => theme.fg("success", t),
-            error: (t) => theme.fg("error", t),
-            warning: (t) => theme.fg("warning", t),
-            primary: (t) => theme.fg("accent", t),
-            bright: (t) => theme.bold(t),
-            barFill: (t) => theme.fg("success", t),
-            barEmpty: (t) => theme.fg("dim", t),
-            mode: (t) => theme.fg("accent", t),
-          };
+          const colorizer = buildColorizer();
+          let lines: string[];
 
-          const lines = renderDispatchBoard(
-            {
-              active,
-              recent,
-              totalRuns: allRuns.length,
-              totalCost: budget ? budget.getState().totalCost : null,
-              budgetCeiling: budget ? budget.getState().ceiling : null,
-              totalInputTokens: summary?.totalInputTokens ?? null,
-              totalOutputTokens: summary?.totalOutputTokens ?? null,
-              totalCacheReadTokens: totalCacheRead,
-              totalCacheWriteTokens: totalCacheWrite,
-              agentStats: agentStats.length > 0 ? agentStats : undefined,
-            },
-            width,
-            colorizer,
-          );
+          if (view === "dispatch") {
+            lines = renderDispatchView(width, colorizer);
+          } else {
+            lines = renderDashboardView(width, colorizer);
+          }
 
           content.setText(lines.join("\n"));
 
-          // Manage refresh timer: run when workers are active, stop when idle.
+          // Manage refresh timer: run when dispatch view has active workers,
+          // or when dashboard view is shown (for live updates).
+          const liveWorkers = getLiveWorkers();
           const hasRunning = liveWorkers.some((w) => w.status === "running");
-          if (hasRunning) {
+          if (view === "dispatch" && hasRunning) {
+            startTimer();
+          } else if (view === "dashboard") {
             startTimer();
           } else {
             stopTimer();
@@ -521,12 +601,16 @@ export const extension = defineExtension((pi) => {
       }
     });
 
-    // Subscribe to dispatch events for live worker tracking.
+    // Subscribe to dispatch events for live worker tracking and view routing.
     sharedBus.on(BusChannel.RUN_STARTED, (payload) => {
       const event = payload as RunStartedEvent;
       trackWorkerStart(event.runId, event.agent, event.task, event.model, event.runtime);
       const rt = event.runtime ? ` [${event.runtime}]` : "";
       logNow(`Run started: ${event.agent}${rt}`, "info");
+
+      // Auto-switch to dispatch view when workers start running.
+      cancelAutoTransition();
+      setView("dispatch");
     });
 
     sharedBus.on(BusChannel.WORKER_PROGRESS, (payload) => {
@@ -562,6 +646,13 @@ export const extension = defineExtension((pi) => {
       // Worker output tokens represent what gets returned to the orchestrator context.
       if (event.usage.outputTokens != null && event.usage.outputTokens > 0) {
         addCategoryTokens("dispatch", event.usage.outputTokens);
+      }
+
+      // When the last running worker finishes and we are in dispatch view,
+      // schedule an auto-transition back to editor view after 3 seconds.
+      const remaining = getLiveWorkers().filter((w) => w.status === "running");
+      if (remaining.length === 0 && getView() === "dispatch") {
+        scheduleAutoTransition(3000);
       }
     });
 
@@ -755,12 +846,18 @@ export const extension = defineExtension((pi) => {
 
   pi.registerCommand("dashboard", {
     description: "Open the PanCode dashboard",
-    handler: handlers.showDashboard,
+    handler: async (args, ctx) => {
+      setView("dashboard");
+      await handlers.showDashboard(args, ctx);
+    },
   });
 
   pi.registerCommand("status", {
     description: "Show the PanCode session summary",
-    handler: handlers.showDashboard,
+    handler: async (args, ctx) => {
+      setView("dashboard");
+      await handlers.showDashboard(args, ctx);
+    },
   });
 
   pi.registerCommand("theme", {
