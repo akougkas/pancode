@@ -35,7 +35,7 @@ import { renderDashboard } from "./dashboard-layout";
 import { getRecentLogs } from "./dashboard-logs";
 import { buildDashboardConfig, buildDashboardState } from "./dashboard-state";
 import { PLAIN_COLORIZER } from "./dashboard-theme";
-import { type PanelRow, type PanelSection, blank, kv, sendPanelSpec, text } from "./panel-renderer";
+import { type PanelRow, type PanelSection, type PanelSpec, blank, kv, sendPanelSpec, text } from "./panel-renderer";
 import { getLiveWorkers } from "./worker-widgets";
 
 // ---------------------------------------------------------------------------
@@ -170,31 +170,46 @@ function readPackageVersion(): string {
   return _cachedVersion;
 }
 
-export function buildWelcomeScreen(modelLabel: string, modeName: string): string[] {
+/**
+ * Build the compact boot banner displayed on session start.
+ *
+ * Uses PanelSpec for consistent bordered rendering. Shows version, active mode,
+ * model name, system counts, and optional boot timing. Fits within 80 columns.
+ */
+export function buildWelcomeScreen(modelLabel: string, modeName: string): PanelSpec {
   const version = process.env.npm_package_version ?? readPackageVersion();
   const modelShort = modelLabel.includes("/") ? (modelLabel.split("/").pop() ?? modelLabel) : modelLabel;
+  const modelDisplay = modelShort.length > 30 ? `${modelShort.slice(0, 27)}...` : modelShort;
   const profiles = getModelProfileCache();
   const agentCount = agentRegistry.getAll().length;
   const runtimeCount = runtimeRegistry.available().length;
-  const nodeSummary = buildNodeSummary(profiles);
-
-  const lines: string[] = [
-    "  \u2554\u2550\u2557",
-    `  \u2560\u2550\u255D a n C o d e  v${version}`,
-    "  \u255A",
-    `  ${modeName}  ${modelShort}`,
-  ];
-
-  const infoParts: string[] = [];
-  if (agentCount > 0) infoParts.push(`${agentCount} agents`);
-  if (runtimeCount > 0) infoParts.push(`${runtimeCount} runtimes`);
   const nodeCount = new Set(profiles.map((p) => p.providerId.split("-")[0] || p.providerId)).size;
-  if (nodeCount > 0) infoParts.push(`${nodeCount} nodes`);
-  if (infoParts.length > 0) lines.push(`  ${infoParts.join("  ")}`);
-  if (nodeSummary.length > 0) lines.push(`  ${nodeSummary.join("  ")}`);
 
-  lines.push("", "  shift+tab mode  /help commands");
-  return lines;
+  const systemSection: PanelSection = {
+    rows: [kv("Version", `v${version}`), kv("Mode", modeName), kv("Model", modelDisplay)],
+  };
+
+  const countParts: string[] = [];
+  if (agentCount > 0) countParts.push(`${agentCount} agents`);
+  if (runtimeCount > 0) countParts.push(`${runtimeCount} runtimes`);
+  if (nodeCount > 0) countParts.push(`${nodeCount} nodes`);
+
+  const healthSection: PanelSection = {
+    rows: countParts.length > 0 ? [text(countParts.join("  "))] : [text("No agents registered")],
+  };
+
+  const sections: PanelSection[] = [systemSection, healthSection];
+
+  const timings = getBootTimings();
+  if (timings) {
+    const bootLabel = `${timings.totalMs.toFixed(0)}ms ${timings.mode} boot`;
+    const budgetNote = timings.budgetExceeded ? " (over budget)" : "";
+    sections.push({ rows: [text(`${bootLabel}${budgetNote}`)] });
+  }
+
+  sections.push({ rows: [text("shift+tab mode  /help commands")] });
+
+  return { title: PANCODE_PRODUCT_NAME, sections };
 }
 
 function describeReasoningCapability(

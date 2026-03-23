@@ -67,6 +67,7 @@ import { renderDispatchBoard } from "./dispatch-board";
 import type { AgentStat, DispatchCardData } from "./dispatch-board";
 import { type FooterWorker, renderFooterLines } from "./footer-renderer";
 import { PanCodeEditor } from "./pancode-editor";
+import { sendPanelSpec } from "./panel-renderer";
 import {
   type ViewName,
   cancelAutoTransition,
@@ -759,7 +760,7 @@ export const extension = defineExtension((pi) => {
 
     if (!welcomeShown) {
       welcomeShown = true;
-      sendPanel(emitPanel, `${PANCODE_PRODUCT_NAME}`, buildWelcomeScreen(state.currentModelLabel, initMode.name));
+      sendPanelSpec(emitPanel, buildWelcomeScreen(state.currentModelLabel, initMode.name));
     }
   });
 
