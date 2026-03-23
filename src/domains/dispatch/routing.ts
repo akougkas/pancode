@@ -1,6 +1,7 @@
 import { BusChannel, type WarningEvent } from "../../core/bus-events";
 import { sharedBus } from "../../core/shared-bus";
 import { agentRegistry } from "../agents";
+import { workerPool } from "../agents/worker-pool";
 import { classifyModelTier, deriveProviderHint } from "../prompts/tiering";
 import { type SamplingPreset, findModelProfile, getSamplingPreset } from "../providers";
 
@@ -12,6 +13,7 @@ export interface WorkerRouting {
   runtime: string; // Runtime ID from agent spec
   runtimeArgs: string[]; // Extra args from agent spec
   readonly: boolean; // From agent spec
+  workerId: string | null; // PanWorker ID if resolved from pool
 }
 
 function getWorkerModel(): string | null {
@@ -51,6 +53,7 @@ export function resolveWorkerRouting(agentName: string): WorkerRouting {
       runtime: "pi",
       runtimeArgs: [],
       readonly: false,
+      workerId: null,
     };
   }
 
@@ -93,6 +96,17 @@ export function resolveWorkerRouting(agentName: string): WorkerRouting {
     }
   }
 
+  // Consult the worker pool for the best available worker (advisory).
+  const bestWorker = workerPool.bestForAgent(agentName);
+  const workerId = bestWorker?.id ?? null;
+
+  // If the pool has a better model suggestion, log it (advisory only).
+  if (bestWorker?.model && !spec.model) {
+    console.error(
+      `[pancode:routing] Pool suggests model ${bestWorker.model} for ${agentName} (score: ${bestWorker.score.overall.toFixed(3)})`,
+    );
+  }
+
   return {
     model,
     tools: spec.tools,
@@ -101,5 +115,6 @@ export function resolveWorkerRouting(agentName: string): WorkerRouting {
     runtime: spec.runtime,
     runtimeArgs: spec.runtimeArgs,
     readonly: spec.readonly,
+    workerId,
   };
 }

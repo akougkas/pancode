@@ -8,10 +8,11 @@ import { PiEvent } from "../../engine/events";
 import { defineExtension } from "../../engine/extensions";
 import { discoverAndRegisterRuntimes } from "../../engine/runtimes/discovery";
 import { runtimeRegistry } from "../../engine/runtimes/registry";
-import { PANCODE_HOME } from "../providers";
+import { PANCODE_HOME, getModelProfileCache } from "../providers";
 import { registerShadowExplore } from "./shadow-explore";
 import { type SkillDefinition, discoverSkills, validateSkillTools } from "./skills";
 import { agentRegistry, loadAgentsFromYaml } from "./spec-registry";
+import { workerPool } from "./worker-pool";
 
 /** Runtime ID to suggested agent name mapping for auto-suggest. */
 const RUNTIME_AGENT_SUGGESTIONS: Record<string, { name: string; description: string }> = {
@@ -78,6 +79,11 @@ export const extension = defineExtension((pi) => {
         agentRegistry.register(spec);
       }
     }
+
+    // Materialize the worker pool from specs x runtimes x models
+    const allRuntimes = runtimeRegistry.all();
+    const modelProfiles = getModelProfileCache();
+    workerPool.materialize(agentRegistry.getAll(), allRuntimes, modelProfiles);
 
     // Suggest agent configs for discovered runtimes that no agent references
     suggestAgentsForUnconfiguredRuntimes();
@@ -244,6 +250,46 @@ export const extension = defineExtension((pi) => {
         content: lines.join("\n"),
         display: true,
         details: { title: "PanCode Runtimes" },
+      });
+    },
+  });
+
+  pi.registerCommand("workers", {
+    description: "Show the PanCode worker pool with scores",
+    async handler(_args, _ctx) {
+      const workers = workerPool.all();
+      if (workers.length === 0) {
+        pi.sendMessage({
+          customType: PanMessageType.PANEL,
+          content: "No workers materialized. Run /agents to trigger discovery.",
+          display: true,
+          details: { title: "PanCode Workers" },
+        });
+        return;
+      }
+
+      const lines: string[] = [
+        `${"WORKER".padEnd(30)} ${"TIER".padEnd(10)} ${"AVAIL".padEnd(7)} ${"CAP".padEnd(7)} ${"LOAD".padEnd(7)} ${"SKILL".padEnd(7)} ${"COST".padEnd(7)} SCORE`,
+        `${"------".padEnd(30)} ${"----".padEnd(10)} ${"-----".padEnd(7)} ${"---".padEnd(7)} ${"----".padEnd(7)} ${"-----".padEnd(7)} ${"----".padEnd(7)} -----`,
+      ];
+
+      for (const w of workers) {
+        const id = w.id.padEnd(30);
+        const tier = w.tier.padEnd(10);
+        const avail = w.score.availability.toFixed(1).padEnd(7);
+        const cap = w.score.capacity.toFixed(1).padEnd(7);
+        const load = w.score.load.toFixed(1).padEnd(7);
+        const skill = w.score.capability.toFixed(2).padEnd(7);
+        const cost = w.score.cost.toFixed(1).padEnd(7);
+        const overall = w.score.overall.toFixed(3);
+        lines.push(`${id} ${tier} ${avail} ${cap} ${load} ${skill} ${cost} ${overall}`);
+      }
+
+      pi.sendMessage({
+        customType: PanMessageType.PANEL,
+        content: lines.join("\n"),
+        display: true,
+        details: { title: "PanCode Worker Pool" },
       });
     },
   });

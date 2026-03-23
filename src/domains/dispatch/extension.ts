@@ -13,6 +13,7 @@ import { PiEvent } from "../../engine/events";
 import { defineExtension } from "../../engine/extensions";
 import type { AgentToolResult } from "../../engine/types";
 import { agentRegistry } from "../agents";
+import { workerPool } from "../agents/worker-pool";
 import { compileWorkerPrompt } from "../prompts";
 import { findModelProfile } from "../providers";
 import { registerSafetyPreFlightChecks } from "../safety";
@@ -320,20 +321,32 @@ export const extension = defineExtension((pi) => {
         tier: "mid",
       }, workerProfile);
 
-      const workerResult = await spawnWorker({
-        task: dispatchAction.task,
-        tools: routing.tools,
-        model: routing.model,
-        systemPrompt: workerPrompt,
-        cwd: workerCwd,
-        agentName: dispatchAction.agent,
-        sampling: routing.sampling,
-        signal: signal ?? undefined,
-        runId: run.id,
-        runtime: routing.runtime,
-        runtimeArgs: routing.runtimeArgs,
-        readonly: routing.readonly,
-      });
+      // Track worker pool load for scoring
+      if (routing.workerId) {
+        workerPool.recordDispatchStart(routing.workerId);
+      }
+
+      let workerResult: Awaited<ReturnType<typeof spawnWorker>>;
+      try {
+        workerResult = await spawnWorker({
+          task: dispatchAction.task,
+          tools: routing.tools,
+          model: routing.model,
+          systemPrompt: workerPrompt,
+          cwd: workerCwd,
+          agentName: dispatchAction.agent,
+          sampling: routing.sampling,
+          signal: signal ?? undefined,
+          runId: run.id,
+          runtime: routing.runtime,
+          runtimeArgs: routing.runtimeArgs,
+          readonly: routing.readonly,
+        });
+      } finally {
+        if (routing.workerId) {
+          workerPool.recordDispatchEnd(routing.workerId);
+        }
+      }
 
       // Merge worktree delta back to parent
       if (isolation) {
