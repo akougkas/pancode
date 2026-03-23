@@ -56,9 +56,10 @@ import {
   recordContextFromSdk,
   recordContextUsage,
 } from "./context-tracker";
+import type { TuiColorizer } from "./dashboard-theme";
 import { renderDispatchBoard } from "./dispatch-board";
-import type { AgentStat, BoardColorizer, DispatchCardData } from "./dispatch-board";
-import { type FooterColorizer, type FooterWorker, renderFooterLines } from "./footer-renderer";
+import type { AgentStat, DispatchCardData } from "./dispatch-board";
+import { type FooterWorker, renderFooterLines } from "./footer-renderer";
 import { PanCodeEditor } from "./pancode-editor";
 import { extractResultSummary, formatTokenCount, truncate } from "./widget-utils";
 import {
@@ -946,7 +947,7 @@ export const extension = defineExtension((pi) => {
 
           // Construct a theme-backed colorizer so the pure renderer can
           // apply colors without importing Pi SDK APIs directly.
-          const colorizer: BoardColorizer = {
+          const colorizer: TuiColorizer = {
             accent: (t) => theme.fg("accent", t),
             bold: (t) => theme.bold(t),
             muted: (t) => theme.fg("muted", t),
@@ -954,6 +955,11 @@ export const extension = defineExtension((pi) => {
             success: (t) => theme.fg("success", t),
             error: (t) => theme.fg("error", t),
             warning: (t) => theme.fg("warning", t),
+            primary: (t) => theme.fg("accent", t),
+            bright: (t) => theme.bold(t),
+            barFill: (t) => theme.fg("success", t),
+            barEmpty: (t) => theme.fg("dim", t),
+            mode: (t) => theme.fg("accent", t),
           };
 
           const lines = renderDispatchBoard(
@@ -1013,8 +1019,7 @@ export const extension = defineExtension((pi) => {
 
         const totalTokens = (summary?.totalInputTokens ?? 0) + (summary?.totalOutputTokens ?? 0);
 
-        const colorizer: FooterColorizer = {
-          mode: (t) => theme.fg(mc, t),
+        const colorizer: TuiColorizer = {
           accent: (t) => theme.fg("accent", t),
           bold: (t) => theme.bold(t),
           muted: (t) => theme.fg("muted", t),
@@ -1022,6 +1027,11 @@ export const extension = defineExtension((pi) => {
           success: (t) => theme.fg("success", t),
           error: (t) => theme.fg("error", t),
           warning: (t) => theme.fg("warning", t),
+          primary: (t) => theme.fg("accent", t),
+          bright: (t) => theme.bold(t),
+          barFill: (t) => theme.fg("success", t),
+          barEmpty: (t) => theme.fg("dim", t),
+          mode: (t) => theme.fg(mc, t),
         };
 
         return renderFooterLines(

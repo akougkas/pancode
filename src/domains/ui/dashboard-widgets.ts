@@ -9,17 +9,17 @@
  */
 
 import { truncateToWidth, visibleWidth } from "../../engine/tui";
-import { formatCost, formatTokenCount, padRight, truncate } from "./widget-utils";
 import {
+  type AgentEntry,
   BLOCK,
   BOX,
-  type AgentEntry,
-  type DashboardColorizer,
   type DashboardState,
   type LogEntry,
-  type TaskEntry,
   PANCODE_LOGO,
+  type TaskEntry,
+  type TuiColorizer,
 } from "./dashboard-theme";
+import { formatCost, formatTokenCount, padRight, truncate } from "./widget-utils";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -37,14 +37,14 @@ function padVisible(text: string, targetWidth: number): string {
 }
 
 /** Render a bordered panel top edge with an inline title. */
-function boxTop(title: string, width: number, c: DashboardColorizer): string {
+function boxTop(title: string, width: number, c: TuiColorizer): string {
   const titleLen = visibleWidth(title);
   const fillLen = Math.max(0, width - 4 - titleLen);
   return c.dim(BOX.tl + BOX.h) + c.accent(title) + c.dim(" " + BOX.h.repeat(fillLen) + BOX.tr);
 }
 
 /** Render a bordered panel bottom edge. */
-function boxBottom(width: number, c: DashboardColorizer): string {
+function boxBottom(width: number, c: TuiColorizer): string {
   return c.dim(BOX.bl + BOX.h.repeat(Math.max(0, width - 2)) + BOX.br);
 }
 
@@ -52,19 +52,19 @@ function boxBottom(width: number, c: DashboardColorizer): string {
  * Render a content line inside a bordered panel.
  * Truncates content that exceeds the inner width; pads shorter content.
  */
-function boxLine(content: string, width: number, c: DashboardColorizer): string {
+function boxLine(content: string, width: number, c: TuiColorizer): string {
   const inner = Math.max(0, width - 4);
   const fitted = padVisible(content, inner);
   return c.dim(BOX.v) + " " + fitted + " " + c.dim(BOX.v);
 }
 
 /** Render an empty line inside a bordered panel. */
-function boxEmpty(width: number, c: DashboardColorizer): string {
+function boxEmpty(width: number, c: TuiColorizer): string {
   return c.dim(BOX.v) + " ".repeat(Math.max(0, width - 2)) + c.dim(BOX.v);
 }
 
 /** Render a horizontal divider inside a bordered panel. */
-function boxDivider(width: number, c: DashboardColorizer): string {
+function boxDivider(width: number, c: TuiColorizer): string {
   return c.dim(BOX.v) + c.dim(BOX.h.repeat(Math.max(0, width - 2))) + c.dim(BOX.v);
 }
 
@@ -76,7 +76,7 @@ function boxDivider(width: number, c: DashboardColorizer): string {
  * Render a block-character progress bar.
  * Example (width=20, 74%): ██████████████░░░░░░
  */
-function renderProgressBar(value: number, max: number, width: number, c: DashboardColorizer): string {
+function renderProgressBar(value: number, max: number, width: number, c: TuiColorizer): string {
   const pct = max > 0 ? Math.min(1, value / max) : 0;
   const filled = Math.round(pct * width);
   const empty = width - filled;
@@ -92,7 +92,7 @@ function renderProgressBar(value: number, max: number, width: number, c: Dashboa
  *
  *   PANCODE v0.2.4 | ask | qwen35-distilled-i1-q4_k_m                               12:34:56
  */
-export function renderHeaderBar(state: DashboardState, width: number, c: DashboardColorizer): string[] {
+export function renderHeaderBar(state: DashboardState, width: number, c: TuiColorizer): string[] {
   const left = `${state.config.productName} v${state.config.version} ${c.dim("|")} ${c.accent(state.activeMode)} ${c.dim("|")} ${state.activeModel}`;
   const right = state.currentTime;
 
@@ -115,7 +115,7 @@ export function renderHeaderBar(state: DashboardState, width: number, c: Dashboa
  *
  *   STATUS: OPERATIONAL | ctx [████░░░░] 34% | $0.12 | 5 runs    [O] [W] [M] [H]
  */
-export function renderFooterBar(state: DashboardState, width: number, c: DashboardColorizer): string[] {
+export function renderFooterBar(state: DashboardState, width: number, c: TuiColorizer): string[] {
   // Context gauge
   const ctxBar = renderProgressBar(state.contextPercent, 100, 8, c);
   const ctxLabel = `ctx ${ctxBar} ${state.contextPercent}%`;
@@ -159,7 +159,7 @@ export function renderFooterBar(state: DashboardState, width: number, c: Dashboa
 // Menu panel (left sidebar)
 // ---------------------------------------------------------------------------
 
-export function renderMenuPanel(state: DashboardState, panelWidth: number, c: DashboardColorizer): string[] {
+export function renderMenuPanel(state: DashboardState, panelWidth: number, c: TuiColorizer): string[] {
   const lines: string[] = [];
 
   lines.push(boxTop("MENU", panelWidth, c));
@@ -193,7 +193,7 @@ export function renderAgentRegistry(
   agents: AgentEntry[],
   panelWidth: number,
   maxHeight: number,
-  c: DashboardColorizer,
+  c: TuiColorizer,
 ): string[] {
   const inner = panelWidth - 4;
   const lines: string[] = [];
@@ -230,7 +230,7 @@ export function renderAgentRegistry(
 // Dashboard banner (ASCII logo + real system status)
 // ---------------------------------------------------------------------------
 
-export function renderDashboardBanner(state: DashboardState, width: number, c: DashboardColorizer): string[] {
+export function renderDashboardBanner(state: DashboardState, width: number, c: TuiColorizer): string[] {
   const lines: string[] = [];
 
   lines.push(boxTop("PANCODE_DASHBOARD", width, c));
@@ -276,7 +276,7 @@ export function renderDashboardBanner(state: DashboardState, width: number, c: D
 }
 
 /** Context window usage sub-panel (real data from context-tracker). */
-function renderContextPanel(state: DashboardState, width: number, c: DashboardColorizer): string[] {
+function renderContextPanel(state: DashboardState, width: number, c: TuiColorizer): string[] {
   const inner = width - 4;
   const lines: string[] = [];
 
@@ -297,15 +297,12 @@ function renderContextPanel(state: DashboardState, width: number, c: DashboardCo
 }
 
 /** Active workers sub-panel (real data from worker-widgets). */
-function renderWorkerPanel(state: DashboardState, width: number, c: DashboardColorizer): string[] {
+function renderWorkerPanel(state: DashboardState, width: number, c: TuiColorizer): string[] {
   const lines: string[] = [];
 
   lines.push(boxTop("ACTIVE_WORKERS", width, c));
 
-  const activeLabel =
-    state.activeWorkerCount > 0
-      ? c.accent(`${state.activeWorkerCount} running`)
-      : c.dim("idle");
+  const activeLabel = state.activeWorkerCount > 0 ? c.accent(`${state.activeWorkerCount} running`) : c.dim("idle");
   lines.push(boxLine(`${activeLabel} / ${state.totalWorkerCount} total`, width, c));
 
   // Throughput from real session metrics
@@ -321,33 +318,47 @@ function renderWorkerPanel(state: DashboardState, width: number, c: DashboardCol
 // Metric cards (all backed by real data)
 // ---------------------------------------------------------------------------
 
-export function renderMetricCards(state: DashboardState, width: number, c: DashboardColorizer): string[] {
+export function renderMetricCards(state: DashboardState, width: number, c: TuiColorizer): string[] {
   const cardWidth = Math.max(16, Math.floor((width - 6) / 4));
   const inner = cardWidth - 4;
   const gap = "  ";
 
   // Card 1: Infrastructure (real node/agent/runtime counts)
-  const nodeLabel = state.nodes.length > 0
-    ? state.nodes.map((n) => `${n.name}:${n.modelCount}`).join(" ")
-    : "no nodes";
+  const nodeLabel = state.nodes.length > 0 ? state.nodes.map((n) => `${n.name}:${n.modelCount}`).join(" ") : "no nodes";
 
   const cards = [
-    renderMetricCard("INFRASTRUCTURE", [
-      `NODES: ${state.nodes.length}`,
-      `AGENTS: ${state.agentCount}`,
-    ], `${state.runtimeCount} runtimes`, cardWidth, inner, c),
-    renderMetricCard("MODEL_REGISTRY", [
-      `TOTAL: ${state.totalModels}`,
-      truncate(nodeLabel, inner),
-    ], `${state.activeModel.split("/").pop() ?? state.activeModel}`, cardWidth, inner, c),
-    renderMetricCard("SESSION", [
-      `RUNS: ${state.totalRuns}`,
-      state.totalCost > 0 ? `COST: ${formatCost(state.totalCost)}` : "COST: local",
-    ], `${formatTokenCount(state.totalInputTokens + state.totalOutputTokens)} tok`, cardWidth, inner, c),
-    renderMetricCard("MODE", [
-      `ACTIVE: ${state.activeMode}`,
-      `SAFETY: ${state.safetyLevel}`,
-    ], `${state.reasoningLevel}`, cardWidth, inner, c),
+    renderMetricCard(
+      "INFRASTRUCTURE",
+      [`NODES: ${state.nodes.length}`, `AGENTS: ${state.agentCount}`],
+      `${state.runtimeCount} runtimes`,
+      cardWidth,
+      inner,
+      c,
+    ),
+    renderMetricCard(
+      "MODEL_REGISTRY",
+      [`TOTAL: ${state.totalModels}`, truncate(nodeLabel, inner)],
+      `${state.activeModel.split("/").pop() ?? state.activeModel}`,
+      cardWidth,
+      inner,
+      c,
+    ),
+    renderMetricCard(
+      "SESSION",
+      [`RUNS: ${state.totalRuns}`, state.totalCost > 0 ? `COST: ${formatCost(state.totalCost)}` : "COST: local"],
+      `${formatTokenCount(state.totalInputTokens + state.totalOutputTokens)} tok`,
+      cardWidth,
+      inner,
+      c,
+    ),
+    renderMetricCard(
+      "MODE",
+      [`ACTIVE: ${state.activeMode}`, `SAFETY: ${state.safetyLevel}`],
+      `${state.reasoningLevel}`,
+      cardWidth,
+      inner,
+      c,
+    ),
   ];
 
   const maxLines = Math.max(...cards.map((card) => card.length));
@@ -369,7 +380,7 @@ function renderMetricCard(
   bottomRight: string,
   width: number,
   inner: number,
-  c: DashboardColorizer,
+  c: TuiColorizer,
 ): string[] {
   const lines: string[] = [];
   lines.push(boxTop(title, width, c));
@@ -387,7 +398,7 @@ function renderMetricCard(
 // Codex input panel (shows real active model and context)
 // ---------------------------------------------------------------------------
 
-export function renderCodexInput(state: DashboardState, width: number, c: DashboardColorizer): string[] {
+export function renderCodexInput(state: DashboardState, width: number, c: TuiColorizer): string[] {
   const lines: string[] = [];
   const inner = width - 4;
 
@@ -405,10 +416,7 @@ export function renderCodexInput(state: DashboardState, width: number, c: Dashbo
   const safetyPart = `SAFETY: ${state.safetyLevel}`;
   const totalLen = modelPart.length + modePart.length + safetyPart.length;
   const infoGap = Math.max(2, Math.floor((inner - totalLen) / 2));
-  const infoLine = padRight(
-    `${modelPart}${" ".repeat(infoGap)}${modePart}${" ".repeat(infoGap)}${safetyPart}`,
-    inner,
-  );
+  const infoLine = padRight(`${modelPart}${" ".repeat(infoGap)}${modePart}${" ".repeat(infoGap)}${safetyPart}`, inner);
   lines.push(boxLine(infoLine, width, c));
 
   // Real session telemetry
@@ -426,12 +434,7 @@ export function renderCodexInput(state: DashboardState, width: number, c: Dashbo
 // Dispatch review table (from real runs)
 // ---------------------------------------------------------------------------
 
-export function renderDispatchTable(
-  tasks: TaskEntry[],
-  width: number,
-  maxRows: number,
-  c: DashboardColorizer,
-): string[] {
+export function renderDispatchTable(tasks: TaskEntry[], width: number, maxRows: number, c: TuiColorizer): string[] {
   const inner = width - 4;
   const lines: string[] = [];
 
@@ -488,12 +491,7 @@ export function renderDispatchTable(
 // Log viewer (from real orchestration events)
 // ---------------------------------------------------------------------------
 
-export function renderLogViewer(
-  logs: LogEntry[],
-  width: number,
-  maxRows: number,
-  c: DashboardColorizer,
-): string[] {
+export function renderLogViewer(logs: LogEntry[], width: number, maxRows: number, c: TuiColorizer): string[] {
   const inner = width - 4;
   const lines: string[] = [];
 

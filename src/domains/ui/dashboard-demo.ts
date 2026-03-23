@@ -9,8 +9,8 @@
 
 import os from "node:os";
 import chalk from "chalk";
-import type { DashboardColorizer, DashboardState } from "./dashboard-theme";
 import { renderDashboard } from "./dashboard-layout";
+import type { DashboardColorizer, DashboardState } from "./dashboard-theme";
 
 // ---------------------------------------------------------------------------
 // Chalk-backed colorizer (matches Pi SDK theme.fg() contract)
@@ -31,6 +31,7 @@ const colorizer: DashboardColorizer = {
   bright: (t) => chalk.white(t),
   barFill: (t) => chalk.hex(TERMINAL_GREEN)(t),
   barEmpty: (t) => chalk.hex(TERMINAL_DIM)(t),
+  mode: (t) => chalk.hex(TERMINAL_GREEN)(t),
 };
 
 // ---------------------------------------------------------------------------

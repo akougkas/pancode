@@ -17,7 +17,7 @@
  */
 
 import { truncateToWidth, visibleWidth } from "../../engine/tui";
-import { PLAIN_DASHBOARD, type DashboardColorizer, type DashboardState } from "./dashboard-theme";
+import { type DashboardState, PLAIN_COLORIZER, type TuiColorizer } from "./dashboard-theme";
 import {
   renderAgentRegistry,
   renderCodexInput,
@@ -87,7 +87,7 @@ export function renderDashboard(
   state: DashboardState,
   width: number,
   height: number,
-  c: DashboardColorizer = PLAIN_DASHBOARD,
+  c: TuiColorizer = PLAIN_COLORIZER,
 ): string[] {
   const lines: string[] = [];
 

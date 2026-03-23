@@ -2,6 +2,8 @@ export { extension } from "./extension";
 export { manifest } from "./manifest";
 export { renderDispatchBoard, renderDispatchCard, renderDispatchFooterLine } from "./dispatch-board";
 export type { AgentStat, BoardColorizer, DispatchCardData, DispatchBoardState } from "./dispatch-board";
+export type { TuiColorizer } from "./dashboard-theme";
+export { PLAIN_COLORIZER } from "./dashboard-theme";
 export {
   addCategoryTokens,
   getCategoryBreakdown,

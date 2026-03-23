@@ -4,12 +4,14 @@
  * Pure functions that take state and return rendered string arrays.
  * No Pi SDK imports. No event subscriptions. Just rendering.
  *
- * Theme coloring is applied through the BoardColorizer interface,
+ * Theme coloring is applied through the TuiColorizer interface,
  * which the widget constructs from Pi theme APIs and passes in.
  * This keeps the renderer free of engine dependencies.
  */
 
 import { truncateToWidth, visibleWidth } from "../../engine/tui";
+import type { TuiColorizer } from "./dashboard-theme";
+import { PLAIN_COLORIZER } from "./dashboard-theme";
 import { formatCost, formatDuration, formatTokenCount, padRight, truncate } from "./widget-utils";
 
 // ---------------------------------------------------------------------------
@@ -54,31 +56,10 @@ export interface DispatchBoardState {
   agentStats?: AgentStat[];
 }
 
-// ---------------------------------------------------------------------------
-// Board colorizer (theme abstraction)
-// ---------------------------------------------------------------------------
+/** @deprecated Use TuiColorizer instead. Alias retained for migration. */
+export type BoardColorizer = TuiColorizer;
 
-export interface BoardColorizer {
-  accent(text: string): string;
-  bold(text: string): string;
-  muted(text: string): string;
-  dim(text: string): string;
-  success(text: string): string;
-  error(text: string): string;
-  warning(text: string): string;
-}
-
-const PLAIN: BoardColorizer = {
-  accent: (t) => t,
-  bold: (t) => t,
-  muted: (t) => t,
-  dim: (t) => t,
-  success: (t) => t,
-  error: (t) => t,
-  warning: (t) => t,
-};
-
-function colorizeStatusIcon(icon: string, status: string, c: BoardColorizer): string {
+function colorizeStatusIcon(icon: string, status: string, c: TuiColorizer): string {
   switch (status) {
     case "running":
       return c.accent(icon);
@@ -122,7 +103,7 @@ const INDENT = "  ";
  *
  *   ╭─ Dispatch ─────────────────────────────────╮
  */
-function renderTopBorder(title: string, width: number, c: BoardColorizer): string {
+function renderTopBorder(title: string, width: number, c: TuiColorizer): string {
   const usable = Math.max(0, width - INDENT.length);
   if (usable < 6) return `${INDENT}${c.dim("\u256D")}`;
   // Title text with surrounding dashes: ╭─ Title ─...─╮
@@ -136,7 +117,7 @@ function renderTopBorder(title: string, width: number, c: BoardColorizer): strin
  *
  *   ╰───────────────────────────── 11 runs ──────╯
  */
-function renderBottomBorder(summary: string, width: number, c: BoardColorizer): string {
+function renderBottomBorder(summary: string, width: number, c: TuiColorizer): string {
   const usable = Math.max(0, width - INDENT.length);
   if (usable < 6) return `${INDENT}${c.dim("\u2570")}`;
   if (!summary) {
@@ -154,7 +135,7 @@ function renderBottomBorder(summary: string, width: number, c: BoardColorizer): 
  *
  *   ─────────────────────────────────────────────
  */
-function renderSeparator(width: number, c: BoardColorizer): string {
+function renderSeparator(width: number, c: TuiColorizer): string {
   const usable = Math.max(0, width - INDENT.length - 2);
   return `${INDENT} ${c.dim("\u2500".repeat(usable))}`;
 }
@@ -191,7 +172,11 @@ function calculateGridColumns(cardCount: number, terminalWidth: number): number 
  * └─────────────────────┘
  * ```
  */
-export function renderDispatchCard(card: DispatchCardData, cardWidth: number, c: BoardColorizer = PLAIN): string[] {
+export function renderDispatchCard(
+  card: DispatchCardData,
+  cardWidth: number,
+  c: TuiColorizer = PLAIN_COLORIZER,
+): string[] {
   const inner = Math.max(1, cardWidth - 4);
 
   const statusIcon = STATUS_ICONS[card.status] ?? "\u25CB";
@@ -268,7 +253,7 @@ export function renderDispatchCard(card: DispatchCardData, cardWidth: number, c:
  * Render a grid of cards arranged in rows.
  * Fills incomplete rows with empty space (not blank cards).
  */
-function renderCardGrid(cards: DispatchCardData[], width: number, c: BoardColorizer = PLAIN): string[] {
+function renderCardGrid(cards: DispatchCardData[], width: number, c: TuiColorizer = PLAIN_COLORIZER): string[] {
   if (cards.length === 0) return [];
 
   const usable = Math.max(MIN_CARD_WIDTH, width - INDENT.length);
@@ -300,7 +285,7 @@ function renderCardGrid(cards: DispatchCardData[], width: number, c: BoardColori
  *
  *   ✓ scout   Found 8 test files      $0.02   3.2s
  */
-function renderRecentRun(card: DispatchCardData, width: number, c: BoardColorizer = PLAIN): string {
+function renderRecentRun(card: DispatchCardData, width: number, c: TuiColorizer = PLAIN_COLORIZER): string {
   const icon = STATUS_ICONS[card.status] ?? "\u2298";
   const coloredIcon = colorizeStatusIcon(icon, card.status, c);
   const agent = c.accent(padRight(card.agent, 8));
@@ -341,7 +326,7 @@ function renderRecentRun(card: DispatchCardData, width: number, c: BoardColorize
  *
  *   scout  7 runs  100%  avg 12.8s    dev  4 runs  100%  avg 1m12s
  */
-function renderAgentStatsCompact(stats: AgentStat[], width: number, c: BoardColorizer = PLAIN): string[] {
+function renderAgentStatsCompact(stats: AgentStat[], width: number, c: TuiColorizer = PLAIN_COLORIZER): string[] {
   const entries: string[] = [];
 
   for (const stat of stats) {
@@ -372,7 +357,11 @@ function renderAgentStatsCompact(stats: AgentStat[], width: number, c: BoardColo
  * Render the in-board footer section (budget, runs, tokens).
  * Suppresses zero-cost budget to handle local models gracefully.
  */
-export function renderDispatchFooter(state: DispatchBoardState, _width: number, c: BoardColorizer = PLAIN): string[] {
+export function renderDispatchFooter(
+  state: DispatchBoardState,
+  _width: number,
+  c: TuiColorizer = PLAIN_COLORIZER,
+): string[] {
   const parts: string[] = [];
 
   // Budget: show when cost data exists. Null renders as dash.
@@ -486,7 +475,11 @@ function buildBottomSummary(state: DispatchBoardState): string {
  *
  * ╰─────────────────────── 11 runs  $0.03 ───────╯
  */
-export function renderDispatchBoard(state: DispatchBoardState, width: number, c: BoardColorizer = PLAIN): string[] {
+export function renderDispatchBoard(
+  state: DispatchBoardState,
+  width: number,
+  c: TuiColorizer = PLAIN_COLORIZER,
+): string[] {
   const lines: string[] = [];
 
   lines.push(renderTopBorder("Dispatch", width, c));

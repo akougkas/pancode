@@ -1,21 +1,37 @@
 /**
  * Dashboard theme: interfaces, constants, and the ASCII logo.
  *
- * Extends the dispatch board's BoardColorizer with dashboard-specific
- * color slots. Pure data and types only; no Pi SDK imports.
+ * TuiColorizer is the unified color interface for all PanCode TUI renderers.
+ * 12 slots covering dispatch board, footer, and dashboard needs.
+ * Pure data and types only; no Pi SDK imports.
  */
-
-import type { BoardColorizer } from "./dispatch-board";
 
 // ---------------------------------------------------------------------------
 // Theme interface
 // ---------------------------------------------------------------------------
 
 /**
- * Dashboard colorizer adds terminal-chrome and status-badge colors
- * on top of the base BoardColorizer palette.
+ * Unified colorizer for all PanCode TUI renderers.
+ *
+ * 12 color slots covering the dispatch board (accent, bold, muted, dim,
+ * success, error, warning), the footer (mode), and the dashboard
+ * (primary, bright, barFill, barEmpty).
  */
-export interface DashboardColorizer extends BoardColorizer {
+export interface TuiColorizer {
+  /** Theme accent color for highlighted elements. */
+  accent(text: string): string;
+  /** Bold emphasis. */
+  bold(text: string): string;
+  /** Muted secondary text. */
+  muted(text: string): string;
+  /** Dim structural or low-priority text. */
+  dim(text: string): string;
+  /** Success state (green). */
+  success(text: string): string;
+  /** Error state (red). */
+  error(text: string): string;
+  /** Warning state (yellow/orange). */
+  warning(text: string): string;
   /** Bright primary color for headings and active elements. */
   primary(text: string): string;
   /** White or near-white for highlighted status values. */
@@ -24,10 +40,12 @@ export interface DashboardColorizer extends BoardColorizer {
   barFill(text: string): string;
   /** Empty block characters in progress bars. */
   barEmpty(text: string): string;
+  /** Mode-specific highlight color (varies by active mode). */
+  mode(text: string): string;
 }
 
-/** Passthrough colorizer for tests and plain output. */
-export const PLAIN_DASHBOARD: DashboardColorizer = {
+/** Passthrough colorizer for tests and plain output. All methods return input unchanged. */
+export const PLAIN_COLORIZER: TuiColorizer = {
   accent: (t) => t,
   bold: (t) => t,
   muted: (t) => t,
@@ -39,7 +57,14 @@ export const PLAIN_DASHBOARD: DashboardColorizer = {
   bright: (t) => t,
   barFill: (t) => t,
   barEmpty: (t) => t,
+  mode: (t) => t,
 };
+
+/** @deprecated Use TuiColorizer instead. Alias retained for migration. */
+export type DashboardColorizer = TuiColorizer;
+
+/** @deprecated Use PLAIN_COLORIZER instead. Alias retained for migration. */
+export const PLAIN_DASHBOARD = PLAIN_COLORIZER;
 
 // ---------------------------------------------------------------------------
 // Box-drawing character sets
@@ -68,7 +93,7 @@ export const BLOCK = {
 
 export type AgentStatus = "ACTIVE" | "IDLE" | "ERROR" | "BUSY" | "SYNC";
 
-export function colorizeStatus(status: AgentStatus, c: DashboardColorizer): string {
+export function colorizeStatus(status: AgentStatus, c: TuiColorizer): string {
   switch (status) {
     case "ACTIVE":
       return c.bright(status);

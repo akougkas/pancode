@@ -2,7 +2,7 @@
  * Multi-line footer renderer for the PanCode TUI.
  *
  * Pure functions that compose footer lines from state data and a colorizer.
- * No Pi SDK imports. Color is applied through the FooterColorizer interface,
+ * No Pi SDK imports. Color is applied through the TuiColorizer interface,
  * constructed by the calling code from Pi theme APIs.
  *
  * Footer layout:
@@ -13,24 +13,11 @@
 
 import { truncateToWidth, visibleWidth } from "../../engine/tui";
 import type { CategoryBreakdown, ContextCategory } from "./context-tracker";
+import type { TuiColorizer } from "./dashboard-theme";
 import { formatCost, formatDuration, formatTokenCount } from "./widget-utils";
 
-// ---------------------------------------------------------------------------
-// Interfaces
-// ---------------------------------------------------------------------------
-
-/** Theme-backed color functions for footer rendering. */
-export interface FooterColorizer {
-  /** Mode-specific highlight color (varies by active mode). */
-  mode(text: string): string;
-  accent(text: string): string;
-  bold(text: string): string;
-  muted(text: string): string;
-  dim(text: string): string;
-  success(text: string): string;
-  error(text: string): string;
-  warning(text: string): string;
-}
+/** @deprecated Use TuiColorizer instead. Alias retained for migration. */
+export type FooterColorizer = TuiColorizer;
 
 /** Live worker snapshot for footer display. */
 export interface FooterWorker {
@@ -79,7 +66,7 @@ const CATEGORY_LABELS: Record<ContextCategory, string> = {
 // Category color mapping
 // ---------------------------------------------------------------------------
 
-function categoryColor(c: FooterColorizer, cat: ContextCategory, text: string): string {
+function categoryColor(c: TuiColorizer, cat: ContextCategory, text: string): string {
   switch (cat) {
     case "system":
       return c.accent(text);
@@ -105,7 +92,7 @@ function categoryColor(c: FooterColorizer, cat: ContextCategory, text: string): 
  *
  *   --- Build -- auto-edit -- qwen3.5-35b -- reasoning:medium -----
  */
-function renderModeLine(data: FooterData, width: number, c: FooterColorizer): string {
+function renderModeLine(data: FooterData, width: number, c: TuiColorizer): string {
   const sep = ` ${DASH}${DASH} `;
 
   // Shorten model label to just the model name after the last /
@@ -159,7 +146,7 @@ function formatWorkerSummary(w: FooterWorker): string {
  *                       reviewer -> cli:claude-code (8s, 0.4k tok)
  *   [bullet] 1 queued   documenter
  */
-function renderActiveDispatches(workers: FooterWorker[], width: number, c: FooterColorizer): string[] {
+function renderActiveDispatches(workers: FooterWorker[], width: number, c: TuiColorizer): string[] {
   const running = workers.filter((w) => w.status === "running");
   const queued = workers.filter((w) => w.status === "pending");
 
@@ -196,7 +183,7 @@ function renderActiveDispatches(workers: FooterWorker[], width: number, c: Foote
  *
  *   Session: 14 dispatches . $0.48 . 52k tokens | Budget: $9.52 remaining
  */
-function renderSessionLine(data: FooterData, width: number, c: FooterColorizer): string {
+function renderSessionLine(data: FooterData, width: number, c: TuiColorizer): string {
   const parts: string[] = [];
 
   parts.push(`${data.dispatchCount} dispatches`);
@@ -263,7 +250,7 @@ function distributeBarSegments(
  *
  *   Context: [||||||||............] 42%  sys|tools|dispatch|panos|user|free
  */
-function renderContextBar(data: FooterData, width: number, c: FooterColorizer): string {
+function renderContextBar(data: FooterData, width: number, c: TuiColorizer): string {
   const pct = data.contextPercent;
   const filled = Math.round((pct / 100) * BAR_WIDTH);
 
@@ -293,7 +280,7 @@ function renderContextBar(data: FooterData, width: number, c: FooterColorizer): 
  * Render all footer lines. Returns 1 line for narrow terminals,
  * 3 lines when idle, and 4-6 lines during active dispatches.
  */
-export function renderFooterLines(data: FooterData, width: number, c: FooterColorizer): string[] {
+export function renderFooterLines(data: FooterData, width: number, c: TuiColorizer): string[] {
   // Narrow fallback: single line with mode and context percentage
   if (width < 60) {
     const activeCount = data.workers.filter((w) => w.status === "running").length;
