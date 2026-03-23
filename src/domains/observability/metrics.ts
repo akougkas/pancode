@@ -1,8 +1,10 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { atomicWriteJsonSync } from "../../core/config-writer";
+import { DEFAULT_MAX_METRICS } from "../../core/defaults";
 import { type SessionBoundary, isSessionBoundary } from "../../core/ledger-types";
 
-export const MAX_METRIC_ENTRIES = 1000;
+export const MAX_METRIC_ENTRIES = Number(process.env.PANCODE_MAX_METRICS) || DEFAULT_MAX_METRICS;
 
 export interface RunMetric {
   runId: string;
@@ -52,6 +54,9 @@ export class MetricsLedger {
     }
   }
 
+  // SessionBoundary markers are exempt from the entry count.
+  // Physical array size may exceed MAX_METRIC_ENTRIES by the number of session markers.
+  // This is intentional: markers are lightweight and provide session attribution.
   private trim(): void {
     const metrics = this.getMetrics();
     if (metrics.length <= MAX_METRIC_ENTRIES) return;
@@ -68,14 +73,8 @@ export class MetricsLedger {
   }
 
   persist(): void {
-    const dir = dirname(this.persistPath);
     try {
-      mkdirSync(dir, { recursive: true });
-      // Atomic write: temp file + rename prevents corruption when multiple workers
-      // complete concurrently and trigger persist from different bus event handlers.
-      const tmpPath = `${this.persistPath}.${process.pid}.tmp`;
-      writeFileSync(tmpPath, JSON.stringify(this.entries, null, 2), "utf8");
-      renameSync(tmpPath, this.persistPath);
+      atomicWriteJsonSync(this.persistPath, this.entries);
     } catch (err) {
       console.error(`[pancode:metrics] Failed to persist metrics: ${err instanceof Error ? err.message : String(err)}`);
     }

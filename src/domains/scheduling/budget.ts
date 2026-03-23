@@ -1,5 +1,6 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { atomicWriteJsonSync } from "../../core/config-writer";
 
 export interface BudgetState {
   totalCost: number;
@@ -37,12 +38,7 @@ export class BudgetTracker {
   }
 
   persist(): void {
-    const dir = dirname(this.persistPath);
-    mkdirSync(dir, { recursive: true });
-    // Atomic write: temp file + rename prevents corruption from concurrent access.
-    const tmpPath = `${this.persistPath}.${process.pid}.tmp`;
-    writeFileSync(tmpPath, JSON.stringify(this.state, null, 2), "utf8");
-    renameSync(tmpPath, this.persistPath);
+    atomicWriteJsonSync(this.persistPath, this.state);
   }
 
   recordCost(cost: number | null, inputTokens: number | null, outputTokens: number | null): void {

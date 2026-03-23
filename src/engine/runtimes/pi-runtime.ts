@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { atomicWriteTextSync } from "../../core/config-writer";
 import type { AgentRuntime, RuntimeResult, RuntimeTaskConfig, SpawnConfig } from "./types";
 
 /** Threshold for writing system prompts to temp files instead of CLI args. */
@@ -19,7 +20,7 @@ function writePromptTempFile(prefix: string, content: string): string {
   mkdirSync(dir, { recursive: true });
   const filename = `${prefix}-${process.pid}-${Date.now()}-${tempFileCounter++}.txt`;
   const filepath = join(dir, filename);
-  writeFileSync(filepath, content, { encoding: "utf8", mode: 0o600 });
+  atomicWriteTextSync(filepath, content, { mode: 0o600 });
   return filepath;
 }
 

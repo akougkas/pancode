@@ -9,10 +9,11 @@
  * overwritten after that. Users edit it directly.
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import YAML from "yaml";
 import type { SafetyLevel } from "./config";
+import { atomicWriteTextSync } from "./config-writer";
 import type { PanCodeReasoningPreference } from "./thinking";
 
 export interface Preset {
@@ -125,11 +126,10 @@ function parseEntry(name: string, entry: PresetFileEntry): Preset | null {
 export function ensurePresetsFile(pancodeHome: string): void {
   const filePath = presetsPath(pancodeHome);
   if (existsSync(filePath)) return;
-  mkdirSync(dirname(filePath), { recursive: true });
   const header =
     "# PanCode boot presets. Use: pancode --preset <name>\n" +
     "# Edit freely. PanCode never overwrites this file after creation.\n\n";
-  writeFileSync(filePath, header + YAML.stringify(buildDefaultPresets()), "utf8");
+  atomicWriteTextSync(filePath, header + YAML.stringify(buildDefaultPresets()));
 }
 
 /**

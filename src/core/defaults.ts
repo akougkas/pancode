@@ -6,6 +6,11 @@ export const DEFAULT_THEME = "pancode-dark";
 export const DEFAULT_SAFETY = "auto-edit" as const;
 export const DEFAULT_REASONING_PREFERENCE = "medium" as const;
 export const DEFAULT_THINKING_LEVEL = "medium" as const;
+// Ring buffer limits configurable via environment variables.
+// PANCODE_MAX_RUNS controls dispatch run history; PANCODE_MAX_METRICS controls metric history.
+export const DEFAULT_MAX_RUNS = 500;
+export const DEFAULT_MAX_METRICS = 1000;
+
 export const DEFAULT_ENABLED_DOMAINS = [
   "safety",
   "session",

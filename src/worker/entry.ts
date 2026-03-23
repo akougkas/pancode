@@ -1,8 +1,9 @@
 import { spawn } from "node:child_process";
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { type PanCodeConfig, loadConfig } from "../core/config";
+import { atomicWriteJsonSync, atomicWriteTextSync } from "../core/config-writer";
 import { ensureProjectRuntime } from "../core/init";
 import { redact } from "../core/redaction";
 import { buildWorkerModelArgs, createWorkerEnvironment } from "./provider-bridge";
@@ -256,7 +257,7 @@ function writeTempFile(prefix: string, content: string): string {
   mkdirSync(dir, { recursive: true });
   const filename = `${prefix}-${process.pid}-${Date.now()}.txt`;
   const filepath = join(dir, filename);
-  writeFileSync(filepath, content, { encoding: "utf8", mode: 0o600 });
+  atomicWriteTextSync(filepath, content, { mode: 0o600 });
   tempFilesToCleanup.push(filepath);
   return filepath;
 }
@@ -455,8 +456,7 @@ async function runPi(config: FullWorkerConfig): Promise<PiRunResult> {
 }
 
 function writeResultFile(resultFile: string, payload: Record<string, unknown>): void {
-  mkdirSync(dirname(resultFile), { recursive: true });
-  writeFileSync(resultFile, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+  atomicWriteJsonSync(resultFile, payload);
 }
 
 /**

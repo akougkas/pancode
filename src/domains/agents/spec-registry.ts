@@ -1,6 +1,7 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import YAML from "yaml";
+import { atomicWriteTextSync } from "../../core/config-writer";
 
 export interface AgentSpec {
   name: string;
@@ -238,7 +239,7 @@ export function ensureAgentsYaml(pancodeHome: string): string {
   const filePath = join(pancodeHome, "panagents.yaml");
   if (!existsSync(filePath)) {
     mkdirSync(dirname(filePath), { recursive: true });
-    writeFileSync(filePath, DEFAULT_AGENTS_YAML, "utf8");
+    atomicWriteTextSync(filePath, DEFAULT_AGENTS_YAML);
   } else {
     // Detect stale format missing v0.3.0 operational fields and regenerate.
     // Pre-release: clean cut, no backward compatibility needed.
@@ -248,11 +249,11 @@ export function ensureAgentsYaml(pancodeHome: string): string {
       if (parsed?.agents) {
         const firstAgent = Object.values(parsed.agents)[0];
         if (firstAgent && !("speed" in firstAgent)) {
-          writeFileSync(filePath, DEFAULT_AGENTS_YAML, "utf8");
+          atomicWriteTextSync(filePath, DEFAULT_AGENTS_YAML);
         }
       }
     } catch {
-      writeFileSync(filePath, DEFAULT_AGENTS_YAML, "utf8");
+      atomicWriteTextSync(filePath, DEFAULT_AGENTS_YAML);
     }
   }
   return filePath;

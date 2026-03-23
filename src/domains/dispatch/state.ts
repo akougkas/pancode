@@ -1,12 +1,14 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { atomicWriteJsonSync } from "../../core/config-writer";
+import { DEFAULT_MAX_RUNS } from "../../core/defaults";
 import { type SessionBoundary, isSessionBoundary } from "../../core/ledger-types";
 import type { RuntimeUsage } from "../../engine/runtimes";
 
 export { type SessionBoundary, isSessionBoundary } from "../../core/ledger-types";
 
-export const MAX_RUN_ENTRIES = 500;
+export const MAX_RUN_ENTRIES = Number(process.env.PANCODE_MAX_RUNS) || DEFAULT_MAX_RUNS;
 
 export type RunStatus =
   | "pending"
@@ -93,6 +95,9 @@ export class RunLedger {
     }
   }
 
+  // SessionBoundary markers are exempt from the entry count.
+  // Physical array size may exceed MAX_RUN_ENTRIES by the number of session markers.
+  // This is intentional: markers are lightweight and provide session attribution.
   private trim(): void {
     const runs = this.getRuns();
     if (runs.length <= MAX_RUN_ENTRIES) return;
@@ -109,14 +114,8 @@ export class RunLedger {
   }
 
   persist(): void {
-    const dir = dirname(this.persistPath);
     try {
-      mkdirSync(dir, { recursive: true });
-      // Atomic write: write to temp file, then rename. Prevents corruption if
-      // the process crashes mid-write or multiple workers complete concurrently.
-      const tmpPath = `${this.persistPath}.${process.pid}.tmp`;
-      writeFileSync(tmpPath, JSON.stringify(this.entries, null, 2), "utf8");
-      renameSync(tmpPath, this.persistPath);
+      atomicWriteJsonSync(this.persistPath, this.entries);
     } catch (err) {
       console.error(
         `[pancode:dispatch] Failed to persist run ledger: ${err instanceof Error ? err.message : String(err)}`,

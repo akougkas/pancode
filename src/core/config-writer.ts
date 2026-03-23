@@ -3,15 +3,17 @@ import { dirname } from "node:path";
 
 export interface AtomicWriteOptions {
   lock?: "none" | "adjacent";
+  /** File permission mode applied to the temp file before rename (e.g., 0o600). */
+  mode?: number;
 }
 
 const LOCK_SLEEP_BUFFER = new SharedArrayBuffer(4);
 const LOCK_SLEEP_VIEW = new Int32Array(LOCK_SLEEP_BUFFER);
 
-function writeTempFile(path: string, contents: string): string {
+function writeTempFile(path: string, contents: string, mode?: number): string {
   mkdirSync(dirname(path), { recursive: true });
   const tempPath = `${path}.tmp-${process.pid}-${Date.now()}`;
-  writeFileSync(tempPath, contents, "utf8");
+  writeFileSync(tempPath, contents, mode != null ? { encoding: "utf8" as const, mode } : "utf8");
   return tempPath;
 }
 
@@ -49,7 +51,7 @@ export function withFileLockSync<T>(path: string, fn: () => T, timeoutMs = 2000)
 
 export function atomicWriteTextSync(path: string, contents: string, options?: AtomicWriteOptions): void {
   const write = () => {
-    const tempPath = writeTempFile(path, contents);
+    const tempPath = writeTempFile(path, contents, options?.mode);
     renameSync(tempPath, path);
   };
 
