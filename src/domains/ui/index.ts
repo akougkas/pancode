@@ -7,6 +7,7 @@ export {
   trackWorkerStart,
   trackWorkerEnd,
   updateWorkerProgress,
+  updateWorkerHealth,
   getLiveWorkers,
   resetAll as resetLiveWorkers,
 } from "./worker-widgets";

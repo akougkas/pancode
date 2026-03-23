@@ -5,6 +5,7 @@ import {
   type RunFinishedEvent,
   type RunStartedEvent,
   type WarningEvent,
+  type WorkerHealthChangedEvent,
   type WorkerProgressEvent,
 } from "../../core/bus-events";
 import type { SafetyLevel } from "../../core/config";
@@ -60,6 +61,7 @@ import {
   resetAll as resetLiveWorkers,
   trackWorkerEnd,
   trackWorkerStart,
+  updateWorkerHealth,
   updateWorkerProgress,
 } from "./worker-widgets";
 import type { WorkerStatus } from "./worker-widgets";
@@ -110,7 +112,7 @@ function readPackageVersion(): string {
 
 function buildWelcomeScreen(modelLabel: string, modeName: string): string[] {
   const version = process.env.npm_package_version ?? readPackageVersion();
-  const modelShort = modelLabel.includes("/") ? modelLabel.split("/").pop() ?? modelLabel : modelLabel;
+  const modelShort = modelLabel.includes("/") ? (modelLabel.split("/").pop() ?? modelLabel) : modelLabel;
   const profiles = getModelProfileCache();
   const agentCount = agentRegistry.getAll().length;
   const runtimeCount = runtimeRegistry.available().length;
@@ -767,10 +769,10 @@ export const extension = defineExtension((pi) => {
   pi.on(PiEvent.SESSION_START, (_event, ctx) => {
     // Suppress tmux extended-keys warnings that pollute stderr.
     const origStderrWrite = process.stderr.write.bind(process.stderr);
-    process.stderr.write = function (chunk: string | Uint8Array, ...args: unknown[]) {
+    process.stderr.write = ((chunk: string | Uint8Array, ...args: unknown[]) => {
       if (typeof chunk === "string" && chunk.includes("extended-keys")) return true;
       return (origStderrWrite as Function).call(process.stderr, chunk, ...args);
-    } as typeof process.stderr.write;
+    }) as typeof process.stderr.write;
 
     currentModelLabel = ctx.model ? modelRef(ctx.model) : "no model";
     currentThemeName = ctx.ui.theme.name ?? currentThemeName;
@@ -806,7 +808,7 @@ export const extension = defineExtension((pi) => {
         const modeInfo = getModeDefinition();
         const mc = modeThemeColor(modeInfo);
         const modelShort = currentModelLabel.includes("/")
-          ? currentModelLabel.split("/").pop() ?? currentModelLabel
+          ? (currentModelLabel.split("/").pop() ?? currentModelLabel)
           : currentModelLabel;
         const safety = process.env.PANCODE_SAFETY ?? DEFAULT_SAFETY;
         const reasoning = pi.getThinkingLevel() || "off";
@@ -882,6 +884,7 @@ export const extension = defineExtension((pi) => {
             outputTokens: w.outputTokens > 0 ? w.outputTokens : undefined,
             turns: w.turns > 0 ? w.turns : undefined,
             runtime: w.runtime,
+            healthState: w.healthState,
           }));
 
           const recent: DispatchCardData[] = allRuns
@@ -1106,6 +1109,11 @@ export const extension = defineExtension((pi) => {
       trackWorkerEnd(event.runId, event.status as WorkerStatus);
     });
 
+    sharedBus.on(BusChannel.WORKER_HEALTH_CHANGED, (payload) => {
+      const event = payload as WorkerHealthChangedEvent;
+      updateWorkerHealth(event.runId, event.currentState);
+    });
+
     // Set initial mode status and gate tools to match the active mode.
     const initMode = getModeDefinition();
     ctx.ui.setStatus("mode", `[${initMode.name}]`);
@@ -1194,7 +1202,7 @@ export const extension = defineExtension((pi) => {
   pi.on(PiEvent.BEFORE_AGENT_START, async (event, ctx) => {
     const mode = getModeDefinition();
     const model = ctx.model;
-    const profile = model ? findModelProfile(model.provider, model.id) ?? null : null;
+    const profile = model ? (findModelProfile(model.provider, model.id) ?? null) : null;
     const compiled = compileOrchestratorPrompt(event.systemPrompt, mode, profile);
     return { systemPrompt: compiled };
   });
@@ -1312,7 +1320,9 @@ export const extension = defineExtension((pi) => {
         for (const [name, preset] of presets) {
           const marker = name === current ? "*" : "-";
           lines.push(`  ${marker} ${name.padEnd(14)} ${preset.description}`);
-          lines.push(`    model: ${preset.model}  worker: ${preset.workerModel ?? "(same)"}  scout: ${preset.scoutModel ?? preset.model}  reasoning: ${preset.reasoning}  safety: ${preset.safety}`);
+          lines.push(
+            `    model: ${preset.model}  worker: ${preset.workerModel ?? "(same)"}  scout: ${preset.scoutModel ?? preset.model}  reasoning: ${preset.reasoning}  safety: ${preset.safety}`,
+          );
         }
         lines.push("", "Use /preset <name> to apply. Edit ~/.pancode/panpresets.yaml to customize.");
         sendPanel(emitPanel, `${PANCODE_PRODUCT_NAME} Presets`, lines);

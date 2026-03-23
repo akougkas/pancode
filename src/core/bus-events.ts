@@ -14,6 +14,8 @@ export const BusChannel = {
   RUN_STARTED: "pancode:run-started",
   RUN_FINISHED: "pancode:run-finished",
   WORKER_PROGRESS: "pancode:worker-progress",
+  WORKER_HEARTBEAT: "pancode:worker-heartbeat",
+  WORKER_HEALTH_CHANGED: "pancode:worker-health-changed",
   SHUTDOWN_DRAINING: "pancode:shutdown-draining",
   WARNING: "pancode:warning",
   SESSION_RESET: "pancode:session-reset",
@@ -96,6 +98,23 @@ export interface PromptCompiledEvent {
   hash: string;
 }
 
+export interface WorkerHeartbeatEvent {
+  runId: string;
+  ts: string;
+  turns: number;
+  lastToolCall: string | null;
+  tokensThisBeat: { in: number; out: number };
+}
+
+/** Health state classification for worker heartbeat monitoring. */
+export type HealthState = "healthy" | "stale" | "dead" | "recovered";
+
+export interface WorkerHealthChangedEvent {
+  runId: string;
+  previousState: HealthState;
+  currentState: HealthState;
+}
+
 // Convenience: map channel names to their payload types for documentation.
 // Not enforced at runtime (the bus is stringly typed), but enables grep-based
 // auditing of which channel carries which shape.
@@ -103,6 +122,8 @@ export interface BusEventMap {
   [BusChannel.RUN_STARTED]: RunStartedEvent;
   [BusChannel.RUN_FINISHED]: RunFinishedEvent;
   [BusChannel.WORKER_PROGRESS]: WorkerProgressEvent;
+  [BusChannel.WORKER_HEARTBEAT]: WorkerHeartbeatEvent;
+  [BusChannel.WORKER_HEALTH_CHANGED]: WorkerHealthChangedEvent;
   [BusChannel.SHUTDOWN_DRAINING]: Record<string, never>;
   [BusChannel.WARNING]: WarningEvent;
   [BusChannel.SESSION_RESET]: Record<string, never>;

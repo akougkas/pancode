@@ -329,15 +329,56 @@ function buildPiArgs(config: WorkerPiConfig, prompt: string): string[] {
 function monitorParent(): void {
   const parentPid = Number.parseInt(process.env.PANCODE_PARENT_PID ?? "", 10);
   if (!Number.isInteger(parentPid) || parentPid <= 0) return;
-  const heartbeat = setInterval(() => {
+  const parentCheck = setInterval(() => {
     try {
       process.kill(parentPid, 0);
     } catch {
-      clearInterval(heartbeat);
+      clearInterval(parentCheck);
       process.exit(1);
     }
   }, 5000);
-  heartbeat.unref();
+  parentCheck.unref();
+}
+
+// ---------------------------------------------------------------------------
+// Heartbeat and lifecycle event emission
+// ---------------------------------------------------------------------------
+
+/** Write a structured NDJSON event to stdout for the orchestrator to parse. */
+function emitWorkerEvent(event: Record<string, unknown>): void {
+  try {
+    process.stdout.write(`${JSON.stringify(event)}\n`);
+  } catch {
+    // Stdout may be closed if the orchestrator terminated. Ignore silently.
+  }
+}
+
+/**
+ * Start a periodic heartbeat emitter. Each tick writes one NDJSON heartbeat
+ * line to stdout. The orchestrator uses heartbeat timing to classify worker
+ * health as healthy, stale, or dead.
+ *
+ * Frequency defaults to 10 seconds, configurable via PANCODE_HEARTBEAT_INTERVAL_MS.
+ */
+function startHeartbeat(runId: string): NodeJS.Timeout {
+  const intervalMs = Number.parseInt(process.env.PANCODE_HEARTBEAT_INTERVAL_MS ?? "10000", 10);
+  const timer = setInterval(() => {
+    emitWorkerEvent({
+      type: "heartbeat",
+      ts: new Date().toISOString(),
+      runId,
+      turns: 0,
+      lastToolCall: null,
+      tokensThisBeat: { in: 0, out: 0 },
+    });
+  }, intervalMs);
+  timer.unref();
+  return timer;
+}
+
+/** Emit a structured lifecycle event to stdout. */
+function emitLifecycle(event: string, runId: string, extra?: Record<string, unknown>): void {
+  emitWorkerEvent({ type: "lifecycle", event, runId, ...extra });
 }
 
 interface FullWorkerConfig extends WorkerPiConfig {
@@ -472,8 +513,23 @@ async function main(): Promise<void> {
 
   monitorParent();
 
+  // Resolve run ID from orchestrator env var or extract from result file path.
+  const runId =
+    process.env.PANCODE_RUN_ID ??
+    args.resultFile.match(/worker-([a-f0-9-]+)\.result\.json$/)?.[1] ??
+    `w-${process.pid}`;
+
+  const agentName = process.env.PANCODE_AGENT_NAME ?? "worker";
+
+  // Emit lifecycle started event and begin heartbeat.
+  emitLifecycle("started", runId, { agent: agentName, runtime: "pi" });
+  const heartbeatTimer = startHeartbeat(runId);
+
   try {
     const result = await runPi(workerConfig);
+    clearInterval(heartbeatTimer);
+    emitLifecycle("completed", runId, { exitCode: result.exitCode ?? 0 });
+
     writeResultFile(args.resultFile, {
       ok: result.exitCode === 0 && !result.assistantError,
       prompt: workerConfig.prompt,
@@ -494,6 +550,9 @@ async function main(): Promise<void> {
       process.exitCode = result.exitCode ?? 1;
     }
   } catch (error) {
+    clearInterval(heartbeatTimer);
+    emitLifecycle("completed", runId, { exitCode: 1 });
+
     writeResultFile(args.resultFile, {
       ok: false,
       prompt: args.prompt,
