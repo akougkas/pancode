@@ -1,9 +1,13 @@
 import {
+  type BudgetUpdatedEvent,
   BusChannel,
+  type CompactionStartedEvent,
+  type PromptCompiledEvent,
   type RunFinishedEvent,
   type RunStartedEvent,
   type WarningEvent,
   type WorkerHealthChangedEvent,
+  type WorkerHeartbeatEvent,
   type WorkerProgressEvent,
 } from "../../core/bus-events";
 import type { SafetyLevel } from "../../core/config";
@@ -51,6 +55,7 @@ import {
   recordContextFromSdk,
   recordContextUsage,
 } from "./context-tracker";
+import { clearProgressCounter, logNow, shouldLogProgress } from "./dashboard-logs";
 import type { TuiColorizer } from "./dashboard-theme";
 import { renderDispatchBoard } from "./dispatch-board";
 import type { AgentStat, DispatchCardData } from "./dispatch-board";
@@ -245,6 +250,7 @@ export const extension = defineExtension((pi) => {
     sharedBus.on(BusChannel.WARNING, (payload) => {
       const event = payload as WarningEvent;
       ctx.ui.notify(`[${event.source}] ${event.message}`, "warning");
+      logNow(`[${event.source}] ${event.message}`, "warn", true);
     });
     const effectiveThinkingLevel = resolveThinkingLevelForPreference(ctx.model, state.currentReasoningPreference);
     process.env.PANCODE_EFFECTIVE_THINKING = effectiveThinkingLevel;
@@ -519,6 +525,8 @@ export const extension = defineExtension((pi) => {
     sharedBus.on(BusChannel.RUN_STARTED, (payload) => {
       const event = payload as RunStartedEvent;
       trackWorkerStart(event.runId, event.agent, event.task, event.model, event.runtime);
+      const rt = event.runtime ? ` [${event.runtime}]` : "";
+      logNow(`Run started: ${event.agent}${rt}`, "info");
     });
 
     sharedBus.on(BusChannel.WORKER_PROGRESS, (payload) => {
@@ -533,11 +541,22 @@ export const extension = defineExtension((pi) => {
         event.recentTools,
         event.toolCount,
       );
+      if (shouldLogProgress(event.runId)) {
+        const tool = event.currentTool ? ` tool:${event.currentTool}` : "";
+        logNow(
+          `Progress ${event.runId.slice(0, 8)}: ${event.turns}t ${event.inputTokens + event.outputTokens}tok${tool}`,
+          "info",
+        );
+      }
     });
 
     sharedBus.on(BusChannel.RUN_FINISHED, (payload) => {
       const event = payload as RunFinishedEvent;
       trackWorkerEnd(event.runId, event.status as WorkerStatus);
+      clearProgressCounter(event.runId);
+
+      const cost = event.usage.cost != null ? ` $${event.usage.cost.toFixed(4)}` : "";
+      logNow(`Run finished: ${event.agent} [${event.status}]${cost}`, "info");
 
       // Track dispatch result tokens for context bar category.
       // Worker output tokens represent what gets returned to the orchestrator context.
@@ -549,6 +568,62 @@ export const extension = defineExtension((pi) => {
     sharedBus.on(BusChannel.WORKER_HEALTH_CHANGED, (payload) => {
       const event = payload as WorkerHealthChangedEvent;
       updateWorkerHealth(event.runId, event.currentState);
+      const severity = event.currentState === "dead" ? "error" : "warn";
+      const highlight = event.currentState === "dead" || event.currentState === "stale";
+      logNow(
+        `Worker ${event.runId.slice(0, 8)} health: ${event.previousState} -> ${event.currentState}`,
+        severity,
+        highlight,
+      );
+    });
+
+    // Log heartbeat events only for non-healthy workers (stale/dead/recovered).
+    sharedBus.on(BusChannel.WORKER_HEARTBEAT, (payload) => {
+      const event = payload as WorkerHeartbeatEvent;
+      const worker = getLiveWorkers().find((w) => w.runId === event.runId);
+      const state = worker?.healthState;
+      if (state === "stale" || state === "dead" || state === "recovered") {
+        logNow(`Heartbeat ${event.runId.slice(0, 8)} [${state}]: ${event.turns}t`, "warn");
+      }
+    });
+
+    // Budget warnings when spending exceeds 80% of ceiling.
+    sharedBus.on(BusChannel.BUDGET_UPDATED, (payload) => {
+      const event = payload as BudgetUpdatedEvent;
+      if (event.ceiling > 0 && event.totalCost / event.ceiling > 0.8) {
+        const pct = Math.round((event.totalCost / event.ceiling) * 100);
+        logNow(`Budget ${pct}% used ($${event.totalCost.toFixed(2)}/$${event.ceiling.toFixed(2)})`, "warn", true);
+      }
+    });
+
+    sharedBus.on(BusChannel.RUNTIMES_DISCOVERED, () => {
+      logNow("Runtimes discovered", "info");
+    });
+
+    sharedBus.on(BusChannel.PROMPT_COMPILED, (payload) => {
+      const event = payload as PromptCompiledEvent;
+      logNow(
+        `Prompt compiled: ${event.role} [${event.mode}] ${event.fragmentCount} fragments ~${event.estimatedTokens}tok`,
+        "info",
+      );
+    });
+
+    sharedBus.on(BusChannel.SESSION_RESET, () => {
+      logNow("Session reset", "warn", true);
+    });
+
+    sharedBus.on(BusChannel.COMPACTION_STARTED, (payload) => {
+      const event = payload as CompactionStartedEvent;
+      const note = event.customInstructions ? " (with custom instructions)" : "";
+      logNow(`Compaction started${note}`, "info");
+    });
+
+    sharedBus.on(BusChannel.SHUTDOWN_DRAINING, () => {
+      logNow("Shutdown draining", "warn", true);
+    });
+
+    sharedBus.on(BusChannel.EXTENSIONS_RELOADED, () => {
+      logNow("Extensions reloaded", "info");
     });
 
     // Track system prompt token estimate from orchestrator prompt compilation.
@@ -594,6 +669,7 @@ export const extension = defineExtension((pi) => {
 
   pi.on(PiEvent.MODEL_SELECT, (event, ctx) => {
     state.currentModelLabel = modelRef(event.model);
+    logNow(`Model selected: ${state.currentModelLabel}`, "info");
     // Re-resolve reasoning for the new model's capabilities.
     const effective = resolveThinkingLevelForPreference(event.model, state.currentReasoningPreference);
     process.env.PANCODE_EFFECTIVE_THINKING = effective;
