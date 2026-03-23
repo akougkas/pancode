@@ -250,16 +250,17 @@ export function renderDispatchCard(card: DispatchCardData, cardWidth: number, c:
     taskLine = padRight(truncate(card.taskPreview, inner), inner);
   }
 
-  // Card borders use dim for structural elements.
+  // Card borders use dim for structural elements. Rounded corners match
+  // the board and editor border style for visual consistency.
   const hBar = c.dim("\u2500".repeat(cardWidth - 2));
 
   return [
-    c.dim("\u250C") + hBar + c.dim("\u2510"),
+    c.dim("\u256D") + hBar + c.dim("\u256E"),
     c.dim("\u2502 ") + agentLine + c.dim(" \u2502"),
     c.dim("\u2502 ") + statusLine + c.dim(" \u2502"),
     c.dim("\u2502 ") + modelLine + c.dim(" \u2502"),
     c.dim("\u2502 ") + taskLine + c.dim(" \u2502"),
-    c.dim("\u2514") + hBar + c.dim("\u2518"),
+    c.dim("\u2570") + hBar + c.dim("\u256F"),
   ];
 }
 

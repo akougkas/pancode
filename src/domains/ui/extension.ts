@@ -511,8 +511,31 @@ export const extension = defineExtension((pi) => {
         ? String((message.details as { title?: unknown }).title ?? PANCODE_PRODUCT_NAME)
         : PANCODE_PRODUCT_NAME;
     const body = typeof message.content === "string" ? message.content : String(message.content ?? "");
-    const text = `${theme.bold(theme.fg("accent", title))}\n${body}`;
-    return new Text(text, 1, 0);
+
+    // Bordered panel matching the dispatch board visual style.
+    // Returns a custom component so borders are width-aware at render time.
+    return {
+      invalidate() {},
+      render(width: number): string[] {
+        const result: string[] = [];
+        const titleVW = visibleWidth(title);
+        const topFillLen = Math.max(0, width - 5 - titleVW);
+
+        // Top border: ╭─ Title ──────────────────╮
+        result.push(
+          `${theme.fg("dim", "\u256D\u2500")} ${theme.bold(theme.fg("accent", title))} ${theme.fg("dim", `${"\u2500".repeat(topFillLen)}\u256E`)}`,
+        );
+
+        // Body lines with consistent 2-char indent
+        for (const line of body.split("\n")) {
+          result.push(`  ${truncateToWidth(line, Math.max(1, width - 2))}`);
+        }
+
+        // Bottom border: ╰──────────────────────────╯
+        result.push(theme.fg("dim", `\u2570${"\u2500".repeat(Math.max(0, width - 2))}\u256F`));
+        return result;
+      },
+    };
   });
 
   pi.registerMessageRenderer(PanMessageType.MODE_TRANSITION, (message, _options, theme) => {
@@ -1125,6 +1148,10 @@ export const extension = defineExtension((pi) => {
     themeFg = (color, text) => ctx.ui.theme.fg(color, text);
     ctx.ui.setEditorComponent((tui, editorTheme, keybindings) => {
       pancodeEditor = new PanCodeEditor(tui, editorTheme, keybindings);
+      // Left/right padding creates space for the prompt symbol (❯).
+      // PanCodeEditor.render() replaces the first padding space on the
+      // first content line with the colored prompt character.
+      pancodeEditor.setPaddingX(2);
       return pancodeEditor;
     });
     if (pancodeEditor) {
