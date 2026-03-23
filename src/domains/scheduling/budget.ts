@@ -42,10 +42,10 @@ export class BudgetTracker {
     writeFileSync(this.persistPath, JSON.stringify(this.state, null, 2), "utf8");
   }
 
-  recordCost(cost: number, inputTokens: number, outputTokens: number): void {
-    this.state.totalCost += cost;
-    this.state.totalInputTokens += inputTokens;
-    this.state.totalOutputTokens += outputTokens;
+  recordCost(cost: number | null, inputTokens: number | null, outputTokens: number | null): void {
+    if (cost != null) this.state.totalCost += cost;
+    if (inputTokens != null) this.state.totalInputTokens += inputTokens;
+    if (outputTokens != null) this.state.totalOutputTokens += outputTokens;
     this.state.runsCount += 1;
     this.persist();
   }

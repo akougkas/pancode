@@ -59,8 +59,8 @@ export const extension = defineExtension((pi) => {
       if (!budgetTracker) return;
       const event = payload as RunFinishedEvent;
       if (event.status === "done") {
-        // Skip budget recording when usage fields are null (runtime did not report).
-        budgetTracker.recordCost(event.usage.cost ?? 0, event.usage.inputTokens ?? 0, event.usage.outputTokens ?? 0);
+        // Pass nullable values directly; BudgetTracker skips null fields.
+        budgetTracker.recordCost(event.usage.cost, event.usage.inputTokens, event.usage.outputTokens);
         publishBudgetState();
       }
     });

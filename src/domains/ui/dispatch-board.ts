@@ -44,12 +44,12 @@ export interface DispatchBoardState {
   active: DispatchCardData[];
   recent: DispatchCardData[]; // last 5 completed
   totalRuns: number;
-  totalCost: number;
+  totalCost: number | null;
   budgetCeiling: number | null;
-  totalInputTokens: number;
-  totalOutputTokens: number;
-  totalCacheReadTokens?: number;
-  totalCacheWriteTokens?: number;
+  totalInputTokens: number | null;
+  totalOutputTokens: number | null;
+  totalCacheReadTokens?: number | null;
+  totalCacheWriteTokens?: number | null;
   agentStats?: AgentStat[];
 }
 
@@ -284,9 +284,14 @@ function renderRecentRun(card: DispatchCardData, width: number, c: BoardColorize
   const coloredIcon = colorizeStatusIcon(icon, card.status, c);
   const agent = c.accent(padRight(card.agent, 8));
   const elapsed = c.dim(formatDuration(card.elapsedMs).padStart(6));
-  const costStr = card.cost != null && card.cost > 0 ? c.muted(formatCost(card.cost).padStart(8)) : "";
-  const hasCost = card.cost != null && card.cost > 0;
-  const fixedWidth = 20 + (hasCost ? 9 : 0);
+  // Null cost renders as dash; zero cost renders as $0.00; positive cost renders normally.
+  const hasCostData = card.cost !== undefined;
+  const costStr = hasCostData
+    ? card.cost != null
+      ? c.muted(formatCost(card.cost).padStart(8))
+      : c.dim("\u2014".padStart(8))
+    : "";
+  const fixedWidth = 20 + (hasCostData ? 9 : 0);
   const maxTask = Math.max(10, width - fixedWidth);
 
   // Prefer result summary over dispatch prompt. Fall back to task for errored runs
@@ -300,7 +305,7 @@ function renderRecentRun(card: DispatchCardData, width: number, c: BoardColorize
     displayText = c.dim(padRight(truncate(card.taskPreview, maxTask), maxTask));
   }
 
-  return hasCost
+  return hasCostData
     ? `${INDENT}${coloredIcon} ${agent} ${displayText} ${costStr} ${elapsed}`
     : `${INDENT}${coloredIcon} ${agent} ${displayText} ${elapsed}`;
 }
@@ -349,8 +354,8 @@ function renderAgentStatsCompact(stats: AgentStat[], width: number, c: BoardColo
 export function renderDispatchFooter(state: DispatchBoardState, _width: number, c: BoardColorizer = PLAIN): string[] {
   const parts: string[] = [];
 
-  // Budget: only show when cost is nonzero (API models)
-  if (state.totalCost > 0) {
+  // Budget: show when cost data exists. Null renders as dash.
+  if (state.totalCost != null && state.totalCost > 0) {
     const budget =
       state.budgetCeiling !== null
         ? `$${state.totalCost.toFixed(2)} / $${state.budgetCeiling.toFixed(2)}`
@@ -360,16 +365,18 @@ export function renderDispatchFooter(state: DispatchBoardState, _width: number, 
 
   parts.push(`${c.muted("Runs:")} ${c.dim(String(state.totalRuns))}`);
 
-  const hasTokens = state.totalInputTokens > 0 || state.totalOutputTokens > 0;
-  if (hasTokens) {
-    parts.push(
-      `${c.muted("Tokens:")} ${c.dim(`${formatTokenCount(state.totalInputTokens)} in / ${formatTokenCount(state.totalOutputTokens)} out`)}`,
-    );
+  // Tokens: show actual counts when available, dash when null.
+  const inTok = state.totalInputTokens;
+  const outTok = state.totalOutputTokens;
+  if (inTok != null || outTok != null) {
+    const inStr = inTok != null ? formatTokenCount(inTok) : "\u2014";
+    const outStr = outTok != null ? formatTokenCount(outTok) : "\u2014";
+    parts.push(`${c.muted("Tokens:")} ${c.dim(`${inStr} in / ${outStr} out`)}`);
   }
 
   // Cache hit ratio: cacheRead / (cacheRead + input) when both are nonzero.
   const cacheRead = state.totalCacheReadTokens ?? 0;
-  const cacheInput = state.totalInputTokens;
+  const cacheInput = state.totalInputTokens ?? 0;
   if (cacheRead > 0 && cacheInput > 0) {
     parts.push(`${c.muted("Cache:")} ${c.dim(`${Math.round((cacheRead / (cacheRead + cacheInput)) * 100)}%`)}`);
   }
@@ -423,16 +430,17 @@ export function renderDispatchFooterLine(
 function buildBottomSummary(state: DispatchBoardState): string {
   const parts: string[] = [];
   if (state.totalRuns > 0) parts.push(`${state.totalRuns} runs`);
-  if (state.totalCost > 0) {
+  if (state.totalCost != null && state.totalCost > 0) {
     parts.push(
       state.budgetCeiling !== null
         ? `${formatCost(state.totalCost)} / ${formatCost(state.budgetCeiling)}`
         : formatCost(state.totalCost),
     );
   }
-  const hasTokens = state.totalInputTokens > 0 || state.totalOutputTokens > 0;
-  if (hasTokens) {
-    parts.push(`${formatTokenCount(state.totalInputTokens + state.totalOutputTokens)} tok`);
+  const inTok = state.totalInputTokens ?? 0;
+  const outTok = state.totalOutputTokens ?? 0;
+  if (inTok > 0 || outTok > 0) {
+    parts.push(`${formatTokenCount(inTok + outTok)} tok`);
   }
   return parts.join("  ");
 }
