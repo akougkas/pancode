@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { type SessionBoundary, isSessionBoundary } from "../../core/ledger-types";
 import type { RuntimeUsage } from "../../engine/runtimes";
@@ -8,7 +8,15 @@ export { type SessionBoundary, isSessionBoundary } from "../../core/ledger-types
 
 export const MAX_RUN_ENTRIES = 500;
 
-export type RunStatus = "pending" | "running" | "done" | "error" | "timeout" | "cancelled" | "interrupted";
+export type RunStatus =
+  | "pending"
+  | "running"
+  | "done"
+  | "error"
+  | "timeout"
+  | "cancelled"
+  | "interrupted"
+  | "budget_exceeded";
 
 export type RunUsage = RuntimeUsage;
 
@@ -104,7 +112,11 @@ export class RunLedger {
     const dir = dirname(this.persistPath);
     try {
       mkdirSync(dir, { recursive: true });
-      writeFileSync(this.persistPath, JSON.stringify(this.entries, null, 2), "utf8");
+      // Atomic write: write to temp file, then rename. Prevents corruption if
+      // the process crashes mid-write or multiple workers complete concurrently.
+      const tmpPath = `${this.persistPath}.${process.pid}.tmp`;
+      writeFileSync(tmpPath, JSON.stringify(this.entries, null, 2), "utf8");
+      renameSync(tmpPath, this.persistPath);
     } catch (err) {
       console.error(
         `[pancode:dispatch] Failed to persist run ledger: ${err instanceof Error ? err.message : String(err)}`,

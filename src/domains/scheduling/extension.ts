@@ -41,14 +41,18 @@ export const extension = defineExtension((pi) => {
 
     // Register budget admission gate with the dispatch pre-flight pipeline.
     // Scheduling depends on dispatch, so this import direction is legal.
+    // Uses estimated cost (average of past runs) for pre-estimation (test 14b).
     registerPreFlightCheck("budget", () => {
       if (!budgetTracker) return { admit: true };
-      if (budgetTracker.canAdmit()) return { admit: true };
       const state = budgetTracker.getState();
-      return {
-        admit: false,
-        reason: `Budget ceiling reached ($${state.totalCost.toFixed(2)} / $${state.ceiling.toFixed(2)})`,
-      };
+      const estimatedCost = state.runsCount > 0 ? state.totalCost / state.runsCount : 0;
+      if (!budgetTracker.canAdmit(estimatedCost)) {
+        return {
+          admit: false,
+          reason: `Budget ceiling would be exceeded (spent: $${state.totalCost.toFixed(2)}, estimated next: $${estimatedCost.toFixed(4)}, ceiling: $${state.ceiling.toFixed(2)})`,
+        };
+      }
+      return { admit: true };
     });
 
     // Subscribe to structured run-finished events from dispatch.
@@ -104,15 +108,26 @@ export const extension = defineExtension((pi) => {
       }
 
       const state = budgetTracker.getState();
+      // Estimate cost of the next dispatch based on average cost per run.
+      const estimatedNext = state.runsCount > 0 ? state.totalCost / state.runsCount : 0;
+      const remaining = budgetTracker.remaining();
+      const perRunCap = process.env.PANCODE_PER_RUN_BUDGET;
+
       const lines = [
-        `Spent: $${state.totalCost.toFixed(4)} / $${state.ceiling.toFixed(2)}`,
-        `Remaining: $${budgetTracker.remaining().toFixed(4)}`,
-        `Runs: ${state.runsCount}`,
-        `Input tokens: ${state.totalInputTokens}`,
-        `Output tokens: ${state.totalOutputTokens}`,
-        "",
-        "Use /budget set <amount> to adjust ceiling.",
+        `Ceiling:        $${state.ceiling.toFixed(2)}`,
+        `Spent:          $${state.totalCost.toFixed(4)}`,
+        `Remaining:      $${remaining.toFixed(4)}`,
+        `Estimated next: $${estimatedNext.toFixed(4)}${estimatedNext > remaining ? " (would exceed remaining)" : ""}`,
+        `Runs:           ${state.runsCount}`,
+        `Input tokens:   ${state.totalInputTokens}`,
+        `Output tokens:  ${state.totalOutputTokens}`,
       ];
+
+      if (perRunCap) {
+        lines.push(`Per-run cap:    $${perRunCap}`);
+      }
+
+      lines.push("", "Use /budget set <amount> to adjust ceiling.");
 
       pi.sendMessage({
         customType: PanMessageType.PANEL,

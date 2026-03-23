@@ -11,9 +11,16 @@ export interface WorkerResult {
   error: string;
   usage: RuntimeUsage;
   model: string | null;
+  /** Set when the worker was killed because it exceeded its timeout. */
+  timedOut?: boolean;
+  /** Set when the worker was killed because it exceeded its per-run budget. */
+  budgetExceeded?: boolean;
 }
 
 export const liveWorkerProcesses = new Set<ChildProcess>();
+
+/** Map runId to its subprocess for targeted cancellation via /stoprun. */
+export const workerProcessByRunId = new Map<string, ChildProcess>();
 
 export async function stopAllWorkers(): Promise<void> {
   const active = Array.from(liveWorkerProcesses);
@@ -124,19 +131,72 @@ export function spawnWorker(options: SpawnOptions): Promise<WorkerResult> {
 
     liveWorkerProcesses.add(proc);
 
+    // Track runId→process for targeted cancellation via /stoprun.
+    if (options.runId) {
+      workerProcessByRunId.set(options.runId, proc);
+    }
+
+    // Mutable kill-reason state shared between timeout/budget/close handlers.
+    const killState = { timedOut: false, budgetExceeded: false };
+
+    // Per-run budget cap from PANCODE_PER_RUN_BUDGET env var.
+    const perRunBudgetEnv = Number.parseFloat(process.env.PANCODE_PER_RUN_BUDGET ?? "");
+    const perRunBudget = Number.isFinite(perRunBudgetEnv) && perRunBudgetEnv > 0 ? perRunBudgetEnv : null;
+
     if (spawnConfig.outputFormat === "ndjson") {
       // NDJSON runtimes stream structured events and update progress live.
-      spawnWorkerNdjsonPath(proc, runtime, options, spawnConfig.resultFile ?? null, resolve);
+      spawnWorkerNdjsonPath(proc, runtime, options, spawnConfig.resultFile ?? null, resolve, killState, perRunBudget);
     } else {
       // CLI runtimes: buffer stdout, parse on close
-      spawnWorkerCliPath(proc, runtime, options, spawnConfig.resultFile ?? null, resolve);
+      spawnWorkerCliPath(proc, runtime, options, spawnConfig.resultFile ?? null, resolve, killState);
     }
+
+    // Timeout enforcement: kill the process if it exceeds the configured timeout.
+    // A timeout of 0 means no timeout.
+    let timeoutTimer: NodeJS.Timeout | null = null;
+    if (resolvedTimeout > 0) {
+      timeoutTimer = setTimeout(() => {
+        killState.timedOut = true;
+        try {
+          proc.kill("SIGTERM");
+        } catch {
+          // process may already be dead
+        }
+        // Escalate to SIGKILL if SIGTERM does not terminate within 5s.
+        setTimeout(() => {
+          if (proc.exitCode === null) {
+            try {
+              proc.kill("SIGKILL");
+            } catch {
+              // ignore
+            }
+          }
+        }, 5000);
+      }, resolvedTimeout);
+      timeoutTimer.unref();
+    }
+
+    // Clean up timeout timer when process exits naturally.
+    proc.once("exit", () => {
+      if (timeoutTimer) clearTimeout(timeoutTimer);
+      if (options.runId) workerProcessByRunId.delete(options.runId);
+    });
 
     if (options.signal) {
       const killProc = () => {
-        proc.kill("SIGTERM");
+        try {
+          proc.kill("SIGTERM");
+        } catch {
+          // process may already be dead
+        }
         setTimeout(() => {
-          if (!proc.killed) proc.kill("SIGKILL");
+          if (proc.exitCode === null) {
+            try {
+              proc.kill("SIGKILL");
+            } catch {
+              // ignore
+            }
+          }
         }, 5000);
       };
       if (options.signal.aborted) killProc();
@@ -155,6 +215,8 @@ function spawnWorkerNdjsonPath(
   options: SpawnOptions,
   resultFile: string | null,
   resolve: (value: WorkerResult) => void,
+  killState: { timedOut: boolean; budgetExceeded: boolean },
+  perRunBudget: number | null,
 ): void {
   // Pi runtime always reports all usage fields. Use zero-initialized accumulators
   // so += works without null-checking, then assign to result.usage at the end.
@@ -325,6 +387,25 @@ function spawnWorkerNdjsonPath(
         accCost += usage.cost?.total ?? 0;
       }
 
+      // Per-run budget cap: kill the worker if accumulated cost exceeds the cap.
+      if (perRunBudget !== null && accCost > perRunBudget && !killState.budgetExceeded) {
+        killState.budgetExceeded = true;
+        try {
+          proc.kill("SIGTERM");
+        } catch {
+          // process may already be dead
+        }
+        setTimeout(() => {
+          if (proc.exitCode === null) {
+            try {
+              proc.kill("SIGKILL");
+            } catch {
+              // ignore
+            }
+          }
+        }, 5000).unref();
+      }
+
       // Emit live progress with full context including tool tracking.
       emitProgress(true);
 
@@ -383,6 +464,30 @@ function spawnWorkerNdjsonPath(
       result.error = runtimeResult.error;
     }
 
+    // Mark timeout and budget-exceeded kill reasons on the result.
+    if (killState.timedOut) {
+      result.timedOut = true;
+      result.exitCode = 1;
+      if (!result.error) {
+        result.error = "Worker killed: timeout exceeded";
+      }
+    }
+    if (killState.budgetExceeded) {
+      result.budgetExceeded = true;
+      result.exitCode = 1;
+      if (!result.error) {
+        result.error = "Worker killed: per-run budget exceeded";
+      }
+    }
+
+    // Empty result detection: an agent that exits successfully but produces
+    // no output has effectively failed. Mark it clearly so /runs does not
+    // report "success with empty result."
+    if (result.exitCode === 0 && !result.error && !result.result.trim()) {
+      result.exitCode = 1;
+      result.error = "Worker produced empty result";
+    }
+
     resolve(result);
   });
 
@@ -407,6 +512,7 @@ function spawnWorkerCliPath(
   _options: SpawnOptions,
   resultFile: string | null,
   resolve: (value: WorkerResult) => void,
+  killState: { timedOut: boolean; budgetExceeded: boolean },
 ): void {
   let stdout = "";
   let stderr = "";
@@ -422,13 +528,38 @@ function spawnWorkerCliPath(
   proc.on("close", (code) => {
     liveWorkerProcesses.delete(proc);
     const runtimeResult = runtime.parseResult(stdout, stderr, code ?? 0, resultFile);
-    resolve({
+
+    const result: WorkerResult = {
       exitCode: runtimeResult.exitCode,
       result: runtimeResult.result,
       error: runtimeResult.error,
       usage: runtimeResult.usage,
       model: runtimeResult.model,
-    });
+    };
+
+    // Mark timeout and budget-exceeded kill reasons on the result.
+    if (killState.timedOut) {
+      result.timedOut = true;
+      result.exitCode = 1;
+      if (!result.error) {
+        result.error = "Worker killed: timeout exceeded";
+      }
+    }
+    if (killState.budgetExceeded) {
+      result.budgetExceeded = true;
+      result.exitCode = 1;
+      if (!result.error) {
+        result.error = "Worker killed: per-run budget exceeded";
+      }
+    }
+
+    // Empty result detection for CLI runtimes.
+    if (result.exitCode === 0 && !result.error && !result.result.trim()) {
+      result.exitCode = 1;
+      result.error = "Worker produced empty result";
+    }
+
+    resolve(result);
   });
 
   proc.on("error", (err) => {

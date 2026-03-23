@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { type SessionBoundary, isSessionBoundary } from "../../core/ledger-types";
 
@@ -71,7 +71,11 @@ export class MetricsLedger {
     const dir = dirname(this.persistPath);
     try {
       mkdirSync(dir, { recursive: true });
-      writeFileSync(this.persistPath, JSON.stringify(this.entries, null, 2), "utf8");
+      // Atomic write: temp file + rename prevents corruption when multiple workers
+      // complete concurrently and trigger persist from different bus event handlers.
+      const tmpPath = `${this.persistPath}.${process.pid}.tmp`;
+      writeFileSync(tmpPath, JSON.stringify(this.entries, null, 2), "utf8");
+      renameSync(tmpPath, this.persistPath);
     } catch (err) {
       console.error(`[pancode:metrics] Failed to persist metrics: ${err instanceof Error ? err.message : String(err)}`);
     }

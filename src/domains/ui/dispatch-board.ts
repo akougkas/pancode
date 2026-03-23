@@ -18,7 +18,7 @@ import { formatCost, formatDuration, formatTokenCount, padRight, truncate } from
 
 export interface DispatchCardData {
   agent: string;
-  status: "pending" | "running" | "done" | "error" | "cancelled" | "timeout" | "interrupted";
+  status: "pending" | "running" | "done" | "error" | "cancelled" | "timeout" | "interrupted" | "budget_exceeded";
   elapsedMs: number;
   model: string | null;
   taskPreview: string;
@@ -105,6 +105,7 @@ const STATUS_ICONS: Record<string, string> = {
   cancelled: "\u2298",
   interrupted: "\u2298",
   timeout: "\u2298",
+  budget_exceeded: "\u2298",
 };
 
 const MIN_CARD_WIDTH = 24;

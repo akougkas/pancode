@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync, readdirSync, statSync, unlinkSync } from "node:fs";
-import { join } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 import { Type } from "@sinclair/typebox";
 import { DEFAULT_AGENT } from "../../core/agent-names";
 import { BusChannel } from "../../core/bus-events";
@@ -27,7 +27,7 @@ import { resolveWorkerRouting } from "./routing";
 import { DEFAULT_DISPATCH_RULES, type DispatchRule, evaluateRules } from "./rules";
 import { RunLedger, createRunEnvelope } from "./state";
 import { initTaskStore, taskCheck, taskList, taskUpdate, taskWrite } from "./task-tools";
-import { liveWorkerProcesses, spawnWorker, stopAllWorkers } from "./worker-spawn";
+import { liveWorkerProcesses, spawnWorker, stopAllWorkers, workerProcessByRunId } from "./worker-spawn";
 
 function textResult(text: string): AgentToolResult<unknown> {
   return { content: [{ type: "text", text }], details: undefined };
@@ -54,6 +54,67 @@ function extractProvider(model: string | null): string | null {
   if (!model) return null;
   const slash = model.indexOf("/");
   return slash > 0 ? model.slice(0, slash) : null;
+}
+
+// ---------------------------------------------------------------------------
+// File path pre-validation for dispatch tasks (tests 10b, 10c)
+// ---------------------------------------------------------------------------
+
+/** Regex to extract file paths from task text. Matches common source file patterns. */
+const FILE_PATH_RE = /(?:^|\s)((?:\.\/|\.\.\/|\/|src\/|lib\/|test\/)\S+\.\w{1,10})/g;
+
+interface PathValidation {
+  warnings: string[];
+  blocked: boolean;
+  blockReason?: string;
+}
+
+/**
+ * Scan task text for referenced file paths. Warn about missing files and
+ * block paths that escape the project root (scope violation).
+ */
+function validateTaskPaths(task: string, cwd: string): PathValidation {
+  const warnings: string[] = [];
+  let blocked = false;
+  let blockReason: string | undefined;
+
+  const matches = task.matchAll(FILE_PATH_RE);
+  for (const match of matches) {
+    const raw = match[1];
+    const full = isAbsolute(raw) ? raw : resolve(cwd, raw);
+    const normalized = resolve(full);
+
+    // Path escape detection: block any absolute path outside the project root.
+    if (!normalized.startsWith(cwd)) {
+      blocked = true;
+      blockReason = `Scope violation: "${raw}" resolves outside the project root. Workers must not access files outside ${cwd}.`;
+      break;
+    }
+
+    // Missing file warning: inform the user but allow dispatch so the agent can adapt.
+    if (!existsSync(normalized)) {
+      warnings.push(`File not found: ${raw}`);
+    }
+  }
+
+  return { warnings, blocked, blockReason };
+}
+
+// ---------------------------------------------------------------------------
+// Run status classification
+// ---------------------------------------------------------------------------
+
+/** Classify a WorkerResult into a RunStatus for the ledger. */
+function classifyRunStatus(workerResult: {
+  exitCode: number;
+  error: string;
+  timedOut?: boolean;
+  budgetExceeded?: boolean;
+}): "done" | "error" | "timeout" | "budget_exceeded" {
+  if (workerResult.timedOut) return "timeout";
+  if (workerResult.budgetExceeded) return "budget_exceeded";
+  if (workerResult.exitCode === 0 && !workerResult.error) return "done";
+  return "error";
 }
 
 /** Max age for worker artifacts before cleanup: 24 hours. */
@@ -231,6 +292,19 @@ export const extension = defineExtension((pi) => {
         return textResult("Error: empty task");
       }
 
+      // File path pre-validation: block scope violations, warn about missing files.
+      const pathCheck = validateTaskPaths(task, ctx.cwd);
+      if (pathCheck.blocked) {
+        return textResult(`Dispatch blocked: ${pathCheck.blockReason}`);
+      }
+      if (pathCheck.warnings.length > 0) {
+        const warningText = pathCheck.warnings.join("; ");
+        sharedBus.emit(BusChannel.WARNING, { source: "dispatch", message: `Path warnings: ${warningText}` });
+        if (onUpdate) {
+          onUpdate(textResult(`Warning: ${warningText}. Dispatching anyway (agent may adapt).`));
+        }
+      }
+
       // Pre-flight admission checks (budget, safety, etc. registered by other domains)
       let preflightRouting: ReturnType<typeof resolveWorkerRouting>;
       try {
@@ -374,7 +448,7 @@ export const extension = defineExtension((pi) => {
         }
       }
 
-      run.status = workerResult.exitCode === 0 && !workerResult.error ? "done" : "error";
+      run.status = classifyRunStatus(workerResult);
       run.result = workerResult.result;
       run.error = workerResult.error;
       run.usage = workerResult.usage;
@@ -406,10 +480,16 @@ export const extension = defineExtension((pi) => {
             ? ` | turns: ${turnsVal}`
             : "";
 
-      const statusEmoji = run.status === "done" ? "completed" : "failed";
-      const summary = `Worker ${statusEmoji} (${run.id})${usageStr}\n\nAgent: ${run.agent}${run.model ? ` | Model: ${run.model}` : ""}`;
+      const statusLabels: Record<string, string> = {
+        done: "completed",
+        error: "failed",
+        timeout: "timed out",
+        budget_exceeded: "budget exceeded",
+      };
+      const statusLabel = statusLabels[run.status] ?? "failed";
+      const summary = `Worker ${statusLabel} (${run.id})${usageStr}\n\nAgent: ${run.agent}${run.model ? ` | Model: ${run.model}` : ""}`;
 
-      if (run.status === "error") {
+      if (run.status !== "done") {
         return textResult(`${summary}\n\nError: ${run.error}`);
       }
 
@@ -468,6 +548,18 @@ export const extension = defineExtension((pi) => {
         return textResult(
           `Batch dispatch blocked: recursion depth ${batchDepth} exceeds maximum ${batchMaxDepth}. Complete the current task directly.`,
         );
+      }
+
+      // File path pre-validation for all batch tasks.
+      for (const batchTask of tasks) {
+        const batchPathCheck = validateTaskPaths(batchTask, ctx.cwd);
+        if (batchPathCheck.blocked) {
+          return textResult(`Batch dispatch blocked: ${batchPathCheck.blockReason}`);
+        }
+        if (batchPathCheck.warnings.length > 0) {
+          const warningText = batchPathCheck.warnings.join("; ");
+          sharedBus.emit(BusChannel.WARNING, { source: "dispatch", message: `Path warnings: ${warningText}` });
+        }
       }
 
       // Pre-flight admission checks for batch dispatch
@@ -567,7 +659,7 @@ export const extension = defineExtension((pi) => {
         const { result: workerResult } = results[i];
         const run = runs[i];
 
-        run.status = workerResult.exitCode === 0 && !workerResult.error ? "done" : "error";
+        run.status = classifyRunStatus(workerResult);
         run.result = workerResult.result;
         run.error = workerResult.error;
         run.usage = workerResult.usage;
@@ -667,6 +759,18 @@ export const extension = defineExtension((pi) => {
         );
       }
 
+      // File path pre-validation for chain steps.
+      for (const step of params.steps) {
+        const chainPathCheck = validateTaskPaths(step.task, ctx.cwd);
+        if (chainPathCheck.blocked) {
+          return textResult(`Chain dispatch blocked: ${chainPathCheck.blockReason}`);
+        }
+        if (chainPathCheck.warnings.length > 0) {
+          const warningText = chainPathCheck.warnings.join("; ");
+          sharedBus.emit(BusChannel.WARNING, { source: "dispatch", message: `Path warnings: ${warningText}` });
+        }
+      }
+
       // Pre-flight
       let chainPreflightRouting: ReturnType<typeof resolveWorkerRouting>;
       try {
@@ -750,7 +854,7 @@ export const extension = defineExtension((pi) => {
             readonly: routing.readonly,
           });
 
-          run.status = result.exitCode === 0 && !result.error ? "done" : "error";
+          run.status = classifyRunStatus(result);
           run.result = result.result;
           run.error = result.error;
           run.usage = result.usage;
@@ -832,16 +936,37 @@ export const extension = defineExtension((pi) => {
         return;
       }
 
-      // Kill worker process
+      // Kill the specific worker process for this run using the runId map.
+      // Falls back to the legacy liveWorkerProcesses set if the map entry is missing.
       let killed = false;
-      for (const proc of liveWorkerProcesses) {
-        // Worker processes are matched by liveness. Kill the first one matching the run.
+      const targetProc = workerProcessByRunId.get(match.id);
+      if (targetProc) {
         try {
-          proc.kill("SIGTERM");
+          targetProc.kill("SIGTERM");
           killed = true;
-          break;
+          // Escalate to SIGKILL if SIGTERM does not terminate within 5s.
+          setTimeout(() => {
+            if (targetProc.exitCode === null) {
+              try {
+                targetProc.kill("SIGKILL");
+              } catch {
+                // ignore
+              }
+            }
+          }, 5000).unref();
         } catch {
           // process already dead
+        }
+      } else {
+        // Legacy fallback: kill first live process (best effort for untracked runs).
+        for (const proc of liveWorkerProcesses) {
+          try {
+            proc.kill("SIGTERM");
+            killed = true;
+            break;
+          } catch {
+            // process already dead
+          }
         }
       }
 

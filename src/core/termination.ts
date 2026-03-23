@@ -12,7 +12,7 @@ export interface TerminationCheck {
 
 export interface RunStatusEntry {
   id: string;
-  status: "running" | "done" | "error" | "timeout" | "cancelled" | "interrupted";
+  status: "running" | "done" | "error" | "timeout" | "cancelled" | "interrupted" | "budget_exceeded";
 }
 
 export class TerminationPolicy {
