@@ -1,0 +1,309 @@
+---
+// Landing page sections for pancode.dev
+---
+
+<!-- Terminal Hero -->
+<section class="terminal-hero">
+  <div class="terminal-window">
+    <div class="terminal-chrome">
+      <span class="terminal-dot red"></span>
+      <span class="terminal-dot yellow"></span>
+      <span class="terminal-dot green"></span>
+      <span class="terminal-title">pancode</span>
+    </div>
+    <div class="terminal-body">
+      <pre><code><span class="prompt">$</span> pancode --preset local
+<span class="dim">discovering agents...</span>
+<span class="success">&#10003;</span> claude-code     <span class="badge cli">CLI</span>    <span class="dim">anthropic/claude-sonnet</span>
+<span class="success">&#10003;</span> codex           <span class="badge cli">CLI</span>    <span class="dim">openai/codex-mini</span>
+<span class="success">&#10003;</span> gemini-cli      <span class="badge cli">CLI</span>    <span class="dim">google/gemini-2.5-pro</span>
+<span class="success">&#10003;</span> opencode        <span class="badge cli">CLI</span>    <span class="dim">anthropic/claude-sonnet</span>
+<span class="success">&#10003;</span> pi-native       <span class="badge native">SDK</span>    <span class="dim">local/llama-3.3-70b</span>
+
+<span class="dim">loading domains...</span>
+<span class="accent">safety</span> <span class="accent">session</span> <span class="accent">agents</span> <span class="accent">prompts</span> <span class="accent">dispatch</span>
+<span class="accent">observability</span> <span class="accent">scheduling</span> <span class="accent">configure</span> <span class="accent">ui</span>
+
+<span class="success">PANCODE v0.3.0 READY</span>  <span class="dim">5 agents | 3 providers | build mode</span>
+<span class="prompt mode-build">[build]</span> <span class="cursor">_</span></code></pre>
+    </div>
+  </div>
+</section>
+
+<!-- Pan Taxonomy -->
+<section class="taxonomy">
+  <h2 class="section-title">Six Dimensions of Universality</h2>
+  <p class="section-subtitle">
+    Pan (all) + Code. Every axis of the multi-agent stack, unified under one runtime.
+  </p>
+  <div class="taxonomy-grid">
+    <div class="taxonomy-card">
+      <div class="taxonomy-icon">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M2 20h20M5 20V8l7-5 7 5v12"/>
+          <path d="M9 20v-6h6v6"/>
+        </svg>
+      </div>
+      <h3>Pan-provider</h3>
+      <p>Any LLM provider. Local engines, cloud APIs, or mixed fleets. No vendor lock-in.</p>
+    </div>
+    <div class="taxonomy-card">
+      <div class="taxonomy-icon">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M12 2v4m0 12v4M2 12h4m12 0h4"/>
+          <path d="M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83"/>
+        </svg>
+      </div>
+      <h3>Pan-model</h3>
+      <p>Any model, correctly routed by capability and cost. From local 7B to cloud frontier.</p>
+    </div>
+    <div class="taxonomy-card">
+      <div class="taxonomy-icon">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <rect x="2" y="6" width="20" height="12" rx="2"/>
+          <path d="M6 10h.01M10 10h.01M14 10h.01"/>
+          <path d="M6 14h12"/>
+        </svg>
+      </div>
+      <h3>Pan-runtime</h3>
+      <p>Native SDK, CLI headless, or programmatic SDK. Every integration depth supported.</p>
+    </div>
+    <div class="taxonomy-card">
+      <div class="taxonomy-icon">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/>
+          <circle cx="9" cy="7" r="4"/>
+          <path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/>
+        </svg>
+      </div>
+      <h3>Pan-agent</h3>
+      <p>Any coding agent on your machine becomes a managed PanCode worker. Auto-discovered at boot.</p>
+    </div>
+    <div class="taxonomy-card">
+      <div class="taxonomy-icon">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+        </svg>
+      </div>
+      <h3>Pan-safety</h3>
+      <p>Unified safety model across all runtimes. Scope contracts and privilege non-escalation.</p>
+    </div>
+    <div class="taxonomy-card">
+      <div class="taxonomy-icon">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+          <circle cx="12" cy="12" r="3"/>
+        </svg>
+      </div>
+      <h3>Pan-observe</h3>
+      <p>Unified observability. Cost, tokens, turns, and status across every agent and provider.</p>
+    </div>
+  </div>
+</section>
+
+<!-- Three-Tier Runtime -->
+<section class="runtime-tiers">
+  <h2 class="section-title">Three-Tier Runtime Model</h2>
+  <p class="section-subtitle">
+    Every agent, regardless of backend, produces a worker with identical dispatch, safety, and observability guarantees.
+  </p>
+  <div class="tiers-container">
+    <div class="tier">
+      <div class="tier-badge native">NATIVE</div>
+      <h3>Pi SDK</h3>
+      <p>Full control over tools, model, prompt, safety, and events.</p>
+      <div class="tier-depth">
+        <div class="depth-bar" style="width: 100%"></div>
+      </div>
+      <span class="depth-label">Full integration</span>
+    </div>
+    <div class="tier-connector">
+      <svg width="40" height="24" viewBox="0 0 40 24">
+        <path d="M0 12h40" stroke="var(--pan-dim)" stroke-width="1" stroke-dasharray="4 4"/>
+      </svg>
+    </div>
+    <div class="tier">
+      <div class="tier-badge sdk">SDK</div>
+      <h3>Agent SDKs</h3>
+      <p>Claude Agent SDK, OpenAI Agents SDK, Mastra. Structured I/O.</p>
+      <div class="tier-depth">
+        <div class="depth-bar" style="width: 66%"></div>
+      </div>
+      <span class="depth-label">Deep integration</span>
+    </div>
+    <div class="tier-connector">
+      <svg width="40" height="24" viewBox="0 0 40 24">
+        <path d="M0 12h40" stroke="var(--pan-dim)" stroke-width="1" stroke-dasharray="4 4"/>
+      </svg>
+    </div>
+    <div class="tier">
+      <div class="tier-badge cli-tier">CLI</div>
+      <h3>Headless CLI</h3>
+      <p>Claude Code, Codex, Gemini CLI, OpenCode, Cline, Copilot. Subprocess control.</p>
+      <div class="tier-depth">
+        <div class="depth-bar" style="width: 33%"></div>
+      </div>
+      <span class="depth-label">Task-level integration</span>
+    </div>
+  </div>
+</section>
+
+<!-- Feature Grid -->
+<section class="features">
+  <h2 class="section-title">Built for Multi-Agent Orchestration</h2>
+  <div class="feature-grid">
+    <div class="feature-card">
+      <span class="feature-number">7</span>
+      <span class="feature-label">Default Agents</span>
+      <p>Scout, Planner, Builder, Reviewer, Plan-Reviewer, Documenter, and Red-Team ship out of the box.</p>
+    </div>
+    <div class="feature-card">
+      <span class="feature-number">7</span>
+      <span class="feature-label">Runtime Adapters</span>
+      <p>Pi SDK native plus Claude Code, Codex, Gemini CLI, OpenCode, Cline, and Copilot CLI.</p>
+    </div>
+    <div class="feature-card">
+      <span class="feature-number">10</span>
+      <span class="feature-label">Composable Domains</span>
+      <p>Safety, Session, Agents, Prompts, Dispatch, Observability, Scheduling, Configure, Models, and UI.</p>
+    </div>
+    <div class="feature-card">
+      <span class="feature-number">4</span>
+      <span class="feature-label">Behavioral Modes</span>
+      <p>Admin, Plan, Build, and Review. Each mode gates tool access, dispatch permissions, and mutations.</p>
+    </div>
+    <div class="feature-card">
+      <span class="feature-number">&gt;16</span>
+      <span class="feature-label">LLM Providers</span>
+      <p>Local engines and cloud APIs. Anthropic, OpenAI, Google, Ollama, LM Studio, and more.</p>
+    </div>
+    <div class="feature-card">
+      <span class="feature-number">&infin;</span>
+      <span class="feature-label">Local First</span>
+      <p>Your machine, your models, your data. No cloud dependency required. Terminal native.</p>
+    </div>
+  </div>
+</section>
+
+<!-- Architecture -->
+<section class="architecture">
+  <h2 class="section-title">Five-Layer Architecture</h2>
+  <div class="arch-diagram">
+    <div class="arch-layer cli-layer">
+      <span class="layer-name">CLI</span>
+      <span class="layer-desc">Process entry, tmux bootstrap, session management</span>
+    </div>
+    <div class="arch-arrow">&darr;</div>
+    <div class="arch-layer entry-layer">
+      <span class="layer-name">ENTRY</span>
+      <span class="layer-desc">Config resolution, presets, domain ordering</span>
+    </div>
+    <div class="arch-arrow">&darr;</div>
+    <div class="arch-layer core-layer">
+      <span class="layer-name">CORE</span>
+      <span class="layer-desc">Event bus, defaults, config, shutdown plumbing</span>
+    </div>
+    <div class="arch-arrow">&darr;</div>
+    <div class="arch-layer domain-layer">
+      <span class="layer-name">DOMAINS</span>
+      <span class="layer-desc">10 composable domains with manifest-driven loading</span>
+    </div>
+    <div class="arch-arrow">&darr;</div>
+    <div class="arch-layer engine-layer">
+      <span class="layer-name">ENGINE</span>
+      <span class="layer-desc">Sole SDK import boundary. Runtimes, adapters, workers</span>
+    </div>
+  </div>
+</section>
+
+<!-- Quick Start -->
+<section class="quickstart">
+  <h2 class="section-title">Get Running in 60 Seconds</h2>
+  <div class="quickstart-terminal">
+    <div class="terminal-chrome">
+      <span class="terminal-dot red"></span>
+      <span class="terminal-dot yellow"></span>
+      <span class="terminal-dot green"></span>
+      <span class="terminal-title">terminal</span>
+    </div>
+    <div class="terminal-body">
+      <pre><code><span class="comment"># Install globally</span>
+<span class="prompt">$</span> npm install -g pancode
+
+<span class="comment"># Start with local models</span>
+<span class="prompt">$</span> pancode --preset local
+
+<span class="comment"># Or clone for development</span>
+<span class="prompt">$</span> git clone https://github.com/akougkas/pancode.git
+<span class="prompt">$</span> cd pancode && npm install && npm link
+<span class="prompt">$</span> pancode</code></pre>
+    </div>
+  </div>
+</section>
+
+<!-- Comparison -->
+<section class="comparison">
+  <h2 class="section-title">Single Agent vs. Orchestrated Fleet</h2>
+  <div class="comparison-table-wrapper">
+    <table class="comparison-table">
+      <thead>
+        <tr>
+          <th>Capability</th>
+          <th>Single Agent</th>
+          <th>PanCode</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Provider flexibility</td>
+          <td>One provider per tool</td>
+          <td>16+ providers, any combination</td>
+        </tr>
+        <tr>
+          <td>Agent coordination</td>
+          <td>Manual switching</td>
+          <td>Dispatch pipeline with receipts</td>
+        </tr>
+        <tr>
+          <td>Safety model</td>
+          <td>Per-tool permissions</td>
+          <td>Unified scope contracts across all agents</td>
+        </tr>
+        <tr>
+          <td>Observability</td>
+          <td>Per-tool logs</td>
+          <td>Centralized cost, token, and status tracking</td>
+        </tr>
+        <tr>
+          <td>Runtime diversity</td>
+          <td>One runtime</td>
+          <td>Native SDK + CLI + programmatic SDK tiers</td>
+        </tr>
+        <tr>
+          <td>Configuration</td>
+          <td>Config files or flags</td>
+          <td>Conversational configuration through natural language</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- Footer -->
+<footer class="landing-footer">
+  <div class="footer-content">
+    <div class="footer-brand">
+      <span class="footer-logo">PanCode</span>
+      <span class="footer-tagline">Composable multi-agent runtime</span>
+    </div>
+    <div class="footer-links">
+      <a href="https://github.com/akougkas/pancode">GitHub</a>
+      <a href="/docs/getting-started/">Documentation</a>
+      <a href="https://github.com/akougkas/pancode/blob/main/LICENSE">Apache 2.0</a>
+    </div>
+    <div class="footer-credit">
+      Built by <a href="https://github.com/akougkas">Anthony Kougkas</a>
+    </div>
+  </div>
+</footer>

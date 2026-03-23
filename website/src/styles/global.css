@@ -1,0 +1,656 @@
+@import "tailwindcss";
+
+/* ============================================================
+   PanCode Design Tokens
+   ============================================================ */
+
+:root {
+  --pan-bg: #0a0a0f;
+  --pan-bg-raised: #12121a;
+  --pan-bg-surface: #1a1a25;
+  --pan-border: #2a2a3a;
+  --pan-border-accent: #16c858;
+  --pan-text: #e4e4ed;
+  --pan-text-muted: #8888a0;
+  --pan-dim: #555570;
+  --pan-accent: #16c858;
+  --pan-accent-dim: #0a9e3f;
+  --pan-success: #16c858;
+  --pan-error: #dc5663;
+  --pan-warning: #fdac53;
+  --pan-blue: #3b82f6;
+  --pan-purple: #7f45e0;
+  --pan-build: #16c858;
+  --pan-plan: #7f45e0;
+  --pan-review: #dc5663;
+  --pan-ask: #fdac53;
+  --pan-font-mono: "JetBrains Mono", "Fira Code", "SF Mono", "Cascadia Code", ui-monospace, monospace;
+  --pan-font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+/* ============================================================
+   Starlight Dark Theme Overrides
+   ============================================================ */
+
+:root {
+  --sl-color-accent-low: #0a2e15;
+  --sl-color-accent: #16c858;
+  --sl-color-accent-high: #a3f5c0;
+  --sl-color-white: #e4e4ed;
+  --sl-color-gray-1: #c4c4d4;
+  --sl-color-gray-2: #8888a0;
+  --sl-color-gray-3: #555570;
+  --sl-color-gray-4: #2a2a3a;
+  --sl-color-gray-5: #1a1a25;
+  --sl-color-gray-6: #12121a;
+  --sl-color-black: #0a0a0f;
+  --sl-font: var(--pan-font-sans);
+  --sl-font-system-mono: var(--pan-font-mono);
+}
+
+[data-theme="light"] {
+  --sl-color-accent-low: #d4f5e0;
+  --sl-color-accent: #0a9e3f;
+  --sl-color-accent-high: #063d19;
+}
+
+/* ============================================================
+   Landing Page: Terminal Hero
+   ============================================================ */
+
+.terminal-hero {
+  max-width: 720px;
+  margin: 0 auto 4rem;
+}
+
+.terminal-window {
+  background: var(--pan-bg-raised);
+  border: 1px solid var(--pan-border);
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow:
+    0 0 0 1px rgba(22, 200, 88, 0.05),
+    0 8px 40px rgba(0, 0, 0, 0.5),
+    0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.terminal-chrome {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 14px;
+  background: var(--pan-bg-surface);
+  border-bottom: 1px solid var(--pan-border);
+}
+
+.terminal-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.terminal-dot.red { background: #ff5f57; }
+.terminal-dot.yellow { background: #febc2e; }
+.terminal-dot.green { background: #28c840; }
+
+.terminal-title {
+  margin-left: 8px;
+  font-family: var(--pan-font-mono);
+  font-size: 0.75rem;
+  color: var(--pan-text-muted);
+  letter-spacing: 0.05em;
+}
+
+.terminal-body {
+  padding: 20px 24px;
+  overflow-x: auto;
+}
+
+.terminal-body pre {
+  margin: 0;
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+}
+
+.terminal-body code {
+  font-family: var(--pan-font-mono);
+  font-size: 0.8rem;
+  line-height: 1.7;
+  color: var(--pan-text);
+  background: transparent !important;
+}
+
+.terminal-body .prompt {
+  color: var(--pan-accent);
+  font-weight: 600;
+}
+
+.terminal-body .dim {
+  color: var(--pan-dim);
+}
+
+.terminal-body .success {
+  color: var(--pan-success);
+}
+
+.terminal-body .accent {
+  color: var(--pan-accent);
+}
+
+.terminal-body .comment {
+  color: var(--pan-dim);
+}
+
+.terminal-body .badge {
+  display: inline-block;
+  font-size: 0.65rem;
+  padding: 0 4px;
+  border-radius: 3px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  vertical-align: middle;
+}
+
+.terminal-body .badge.cli {
+  color: var(--pan-blue);
+  border: 1px solid var(--pan-blue);
+}
+
+.terminal-body .badge.native {
+  color: var(--pan-accent);
+  border: 1px solid var(--pan-accent);
+}
+
+.terminal-body .mode-build {
+  color: var(--pan-build);
+}
+
+.terminal-body .cursor {
+  animation: blink 1s step-end infinite;
+  color: var(--pan-accent);
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* ============================================================
+   Section Titles
+   ============================================================ */
+
+.section-title {
+  font-family: var(--pan-font-sans);
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: var(--pan-text);
+  text-align: center;
+  margin-bottom: 0.75rem;
+  letter-spacing: -0.02em;
+}
+
+.section-subtitle {
+  font-size: 1rem;
+  color: var(--pan-text-muted);
+  text-align: center;
+  max-width: 600px;
+  margin: 0 auto 2.5rem;
+  line-height: 1.6;
+}
+
+/* ============================================================
+   Pan Taxonomy Grid
+   ============================================================ */
+
+.taxonomy {
+  margin: 5rem auto;
+  max-width: 960px;
+  padding: 0 1rem;
+}
+
+.taxonomy-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.25rem;
+}
+
+@media (max-width: 768px) {
+  .taxonomy-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 480px) {
+  .taxonomy-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.taxonomy-card {
+  background: var(--pan-bg-raised);
+  border: 1px solid var(--pan-border);
+  border-radius: 8px;
+  padding: 1.5rem;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.taxonomy-card:hover {
+  border-color: var(--pan-accent-dim);
+  box-shadow: 0 0 20px rgba(22, 200, 88, 0.05);
+}
+
+.taxonomy-icon {
+  color: var(--pan-accent);
+  margin-bottom: 0.75rem;
+}
+
+.taxonomy-card h3 {
+  font-family: var(--pan-font-mono);
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--pan-text);
+  margin: 0 0 0.5rem;
+}
+
+.taxonomy-card p {
+  font-size: 0.85rem;
+  color: var(--pan-text-muted);
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* ============================================================
+   Three-Tier Runtime
+   ============================================================ */
+
+.runtime-tiers {
+  margin: 5rem auto;
+  max-width: 960px;
+  padding: 0 1rem;
+}
+
+.tiers-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+}
+
+@media (max-width: 768px) {
+  .tiers-container {
+    flex-direction: column;
+    gap: 1rem;
+  }
+  .tier-connector {
+    transform: rotate(90deg);
+  }
+}
+
+.tier {
+  flex: 1;
+  max-width: 260px;
+  background: var(--pan-bg-raised);
+  border: 1px solid var(--pan-border);
+  border-radius: 8px;
+  padding: 1.5rem;
+  text-align: center;
+}
+
+.tier-badge {
+  display: inline-block;
+  font-family: var(--pan-font-mono);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  padding: 2px 8px;
+  border-radius: 4px;
+  margin-bottom: 0.75rem;
+}
+
+.tier-badge.native {
+  color: var(--pan-accent);
+  background: rgba(22, 200, 88, 0.1);
+  border: 1px solid rgba(22, 200, 88, 0.3);
+}
+
+.tier-badge.sdk {
+  color: var(--pan-purple);
+  background: rgba(127, 69, 224, 0.1);
+  border: 1px solid rgba(127, 69, 224, 0.3);
+}
+
+.tier-badge.cli-tier {
+  color: var(--pan-blue);
+  background: rgba(59, 130, 246, 0.1);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+.tier h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--pan-text);
+  margin: 0 0 0.5rem;
+}
+
+.tier p {
+  font-size: 0.8rem;
+  color: var(--pan-text-muted);
+  line-height: 1.5;
+  margin: 0 0 1rem;
+}
+
+.tier-depth {
+  height: 4px;
+  background: var(--pan-bg-surface);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-bottom: 0.5rem;
+}
+
+.depth-bar {
+  height: 100%;
+  background: var(--pan-accent);
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+.depth-label {
+  font-family: var(--pan-font-mono);
+  font-size: 0.65rem;
+  color: var(--pan-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.tier-connector {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  padding: 0 4px;
+}
+
+/* ============================================================
+   Feature Grid
+   ============================================================ */
+
+.features {
+  margin: 5rem auto;
+  max-width: 960px;
+  padding: 0 1rem;
+}
+
+.feature-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.25rem;
+}
+
+@media (max-width: 768px) {
+  .feature-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 480px) {
+  .feature-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.feature-card {
+  background: var(--pan-bg-raised);
+  border: 1px solid var(--pan-border);
+  border-radius: 8px;
+  padding: 1.5rem;
+  transition: border-color 0.2s ease;
+}
+
+.feature-card:hover {
+  border-color: var(--pan-border-accent);
+}
+
+.feature-number {
+  display: block;
+  font-family: var(--pan-font-mono);
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--pan-accent);
+  line-height: 1;
+  margin-bottom: 0.25rem;
+}
+
+.feature-label {
+  display: block;
+  font-family: var(--pan-font-mono);
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--pan-text);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.75rem;
+}
+
+.feature-card p {
+  font-size: 0.8rem;
+  color: var(--pan-text-muted);
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* ============================================================
+   Architecture Diagram
+   ============================================================ */
+
+.architecture {
+  margin: 5rem auto;
+  max-width: 640px;
+  padding: 0 1rem;
+}
+
+.arch-diagram {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+}
+
+.arch-layer {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  background: var(--pan-bg-raised);
+  border: 1px solid var(--pan-border);
+  border-radius: 6px;
+}
+
+.layer-name {
+  font-family: var(--pan-font-mono);
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--pan-accent);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  min-width: 80px;
+}
+
+.layer-desc {
+  font-size: 0.8rem;
+  color: var(--pan-text-muted);
+}
+
+.arch-arrow {
+  color: var(--pan-dim);
+  font-size: 1rem;
+  line-height: 1;
+  padding: 2px 0;
+}
+
+.engine-layer {
+  border-color: var(--pan-accent-dim);
+  box-shadow: 0 0 12px rgba(22, 200, 88, 0.08);
+}
+
+/* ============================================================
+   Quick Start
+   ============================================================ */
+
+.quickstart {
+  margin: 5rem auto;
+  max-width: 640px;
+  padding: 0 1rem;
+}
+
+.quickstart-terminal {
+  background: var(--pan-bg-raised);
+  border: 1px solid var(--pan-border);
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+.quickstart-terminal .terminal-body code {
+  font-size: 0.8rem;
+}
+
+/* ============================================================
+   Comparison Table
+   ============================================================ */
+
+.comparison {
+  margin: 5rem auto;
+  max-width: 720px;
+  padding: 0 1rem;
+}
+
+.comparison-table-wrapper {
+  overflow-x: auto;
+}
+
+.comparison-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.comparison-table th {
+  font-family: var(--pan-font-mono);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--pan-text-muted);
+  text-align: left;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--pan-border);
+}
+
+.comparison-table td {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--pan-border);
+  color: var(--pan-text);
+}
+
+.comparison-table tr td:first-child {
+  font-weight: 500;
+  color: var(--pan-text-muted);
+}
+
+.comparison-table tr td:last-child {
+  color: var(--pan-accent);
+}
+
+.comparison-table tbody tr:hover {
+  background: var(--pan-bg-raised);
+}
+
+/* ============================================================
+   Landing Footer
+   ============================================================ */
+
+.landing-footer {
+  margin-top: 5rem;
+  padding: 2.5rem 1rem;
+  border-top: 1px solid var(--pan-border);
+}
+
+.footer-content {
+  max-width: 960px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.footer-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.footer-logo {
+  font-family: var(--pan-font-mono);
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--pan-accent);
+}
+
+.footer-tagline {
+  font-size: 0.8rem;
+  color: var(--pan-dim);
+}
+
+.footer-links {
+  display: flex;
+  gap: 1.5rem;
+}
+
+.footer-links a {
+  font-size: 0.8rem;
+  color: var(--pan-text-muted);
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+
+.footer-links a:hover {
+  color: var(--pan-accent);
+}
+
+.footer-credit {
+  font-size: 0.75rem;
+  color: var(--pan-dim);
+}
+
+.footer-credit a {
+  color: var(--pan-text-muted);
+  text-decoration: none;
+}
+
+.footer-credit a:hover {
+  color: var(--pan-accent);
+}
+
+@media (max-width: 640px) {
+  .footer-content {
+    flex-direction: column;
+    text-align: center;
+  }
+}
+
+/* ============================================================
+   Starlight splash page override: hide default hero title
+   since we render our own content below
+   ============================================================ */
+
+[data-page-type="splash"] .hero {
+  padding-bottom: 1rem;
+}
+
+/* Fix Starlight code blocks inheriting landing terminal styles */
+.sl-markdown-content pre {
+  background: var(--sl-color-gray-6) !important;
+}

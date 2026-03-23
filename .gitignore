@@ -62,6 +62,10 @@ pancode-*.tgz
 dist/
 .reference/
 
+# Astro
+website/dist/
+website/.astro/
+
 # Strategic docs (private until v1.0 public beta)
 scripts/load-dynamo-fleet.sh
 __NUKED/
