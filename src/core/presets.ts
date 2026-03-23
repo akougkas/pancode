@@ -142,7 +142,9 @@ export function loadPresets(pancodeHome: string): Map<string, Preset> {
 
   try {
     const content = readFileSync(filePath, "utf8");
-    const raw = YAML.parse(content) as PresetFile;
+    const trimmed = content.trim();
+    if (!trimmed) return result;
+    const raw = YAML.parse(trimmed) as PresetFile;
     if (typeof raw !== "object" || raw === null) return result;
 
     for (const [name, entry] of Object.entries(raw)) {
@@ -150,8 +152,9 @@ export function loadPresets(pancodeHome: string): Map<string, Preset> {
       const parsed = parseEntry(name, entry as PresetFileEntry);
       if (parsed) result.set(name, parsed);
     }
-  } catch {
-    // Malformed YAML: return empty. User will see a boot warning.
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    process.stderr.write(`[pancode:presets] Failed to parse ${filePath}: ${message}. Using empty preset list.\n`);
   }
 
   return result;

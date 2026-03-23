@@ -99,43 +99,98 @@ function readDefaultModelFile(packageRoot: string): string | null {
 //   panpresets.yaml, panagents.yaml, panproviders.yaml, settings.json,
 //   model-cache.yaml, and agent-engine/auth.json.
 //
-// <project>/.pancode/ holds per-project runtime state:
-//   runs.json, metrics.json, budget.json, tasks.json, and the runtime/
-//   subdirectory (board.json, worker-*.result.json).
+// <project>/.pancode/ holds per-project runtime state and project-level
+//   settings overrides: settings.json, runs.json, metrics.json, budget.json,
+//   tasks.json, and the runtime/ subdirectory (board.json, worker-*.result.json).
 //
 // ~/.pancode/agent-engine/sessions/ holds Pi SDK session history.
 //
 // "pancode reset" or the "--fresh" boot flag clears all runtime state
 // (project-local and sessions) while preserving user configuration.
+//
+// Config resolution order (highest priority first):
+//   runtime overrides (/settings) > env vars (PANCODE_*) >
+//   project config (.pancode/settings.json) > global config
+//   (~/.pancode/settings.json) > defaults (src/core/defaults.ts)
 // ---------------------------------------------------------------------------
+
+/**
+ * Load project-level settings from <cwd>/.pancode/settings.json.
+ * Returns an empty object if the file is missing, empty, or corrupt.
+ * Corrupt files produce a warning on stderr.
+ */
+function loadProjectSettingsFile(projectRoot: string): Record<string, unknown> {
+  const settingsPath = join(projectRoot, ".pancode", "settings.json");
+  if (!existsSync(settingsPath)) return {};
+
+  try {
+    const content = readFileSync(settingsPath, "utf8").trim();
+    if (!content) return {};
+    const parsed = JSON.parse(content);
+    if (typeof parsed !== "object" || parsed === null) return {};
+    return parsed as Record<string, unknown>;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    process.stderr.write(`[pancode:config] Failed to parse project settings ${settingsPath}: ${message}. Skipping.\n`);
+    return {};
+  }
+}
 
 export function loadConfig(overrides: ConfigOverrides = {}): PanCodeConfig {
   const packageRoot = resolvePackageRoot(import.meta.url);
   const runtimeRoot = join(packageRoot, ".pancode", "runtime");
-  const settings = loadPanCodeSettings();
+  const globalSettings = loadPanCodeSettings();
+  const cwd = resolve(packageRoot, overrides.cwd ?? getFirstEnvValue("PANCODE_PROJECT") ?? ".");
+  const projectSettings = loadProjectSettingsFile(cwd);
   const defaultModel = getFirstEnvValue("PANCODE_MODEL", "PANCODE_DEFAULT_MODEL") ?? readDefaultModelFile(packageRoot);
   const domains = [...(overrides.domains ?? overrides.extensions ?? DEFAULT_ENABLED_DOMAINS)];
+
+  // Extract project-level overrides (typed).
+  const projectTheme =
+    typeof projectSettings.theme === "string" && projectSettings.theme.trim()
+      ? projectSettings.theme.trim()
+      : undefined;
+  const projectSafetyMode = parseSafetyLevel(
+    typeof projectSettings.safetyMode === "string" ? projectSettings.safetyMode : undefined,
+  );
+  const projectReasoningPreference =
+    typeof projectSettings.reasoningPreference === "string"
+      ? parseReasoningPreference(projectSettings.reasoningPreference)
+      : undefined;
+  const projectPreferredProvider =
+    typeof projectSettings.preferredProvider === "string" ? projectSettings.preferredProvider : undefined;
+  const projectPreferredModel =
+    typeof projectSettings.preferredModel === "string" ? projectSettings.preferredModel : undefined;
+
+  // Resolution order: overrides > env > project > global > defaults
   const reasoningPreference =
     overrides.reasoningPreference ??
     parseReasoningPreference(getFirstEnvValue("PANCODE_REASONING")) ??
     reasoningPreferenceFromThinking(getFirstEnvValue("PANCODE_THINKING")) ??
-    settings.reasoningPreference ??
+    projectReasoningPreference ??
+    globalSettings.reasoningPreference ??
     DEFAULT_REASONING_PREFERENCE;
 
   return {
     packageRoot,
-    cwd: resolve(packageRoot, overrides.cwd ?? getFirstEnvValue("PANCODE_PROJECT") ?? "."),
+    cwd,
     profile: overrides.profile ?? getFirstEnvValue("PANCODE_PROFILE") ?? DEFAULT_PROFILE,
     domains,
     extensions: [...domains],
-    safety: overrides.safety ?? parseSafetyLevel(getFirstEnvValue("PANCODE_SAFETY")) ?? DEFAULT_SAFETY,
+    safety:
+      overrides.safety ??
+      parseSafetyLevel(getFirstEnvValue("PANCODE_SAFETY")) ??
+      projectSafetyMode ??
+      parseSafetyLevel(globalSettings.safetyMode) ??
+      DEFAULT_SAFETY,
     reasoningPreference,
-    theme: overrides.theme ?? getFirstEnvValue("PANCODE_THEME") ?? settings.theme ?? DEFAULT_THEME,
+    theme:
+      overrides.theme ?? getFirstEnvValue("PANCODE_THEME") ?? projectTheme ?? globalSettings.theme ?? DEFAULT_THEME,
     prompt: overrides.prompt ?? getFirstEnvValue("PANCODE_PROMPT", "PANCODE_PHASE0_PROMPT") ?? DEFAULT_PROMPT,
     provider: overrides.provider ?? getFirstEnvValue("PANCODE_PROVIDER"),
     model: overrides.model ?? getFirstEnvValue("PANCODE_MODEL", "PANCODE_DEFAULT_MODEL") ?? defaultModel ?? null,
-    preferredProvider: settings.preferredProvider,
-    preferredModel: settings.preferredModel,
+    preferredProvider: projectPreferredProvider ?? globalSettings.preferredProvider,
+    preferredModel: projectPreferredModel ?? globalSettings.preferredModel,
     tools: overrides.tools ?? getFirstEnvValue("PANCODE_TOOLS", "PANCODE_PHASE0_TOOLS") ?? DEFAULT_TOOLS,
     timeoutMs: overrides.timeoutMs ?? parseTimeoutMs(process.env.PANCODE_TIMEOUT_MS),
     runtimeRoot,
