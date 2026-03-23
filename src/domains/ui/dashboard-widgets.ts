@@ -207,19 +207,23 @@ export function renderAgentRegistry(
   lines.push(boxLine(c.dim(headerPlain), panelWidth, c));
 
   // Agent rows
-  const maxRows = Math.max(0, maxHeight - 3);
-  const visible = agents.slice(0, maxRows);
-  for (const agent of visible) {
-    const rowPlain = padRight(agent.name, nameCol) + padRight(agent.status, statusCol);
-    const colored =
-      agent.status === "ACTIVE"
-        ? c.bright(rowPlain)
-        : agent.status === "ERROR"
-          ? c.error(rowPlain)
-          : agent.status === "BUSY"
-            ? c.warning(rowPlain)
-            : c.dim(rowPlain);
-    lines.push(boxLine(colored, panelWidth, c));
+  if (agents.length === 0) {
+    lines.push(boxLine(c.dim("Run /help to see available commands"), panelWidth, c));
+  } else {
+    const maxRows = Math.max(0, maxHeight - 3);
+    const visible = agents.slice(0, maxRows);
+    for (const agent of visible) {
+      const rowPlain = padRight(agent.name, nameCol) + padRight(agent.status, statusCol);
+      const colored =
+        agent.status === "ACTIVE"
+          ? c.bright(rowPlain)
+          : agent.status === "ERROR"
+            ? c.error(rowPlain)
+            : agent.status === "BUSY"
+              ? c.warning(rowPlain)
+              : c.dim(rowPlain);
+      lines.push(boxLine(colored, panelWidth, c));
+    }
   }
 
   lines.push(boxBottom(panelWidth, c));
@@ -327,6 +331,20 @@ export function renderMetricCards(state: DashboardState, width: number, c: TuiCo
   // Card 1: Infrastructure (real node/agent/runtime counts)
   const nodeLabel = state.nodes.length > 0 ? state.nodes.map((n) => `${n.name}:${n.modelCount}`).join(" ") : "no nodes";
 
+  // Model registry content depends on boot phase and discovery results.
+  const modelLines: string[] =
+    state.totalModels === 0
+      ? state.bootComplete
+        ? ["No models found", c.dim("Check provider config")]
+        : [c.dim("Discovering models..."), ""]
+      : [`TOTAL: ${state.totalModels}`, truncate(nodeLabel, inner)];
+  const modelFooter =
+    state.totalModels === 0
+      ? state.bootComplete
+        ? "run /models"
+        : "please wait"
+      : `${state.activeModel.split("/").pop() ?? state.activeModel}`;
+
   const cards = [
     renderMetricCard(
       "INFRASTRUCTURE",
@@ -336,14 +354,7 @@ export function renderMetricCards(state: DashboardState, width: number, c: TuiCo
       inner,
       c,
     ),
-    renderMetricCard(
-      "MODEL_REGISTRY",
-      [`TOTAL: ${state.totalModels}`, truncate(nodeLabel, inner)],
-      `${state.activeModel.split("/").pop() ?? state.activeModel}`,
-      cardWidth,
-      inner,
-      c,
-    ),
+    renderMetricCard("MODEL_REGISTRY", modelLines, modelFooter, cardWidth, inner, c),
     renderMetricCard(
       "SESSION",
       [`RUNS: ${state.totalRuns}`, state.totalCost > 0 ? `COST: ${formatCost(state.totalCost)}` : "COST: local"],
@@ -408,27 +419,40 @@ export function renderCodexInput(state: DashboardState, width: number, c: TuiCol
 
   lines.push(boxTop("CODEX_INPUT", width, c));
 
-  // Query prompt
-  const queryLine = padRight("Q: Awaiting system directive...", inner);
-  lines.push(boxLine(c.bright(queryLine), width, c));
+  const noModel = !state.activeModel || state.activeModel === "no model";
 
-  lines.push(boxDivider(width, c));
+  if (noModel) {
+    // Empty state: no model selected
+    lines.push(boxLine(c.dim("No model selected. Use /models to choose."), width, c));
+    lines.push(boxDivider(width, c));
+    lines.push(boxLine(c.dim(padRight(`MODE: ${state.activeMode}`, inner)), width, c));
+    lines.push(boxLine(c.dim(padRight(`SAFETY: ${state.safetyLevel}`, inner)), width, c));
+  } else {
+    // Query prompt
+    const queryLine = padRight("Q: Awaiting system directive...", inner);
+    lines.push(boxLine(c.bright(queryLine), width, c));
 
-  // Real model info
-  const modelPart = `MODEL: ${state.activeModel}`;
-  const modePart = `MODE: ${state.activeMode}`;
-  const safetyPart = `SAFETY: ${state.safetyLevel}`;
-  const totalLen = modelPart.length + modePart.length + safetyPart.length;
-  const infoGap = Math.max(2, Math.floor((inner - totalLen) / 2));
-  const infoLine = padRight(`${modelPart}${" ".repeat(infoGap)}${modePart}${" ".repeat(infoGap)}${safetyPart}`, inner);
-  lines.push(boxLine(infoLine, width, c));
+    lines.push(boxDivider(width, c));
 
-  // Real session telemetry
-  const ctxPct = `CTX: ${Math.round(state.contextPercent)}%`;
-  const tokStr = `TOK: ${formatTokenCount(state.totalInputTokens + state.totalOutputTokens)}`;
-  const costStr = state.totalCost > 0 ? `COST: ${formatCost(state.totalCost)}` : "COST: local";
-  const telemetryPlain = `${ctxPct} | ${tokStr} | ${costStr}`;
-  lines.push(boxLine(c.dim(padRight(truncate(telemetryPlain, inner), inner)), width, c));
+    // Real model info
+    const modelPart = `MODEL: ${state.activeModel}`;
+    const modePart = `MODE: ${state.activeMode}`;
+    const safetyPart = `SAFETY: ${state.safetyLevel}`;
+    const totalLen = modelPart.length + modePart.length + safetyPart.length;
+    const infoGap = Math.max(2, Math.floor((inner - totalLen) / 2));
+    const infoLine = padRight(
+      `${modelPart}${" ".repeat(infoGap)}${modePart}${" ".repeat(infoGap)}${safetyPart}`,
+      inner,
+    );
+    lines.push(boxLine(infoLine, width, c));
+
+    // Real session telemetry
+    const ctxPct = `CTX: ${Math.round(state.contextPercent)}%`;
+    const tokStr = `TOK: ${formatTokenCount(state.totalInputTokens + state.totalOutputTokens)}`;
+    const costStr = state.totalCost > 0 ? `COST: ${formatCost(state.totalCost)}` : "COST: local";
+    const telemetryPlain = `${ctxPct} | ${tokStr} | ${costStr}`;
+    lines.push(boxLine(c.dim(padRight(truncate(telemetryPlain, inner), inner)), width, c));
+  }
 
   lines.push(boxBottom(width, c));
   return lines;
@@ -484,7 +508,7 @@ export function renderDispatchTable(tasks: TaskEntry[], width: number, maxRows: 
   }
 
   if (tasks.length === 0) {
-    lines.push(boxLine(c.dim("No dispatched tasks."), width, c));
+    lines.push(boxLine(c.dim("Dispatches appear here during builds"), width, c));
   }
 
   lines.push(boxBottom(width, c));
@@ -502,7 +526,7 @@ export function renderLogViewer(logs: LogEntry[], width: number, maxRows: number
   lines.push(boxTop("ORCHESTRATION_LOGS", width, c));
 
   if (logs.length === 0) {
-    lines.push(boxLine(c.dim("No log entries."), width, c));
+    lines.push(boxLine(c.dim("Events will appear as PanCode operates"), width, c));
   } else {
     const visible = logs.slice(-maxRows);
     for (const log of visible) {
@@ -533,7 +557,7 @@ export function renderAgentRegistryInline(agents: AgentEntry[], width: number, c
   lines.push(boxTop("AGENTS", width, c));
 
   if (agents.length === 0) {
-    lines.push(boxLine(c.dim("No agents registered."), width, c));
+    lines.push(boxLine(c.dim("Run /help to see available commands"), width, c));
   } else {
     const colorBadge = (a: AgentEntry): string => {
       const text = `${a.name}:${a.status}`;

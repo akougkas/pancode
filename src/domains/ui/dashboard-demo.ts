@@ -78,6 +78,8 @@ const state: DashboardState = {
   safetyLevel: "auto-edit",
   reasoningLevel: "medium",
 
+  bootComplete: true,
+
   agents: [
     { name: "panos", status: "ACTIVE" },
     { name: "scout", status: "ACTIVE" },

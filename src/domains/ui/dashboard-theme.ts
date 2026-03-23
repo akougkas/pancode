@@ -131,10 +131,14 @@ export interface TaskEntry {
   tokens: number;
 }
 
+/** Severity classification for dashboard log entries. */
+export type LogSeverity = "info" | "warn" | "error";
+
 export interface LogEntry {
   time: string;
   message: string;
   highlight?: boolean;
+  severity?: LogSeverity;
 }
 
 export interface NodeInfo {
@@ -192,6 +196,9 @@ export interface DashboardState {
   activeModel: string;
   safetyLevel: string;
   reasoningLevel: string;
+
+  // Boot phase tracking
+  bootComplete: boolean;
 
   // Dynamic data
   agents: AgentEntry[];

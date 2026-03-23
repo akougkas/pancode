@@ -209,6 +209,8 @@ export function buildDashboardState(params: {
     safetyLevel: safety,
     reasoningLevel,
 
+    bootComplete: true,
+
     agents,
     tasks,
     logs: recentLogs,
