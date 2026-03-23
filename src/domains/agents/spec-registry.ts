@@ -239,6 +239,21 @@ export function ensureAgentsYaml(pancodeHome: string): string {
   if (!existsSync(filePath)) {
     mkdirSync(dirname(filePath), { recursive: true });
     writeFileSync(filePath, DEFAULT_AGENTS_YAML, "utf8");
+  } else {
+    // Detect stale format missing v0.3.0 operational fields and regenerate.
+    // Pre-release: clean cut, no backward compatibility needed.
+    try {
+      const content = readFileSync(filePath, "utf8");
+      const parsed = YAML.parse(content) as YamlAgentsFile;
+      if (parsed?.agents) {
+        const firstAgent = Object.values(parsed.agents)[0];
+        if (firstAgent && !("speed" in firstAgent)) {
+          writeFileSync(filePath, DEFAULT_AGENTS_YAML, "utf8");
+        }
+      }
+    } catch {
+      writeFileSync(filePath, DEFAULT_AGENTS_YAML, "utf8");
+    }
   }
   return filePath;
 }

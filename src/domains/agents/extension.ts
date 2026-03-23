@@ -190,20 +190,26 @@ export const extension = defineExtension((pi) => {
         return;
       }
 
-      // Table header (fits 90-column terminals)
+      // Abbreviation maps for compact display
+      const speedAbbrev: Record<string, string> = { fast: "fast", balanced: "bal", thorough: "thor" };
+      const autoAbbrev: Record<string, string> = { autonomous: "auto", supervised: "supv", confirmatory: "conf" };
+
+      // Table header (fits 80-column terminals)
       const lines: string[] = [
-        `${"AGENT".padEnd(16)} ${"RUNTIME".padEnd(18)} ${"MODEL".padEnd(16)} ${"TIER".padEnd(10)} ${"READONLY"}`,
-        `${"-----".padEnd(16)} ${"-------".padEnd(18)} ${"-----".padEnd(16)} ${"----".padEnd(10)} ${"--------"}`,
+        `${"AGENT".padEnd(14)} ${"MODEL".padEnd(22)} ${"SPD".padEnd(8)} ${"AUTO".padEnd(8)} ${"TAGS".padEnd(18)} RO`,
+        `${"-----".padEnd(14)} ${"-----".padEnd(22)} ${"---".padEnd(8)} ${"----".padEnd(8)} ${"----".padEnd(18)} --`,
       ];
 
       for (const spec of specs) {
-        const agent = spec.name.padEnd(16);
-        const runtime = spec.runtime.padEnd(18);
-        const modelName = spec.model ? (spec.model.split("/").pop() ?? spec.model) : "(provider)";
-        const model = modelName.slice(0, 14).padEnd(16);
-        const tier = spec.tier.padEnd(10);
-        const readonly = spec.readonly ? "yes" : "no";
-        lines.push(`${agent} ${runtime} ${model} ${tier} ${readonly}`);
+        const agent = spec.name.slice(0, 14).padEnd(14);
+        const modelName = spec.model ? (spec.model.split("/").pop() ?? spec.model) : "(default)";
+        const model = modelName.slice(0, 20).padEnd(22);
+        const spd = (speedAbbrev[spec.speed] ?? spec.speed).padEnd(8);
+        const auto = (autoAbbrev[spec.autonomy] ?? spec.autonomy).padEnd(8);
+        const tagsStr = spec.tags.join(",");
+        const tags = (tagsStr.length > 18 ? `${tagsStr.slice(0, 15)}...` : tagsStr).padEnd(18);
+        const ro = spec.readonly ? "yes" : "no";
+        lines.push(`${agent} ${model} ${spd} ${auto} ${tags} ${ro}`);
       }
 
       pi.sendMessage({
