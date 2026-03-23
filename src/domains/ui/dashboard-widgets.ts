@@ -40,7 +40,7 @@ function padVisible(text: string, targetWidth: number): string {
 function boxTop(title: string, width: number, c: TuiColorizer): string {
   const titleLen = visibleWidth(title);
   const fillLen = Math.max(0, width - 4 - titleLen);
-  return c.dim(BOX.tl + BOX.h) + c.accent(title) + c.dim(" " + BOX.h.repeat(fillLen) + BOX.tr);
+  return c.dim(BOX.tl + BOX.h) + c.accent(title) + c.dim(` ${BOX.h.repeat(fillLen)}${BOX.tr}`);
 }
 
 /** Render a bordered panel bottom edge. */
@@ -55,7 +55,7 @@ function boxBottom(width: number, c: TuiColorizer): string {
 function boxLine(content: string, width: number, c: TuiColorizer): string {
   const inner = Math.max(0, width - 4);
   const fitted = padVisible(content, inner);
-  return c.dim(BOX.v) + " " + fitted + " " + c.dim(BOX.v);
+  return `${c.dim(BOX.v)} ${fitted} ${c.dim(BOX.v)}`;
 }
 
 /** Render an empty line inside a bordered panel. */
@@ -318,10 +318,11 @@ function renderWorkerPanel(state: DashboardState, width: number, c: TuiColorizer
 // Metric cards (all backed by real data)
 // ---------------------------------------------------------------------------
 
-export function renderMetricCards(state: DashboardState, width: number, c: TuiColorizer): string[] {
-  const cardWidth = Math.max(16, Math.floor((width - 6) / 4));
+export function renderMetricCards(state: DashboardState, width: number, c: TuiColorizer, columns = 4): string[] {
+  const gapWidth = 2;
+  const cardWidth = Math.max(16, Math.floor((width - (columns - 1) * gapWidth) / columns));
   const inner = cardWidth - 4;
-  const gap = "  ";
+  const gap = " ".repeat(gapWidth);
 
   // Card 1: Infrastructure (real node/agent/runtime counts)
   const nodeLabel = state.nodes.length > 0 ? state.nodes.map((n) => `${n.name}:${n.modelCount}`).join(" ") : "no nodes";
@@ -361,14 +362,17 @@ export function renderMetricCards(state: DashboardState, width: number, c: TuiCo
     ),
   ];
 
-  const maxLines = Math.max(...cards.map((card) => card.length));
   const result: string[] = [];
-  for (let i = 0; i < maxLines; i++) {
-    const parts = cards.map((card) => {
-      if (i < card.length) return padVisible(card[i], cardWidth);
-      return " ".repeat(cardWidth);
-    });
-    result.push(parts.join(gap));
+  for (let row = 0; row < cards.length; row += columns) {
+    const rowCards = cards.slice(row, row + columns);
+    const maxLines = Math.max(...rowCards.map((card) => card.length));
+    for (let i = 0; i < maxLines; i++) {
+      const parts = rowCards.map((card) => {
+        if (i < card.length) return padVisible(card[i], cardWidth);
+        return " ".repeat(cardWidth);
+      });
+      result.push(parts.join(gap));
+    }
   }
 
   return result;
@@ -507,6 +511,109 @@ export function renderLogViewer(logs: LogEntry[], width: number, maxRows: number
       const msg = log.highlight ? c.bright(truncate(log.message, maxMsgLen)) : truncate(log.message, maxMsgLen);
       lines.push(boxLine(`${timestamp} ${msg}`, width, c));
     }
+  }
+
+  lines.push(boxBottom(width, c));
+  return lines;
+}
+
+// ---------------------------------------------------------------------------
+// Agent registry inline (compact layout)
+// ---------------------------------------------------------------------------
+
+/**
+ * Render agents as colored inline badges in a single bordered panel.
+ * Used in compact mode where the sidebar is omitted and agents display
+ * horizontally above the dispatch table.
+ */
+export function renderAgentRegistryInline(agents: AgentEntry[], width: number, c: TuiColorizer): string[] {
+  const inner = width - 4;
+  const lines: string[] = [];
+
+  lines.push(boxTop("AGENTS", width, c));
+
+  if (agents.length === 0) {
+    lines.push(boxLine(c.dim("No agents registered."), width, c));
+  } else {
+    const colorBadge = (a: AgentEntry): string => {
+      const text = `${a.name}:${a.status}`;
+      if (a.status === "ACTIVE") return c.bright(text);
+      if (a.status === "ERROR") return c.error(text);
+      if (a.status === "BUSY") return c.warning(text);
+      return c.dim(text);
+    };
+
+    let current = "";
+    for (const agent of agents) {
+      const badge = colorBadge(agent);
+      const sep = visibleWidth(current) > 0 ? "  " : "";
+      const candidate = current + sep + badge;
+      if (visibleWidth(candidate) > inner && visibleWidth(current) > 0) {
+        lines.push(boxLine(current, width, c));
+        current = badge;
+      } else {
+        current = candidate;
+      }
+    }
+    if (visibleWidth(current) > 0) {
+      lines.push(boxLine(current, width, c));
+    }
+  }
+
+  lines.push(boxBottom(width, c));
+  return lines;
+}
+
+// ---------------------------------------------------------------------------
+// Expanded metrics panel (wide layout secondary column)
+// ---------------------------------------------------------------------------
+
+/**
+ * Render a detailed telemetry panel for the wide layout secondary column.
+ * Shows context window gauge, worker status, and session metrics in a
+ * single bordered panel alongside the dashboard banner.
+ */
+export function renderExpandedMetricsPanel(state: DashboardState, width: number, c: TuiColorizer): string[] {
+  const inner = width - 4;
+  const lines: string[] = [];
+
+  lines.push(boxTop("TELEMETRY", width, c));
+
+  // Context window section
+  lines.push(boxLine(c.dim("CONTEXT WINDOW"), width, c));
+  const pct = Math.round(state.contextPercent);
+  const tokUsed = formatTokenCount(state.contextTokens);
+  const tokMax = state.contextWindow > 0 ? formatTokenCount(state.contextWindow) : "?";
+  lines.push(boxLine(`${tokUsed} / ${tokMax} [${pct}%]`, width, c));
+  const barWidth = Math.max(8, inner);
+  lines.push(boxLine(renderProgressBar(state.contextPercent, 100, barWidth, c), width, c));
+  lines.push(boxEmpty(width, c));
+
+  // Worker status section
+  lines.push(boxLine(c.dim("WORKERS"), width, c));
+  const activeLabel = state.activeWorkerCount > 0 ? c.accent(`${state.activeWorkerCount} running`) : c.dim("idle");
+  lines.push(boxLine(`${activeLabel} / ${state.totalWorkerCount} total`, width, c));
+  const throughput =
+    `${c.dim("\u2191")}${formatTokenCount(state.totalInputTokens)} ` +
+    `${c.dim("\u2193")}${formatTokenCount(state.totalOutputTokens)}`;
+  lines.push(boxLine(throughput, width, c));
+  lines.push(boxEmpty(width, c));
+
+  // Session section
+  lines.push(boxLine(c.dim("SESSION"), width, c));
+  lines.push(boxLine(`RUNS: ${state.totalRuns}`, width, c));
+  const costStr = state.totalCost > 0 ? formatCost(state.totalCost) : "local";
+  lines.push(boxLine(`COST: ${costStr}`, width, c));
+  const totalTok = formatTokenCount(state.totalInputTokens + state.totalOutputTokens);
+  lines.push(boxLine(`TOKENS: ${totalTok}`, width, c));
+
+  // Budget gauge if a ceiling is configured
+  if (state.budgetCeiling !== null && state.budgetCeiling > 0) {
+    lines.push(boxEmpty(width, c));
+    lines.push(boxLine(c.dim("BUDGET"), width, c));
+    lines.push(boxLine(`${formatCost(state.totalCost)} / ${formatCost(state.budgetCeiling)}`, width, c));
+    const budgetBarWidth = Math.max(8, inner);
+    lines.push(boxLine(renderProgressBar(state.totalCost, state.budgetCeiling, budgetBarWidth, c), width, c));
   }
 
   lines.push(boxBottom(width, c));
