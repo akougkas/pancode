@@ -482,7 +482,7 @@ export function renderDispatchBoard(
 ): string[] {
   const lines: string[] = [];
 
-  lines.push(renderTopBorder("Dispatch", width, c));
+  lines.push(renderTopBorder("DISPATCH", width, c));
 
   if (state.active.length > 0) {
     lines.push("");

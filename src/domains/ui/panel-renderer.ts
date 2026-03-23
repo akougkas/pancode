@@ -146,11 +146,13 @@ export function renderPanel(spec: PanelSpec, width: number, colorizer: TuiColori
   const result: string[] = [];
   const innerWidth = Math.max(1, width - 2);
 
-  // Top border: ╭─ Title ──────────╮
-  const titleLen = spec.title.length;
+  // Top border: ╭─ Title ──────────╮ (truncates long titles at narrow widths)
+  const maxTitleWidth = Math.max(0, width - 6);
+  const displayTitle = spec.title.length > maxTitleWidth ? spec.title.slice(0, maxTitleWidth) : spec.title;
+  const titleLen = displayTitle.length;
   const topFillLen = Math.max(0, width - 5 - titleLen);
   result.push(
-    `${colorizer.dim("\u256D\u2500")} ${colorizer.bold(colorizer.accent(spec.title))} ${colorizer.dim(`${"\u2500".repeat(topFillLen)}\u256E`)}`,
+    `${colorizer.dim("\u256D\u2500")} ${colorizer.bold(colorizer.accent(displayTitle))} ${colorizer.dim(`${"\u2500".repeat(topFillLen)}\u256E`)}`,
   );
 
   // Body lines with 2-space indent, truncated to fit border

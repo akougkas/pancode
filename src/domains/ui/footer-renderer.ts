@@ -103,7 +103,7 @@ function renderModeLine(data: FooterData, width: number, c: TuiColorizer): strin
     : data.modelLabel;
 
   // Plain text for width calculation
-  const plainParts = [data.modeName, data.safety, modelShort, `reasoning:${data.reasoning}`];
+  const plainParts = [data.modeName, data.safety, modelShort, `Reasoning: ${data.reasoning}`];
   const plainInner = plainParts.join(sep);
   const leadDashes = 3;
   // 2 spaces around the inner text, plus lead dashes
@@ -114,7 +114,7 @@ function renderModeLine(data: FooterData, width: number, c: TuiColorizer): strin
     c.mode(data.modeName),
     c.muted(data.safety),
     c.muted(modelShort),
-    c.dim(`reasoning:${data.reasoning}`),
+    c.dim(`Reasoning: ${data.reasoning}`),
   ];
   const coloredInner = coloredParts.join(c.dim(sep));
 

@@ -153,11 +153,11 @@ function renderStandardDashboard(state: DashboardState, width: number, height: n
   const banner = renderDashboardBanner(state, mainWidth, c);
   lines.push(...mergeColumns(menuPanel, SIDEBAR_WIDTH, banner, mainWidth, COLUMN_GAP));
 
-  // Metric cards (main column)
+  // Metric cards (main column, padded to full width for consistent right-edge alignment)
   const metrics = renderMetricCards(state, mainWidth, c);
   const indent = " ".repeat(SIDEBAR_WIDTH + COLUMN_GAP);
   for (const line of metrics) {
-    lines.push(indent + line);
+    lines.push(padToWidth(indent + line, width));
   }
 
   // Agent registry + Codex input
@@ -165,7 +165,7 @@ function renderStandardDashboard(state: DashboardState, width: number, height: n
   const codexPanel = renderCodexInput(state, mainWidth, c);
   lines.push(...mergeColumns(agentPanel, SIDEBAR_WIDTH, codexPanel, mainWidth, COLUMN_GAP));
 
-  // Dispatch table + Log viewer (main column, split 45:55)
+  // Dispatch table + Log viewer (main column, split 45:55 with consistent 2-char gap)
   const dispatchWidth = Math.max(30, Math.floor((mainWidth - COLUMN_GAP) * 0.45));
   const logWidth = mainWidth - dispatchWidth - COLUMN_GAP;
   const maxLogRows = 8;
@@ -259,10 +259,10 @@ function renderWideDashboard(state: DashboardState, width: number, height: numbe
   const mainWidth = width - SIDEBAR_WIDTH - COLUMN_GAP;
   const indent = " ".repeat(SIDEBAR_WIDTH + COLUMN_GAP);
 
-  // Metric cards (main column, 4 across)
+  // Metric cards (main column, 4 across, padded to full width)
   const metrics = renderMetricCards(state, mainWidth, c);
   for (const line of metrics) {
-    lines.push(indent + line);
+    lines.push(padToWidth(indent + line, width));
   }
 
   // Agent registry + Codex input
@@ -270,7 +270,7 @@ function renderWideDashboard(state: DashboardState, width: number, height: numbe
   const codexPanel = renderCodexInput(state, mainWidth, c);
   lines.push(...mergeColumns(agentPanel, SIDEBAR_WIDTH, codexPanel, mainWidth, COLUMN_GAP));
 
-  // Dispatch table + Log viewer (main column, split 45:55)
+  // Dispatch table + Log viewer (main column, split 45:55 with consistent 2-char gap)
   const dispatchWidth = Math.max(30, Math.floor((mainWidth - COLUMN_GAP) * 0.45));
   const logWidth = mainWidth - dispatchWidth - COLUMN_GAP;
   const maxLogRows = 8;

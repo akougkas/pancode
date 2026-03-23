@@ -36,11 +36,13 @@ function padVisible(text: string, targetWidth: number): string {
   return text;
 }
 
-/** Render a bordered panel top edge with an inline title. */
+/** Render a bordered panel top edge with an inline title. Truncates long titles at narrow widths. */
 function boxTop(title: string, width: number, c: TuiColorizer): string {
-  const titleLen = visibleWidth(title);
+  const maxTitleLen = Math.max(0, width - 5);
+  const displayTitle = visibleWidth(title) > maxTitleLen ? truncateToWidth(title, maxTitleLen, "") : title;
+  const titleLen = visibleWidth(displayTitle);
   const fillLen = Math.max(0, width - 4 - titleLen);
-  return c.dim(BOX.tl + BOX.h) + c.accent(title) + c.dim(` ${BOX.h.repeat(fillLen)}${BOX.tr}`);
+  return c.dim(BOX.tl + BOX.h) + c.accent(displayTitle) + c.dim(` ${BOX.h.repeat(fillLen)}${BOX.tr}`);
 }
 
 /** Render a bordered panel bottom edge. */
@@ -118,7 +120,7 @@ export function renderHeaderBar(state: DashboardState, width: number, c: TuiColo
 export function renderFooterBar(state: DashboardState, width: number, c: TuiColorizer): string[] {
   // Context gauge
   const ctxBar = renderProgressBar(state.contextPercent, 100, 8, c);
-  const ctxLabel = `ctx ${ctxBar} ${state.contextPercent}%`;
+  const ctxLabel = `Ctx ${ctxBar} ${state.contextPercent}%`;
 
   // Status
   const statusLabel =
@@ -129,7 +131,7 @@ export function renderFooterBar(state: DashboardState, width: number, c: TuiColo
         : c.warning(state.systemStatus);
 
   // Build left parts
-  const leftParts = [`STATUS: ${statusLabel}`, ctxLabel];
+  const leftParts = [`Status: ${statusLabel}`, ctxLabel];
   if (state.totalCost > 0) {
     leftParts.push(formatCost(state.totalCost));
   }
@@ -259,20 +261,23 @@ export function renderDashboardBanner(state: DashboardState, width: number, c: T
 
   lines.push(boxEmpty(width, c));
 
-  // Sub-panels: CONTEXT WINDOW and ACTIVE WORKERS side by side
+  // Sub-panels: CONTEXT WINDOW and ACTIVE WORKERS side by side.
+  // Right panel absorbs any remainder from integer division for consistent alignment.
   const innerWidth = width - 4;
-  const subPanelWidth = Math.floor((innerWidth - 2) / 2);
+  const subGap = 2;
+  const leftSubWidth = Math.floor((innerWidth - subGap) / 2);
+  const rightSubWidth = innerWidth - leftSubWidth - subGap;
 
-  const ctxPanel = renderContextPanel(state, subPanelWidth, c);
-  const workerPanel = renderWorkerPanel(state, subPanelWidth, c);
+  const ctxPanel = renderContextPanel(state, leftSubWidth, c);
+  const workerPanel = renderWorkerPanel(state, rightSubWidth, c);
 
   const maxSubLines = Math.max(ctxPanel.length, workerPanel.length);
   for (let i = 0; i < maxSubLines; i++) {
     const leftPart = i < ctxPanel.length ? ctxPanel[i] : "";
     const rightPart = i < workerPanel.length ? workerPanel[i] : "";
-    const leftPadded = padVisible(leftPart, subPanelWidth);
-    const rightPadded = padVisible(rightPart, subPanelWidth);
-    lines.push(boxLine(`${leftPadded}  ${rightPadded}`, width, c));
+    const leftPadded = padVisible(leftPart, leftSubWidth);
+    const rightPadded = padVisible(rightPart, rightSubWidth);
+    lines.push(boxLine(`${leftPadded}${" ".repeat(subGap)}${rightPadded}`, width, c));
   }
 
   lines.push(boxBottom(width, c));
@@ -337,7 +342,7 @@ export function renderMetricCards(state: DashboardState, width: number, c: TuiCo
       ? state.bootComplete
         ? ["No models found", c.dim("Check provider config")]
         : [c.dim("Discovering models..."), ""]
-      : [`TOTAL: ${state.totalModels}`, truncate(nodeLabel, inner)];
+      : [`Total: ${state.totalModels}`, truncate(nodeLabel, inner)];
   const modelFooter =
     state.totalModels === 0
       ? state.bootComplete
@@ -348,7 +353,7 @@ export function renderMetricCards(state: DashboardState, width: number, c: TuiCo
   const cards = [
     renderMetricCard(
       "INFRASTRUCTURE",
-      [`NODES: ${state.nodes.length}`, `AGENTS: ${state.agentCount}`],
+      [`Nodes: ${state.nodes.length}`, `Agents: ${state.agentCount}`],
       `${state.runtimeCount} runtimes`,
       cardWidth,
       inner,
@@ -357,7 +362,7 @@ export function renderMetricCards(state: DashboardState, width: number, c: TuiCo
     renderMetricCard("MODEL_REGISTRY", modelLines, modelFooter, cardWidth, inner, c),
     renderMetricCard(
       "SESSION",
-      [`RUNS: ${state.totalRuns}`, state.totalCost > 0 ? `COST: ${formatCost(state.totalCost)}` : "COST: local"],
+      [`Runs: ${state.totalRuns}`, state.totalCost > 0 ? `Cost: ${formatCost(state.totalCost)}` : "Cost: local"],
       `${formatTokenCount(state.totalInputTokens + state.totalOutputTokens)} tok`,
       cardWidth,
       inner,
@@ -365,7 +370,7 @@ export function renderMetricCards(state: DashboardState, width: number, c: TuiCo
     ),
     renderMetricCard(
       "MODE",
-      [`ACTIVE: ${state.activeMode}`, `SAFETY: ${state.safetyLevel}`],
+      [`Active: ${state.activeMode}`, `Safety: ${state.safetyLevel}`],
       `${state.reasoningLevel}`,
       cardWidth,
       inner,
@@ -425,8 +430,8 @@ export function renderCodexInput(state: DashboardState, width: number, c: TuiCol
     // Empty state: no model selected
     lines.push(boxLine(c.dim("No model selected. Use /models to choose."), width, c));
     lines.push(boxDivider(width, c));
-    lines.push(boxLine(c.dim(padRight(`MODE: ${state.activeMode}`, inner)), width, c));
-    lines.push(boxLine(c.dim(padRight(`SAFETY: ${state.safetyLevel}`, inner)), width, c));
+    lines.push(boxLine(c.dim(padRight(`Mode: ${state.activeMode}`, inner)), width, c));
+    lines.push(boxLine(c.dim(padRight(`Safety: ${state.safetyLevel}`, inner)), width, c));
   } else {
     // Query prompt
     const queryLine = padRight("Q: Awaiting system directive...", inner);
@@ -435,9 +440,9 @@ export function renderCodexInput(state: DashboardState, width: number, c: TuiCol
     lines.push(boxDivider(width, c));
 
     // Real model info
-    const modelPart = `MODEL: ${state.activeModel}`;
-    const modePart = `MODE: ${state.activeMode}`;
-    const safetyPart = `SAFETY: ${state.safetyLevel}`;
+    const modelPart = `Model: ${state.activeModel}`;
+    const modePart = `Mode: ${state.activeMode}`;
+    const safetyPart = `Safety: ${state.safetyLevel}`;
     const totalLen = modelPart.length + modePart.length + safetyPart.length;
     const infoGap = Math.max(2, Math.floor((inner - totalLen) / 2));
     const infoLine = padRight(
@@ -447,9 +452,9 @@ export function renderCodexInput(state: DashboardState, width: number, c: TuiCol
     lines.push(boxLine(infoLine, width, c));
 
     // Real session telemetry
-    const ctxPct = `CTX: ${Math.round(state.contextPercent)}%`;
-    const tokStr = `TOK: ${formatTokenCount(state.totalInputTokens + state.totalOutputTokens)}`;
-    const costStr = state.totalCost > 0 ? `COST: ${formatCost(state.totalCost)}` : "COST: local";
+    const ctxPct = `Ctx: ${Math.round(state.contextPercent)}%`;
+    const tokStr = `Tok: ${formatTokenCount(state.totalInputTokens + state.totalOutputTokens)}`;
+    const costStr = state.totalCost > 0 ? `Cost: ${formatCost(state.totalCost)}` : "Cost: local";
     const telemetryPlain = `${ctxPct} | ${tokStr} | ${costStr}`;
     lines.push(boxLine(c.dim(padRight(truncate(telemetryPlain, inner), inner)), width, c));
   }
@@ -604,7 +609,7 @@ export function renderExpandedMetricsPanel(state: DashboardState, width: number,
   lines.push(boxTop("TELEMETRY", width, c));
 
   // Context window section
-  lines.push(boxLine(c.dim("CONTEXT WINDOW"), width, c));
+  lines.push(boxLine(c.dim("Context Window"), width, c));
   const pct = Math.round(state.contextPercent);
   const tokUsed = formatTokenCount(state.contextTokens);
   const tokMax = state.contextWindow > 0 ? formatTokenCount(state.contextWindow) : "?";
@@ -614,7 +619,7 @@ export function renderExpandedMetricsPanel(state: DashboardState, width: number,
   lines.push(boxEmpty(width, c));
 
   // Worker status section
-  lines.push(boxLine(c.dim("WORKERS"), width, c));
+  lines.push(boxLine(c.dim("Workers"), width, c));
   const activeLabel = state.activeWorkerCount > 0 ? c.accent(`${state.activeWorkerCount} running`) : c.dim("idle");
   lines.push(boxLine(`${activeLabel} / ${state.totalWorkerCount} total`, width, c));
   const throughput =
@@ -624,17 +629,17 @@ export function renderExpandedMetricsPanel(state: DashboardState, width: number,
   lines.push(boxEmpty(width, c));
 
   // Session section
-  lines.push(boxLine(c.dim("SESSION"), width, c));
-  lines.push(boxLine(`RUNS: ${state.totalRuns}`, width, c));
+  lines.push(boxLine(c.dim("Session"), width, c));
+  lines.push(boxLine(`Runs: ${state.totalRuns}`, width, c));
   const costStr = state.totalCost > 0 ? formatCost(state.totalCost) : "local";
-  lines.push(boxLine(`COST: ${costStr}`, width, c));
+  lines.push(boxLine(`Cost: ${costStr}`, width, c));
   const totalTok = formatTokenCount(state.totalInputTokens + state.totalOutputTokens);
-  lines.push(boxLine(`TOKENS: ${totalTok}`, width, c));
+  lines.push(boxLine(`Tokens: ${totalTok}`, width, c));
 
   // Budget gauge if a ceiling is configured
   if (state.budgetCeiling !== null && state.budgetCeiling > 0) {
     lines.push(boxEmpty(width, c));
-    lines.push(boxLine(c.dim("BUDGET"), width, c));
+    lines.push(boxLine(c.dim("Budget"), width, c));
     lines.push(boxLine(`${formatCost(state.totalCost)} / ${formatCost(state.budgetCeiling)}`, width, c));
     const budgetBarWidth = Math.max(8, inner);
     lines.push(boxLine(renderProgressBar(state.totalCost, state.budgetCeiling, budgetBarWidth, c), width, c));
