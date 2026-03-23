@@ -139,6 +139,7 @@ const WORKER_POLICY: Record<string, Record<ActionClass, SafetyTier>> = {
 };
 
 const TOOL_ACTION_MAP: Record<string, ActionClass> = {
+  // Pi SDK built-in tools
   read: "file_read",
   grep: "file_read",
   find: "file_read",
@@ -151,6 +152,12 @@ const TOOL_ACTION_MAP: Record<string, ActionClass> = {
   shell: "bash_exec",
   web_fetch: "network",
   web_search: "network",
+
+  // Worker coordination tools (board_write and report_context mutate shared state)
+  board_read: "file_read",
+  board_write: "file_write",
+  read_context: "file_read",
+  report_context: "file_write",
 };
 
 const DESTRUCTIVE_BASH_PATTERNS = [

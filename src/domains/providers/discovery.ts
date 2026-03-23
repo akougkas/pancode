@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import YAML from "yaml";
 import { createLlamaCppConnection } from "./engines/llamacpp";
@@ -172,6 +172,8 @@ export function writeProvidersYaml(results: DiscoveryResult[], pancodeHome: stri
   }));
 
   const filePath = join(pancodeHome, "panproviders.yaml");
+  const tempPath = `${filePath}.tmp`;
   mkdirSync(dirname(filePath), { recursive: true });
-  writeFileSync(filePath, YAML.stringify({ providers }), "utf8");
+  writeFileSync(tempPath, YAML.stringify({ providers }), "utf8");
+  renameSync(tempPath, filePath);
 }

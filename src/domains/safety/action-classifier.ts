@@ -3,6 +3,7 @@ import type { ActionClass, AutonomyMode } from "./scope";
 import { lookupTier } from "./scope";
 
 const TOOL_TO_ACTION: Record<string, ActionClass> = {
+  // Pi SDK built-in tools
   read: "file_read",
   grep: "file_read",
   find: "file_read",
@@ -15,9 +16,20 @@ const TOOL_TO_ACTION: Record<string, ActionClass> = {
   shell: "bash_exec",
   web_fetch: "network",
   web_search: "network",
+
+  // Dispatch tools
   [ToolName.DISPATCH_AGENT]: "agent_dispatch",
   [ToolName.BATCH_DISPATCH]: "agent_dispatch",
   [ToolName.DISPATCH_CHAIN]: "agent_dispatch",
+
+  // Task tools (task_write and task_update mutate task state on disk)
+  [ToolName.TASK_WRITE]: "file_write",
+  [ToolName.TASK_CHECK]: "file_read",
+  [ToolName.TASK_UPDATE]: "file_write",
+  [ToolName.TASK_LIST]: "file_read",
+
+  // Shadow explore dispatches scout agents
+  [ToolName.SHADOW_EXPLORE]: "agent_dispatch",
 };
 
 export function classifyAction(toolName: string): ActionClass {

@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import YAML from "yaml";
 import type { DiscoveredModel, ModelCapabilities } from "./engines/types";
@@ -340,8 +340,10 @@ export function writeModelCacheYaml(profiles: MergedModelProfile[], pancodeHome:
   };
 
   const filePath = join(pancodeHome, "model-cache.yaml");
+  const tempPath = `${filePath}.tmp`;
   mkdirSync(dirname(filePath), { recursive: true });
-  writeFileSync(filePath, YAML.stringify(serializable), "utf8");
+  writeFileSync(tempPath, YAML.stringify(serializable), "utf8");
+  renameSync(tempPath, filePath);
 }
 
 // Default cache TTL: 4 hours. Fresh homelab configs rarely change mid-session.
