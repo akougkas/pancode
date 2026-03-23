@@ -89,8 +89,15 @@ export class RunLedger {
     if (!existsSync(this.persistPath)) return;
     try {
       const raw = readFileSync(this.persistPath, "utf8");
-      this.entries = JSON.parse(raw) as LedgerEntry[];
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) {
+        console.error("[pancode:dispatch] Corrupt run ledger (not an array). Starting fresh.");
+        this.entries = [];
+        return;
+      }
+      this.entries = parsed as LedgerEntry[];
     } catch {
+      console.error("[pancode:dispatch] Corrupt run ledger (parse failed). Starting fresh.");
       this.entries = [];
     }
   }

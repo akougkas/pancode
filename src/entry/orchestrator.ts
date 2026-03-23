@@ -1,13 +1,15 @@
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 import { resetRuntimeState } from "../cli/reset";
 import { type PanCodeConfig, type SafetyLevel, loadConfig } from "../core/config";
+import { atomicWriteJsonSync } from "../core/config-writer";
 import { collectDomainExtensions, filterValidDomains, resolveDomainOrder } from "../core/domain-loader";
 import { createSafeEventBus } from "../core/event-bus";
 import { ensureProjectRuntime } from "../core/init";
 import { resolvePackageRoot } from "../core/package-root";
 import { ensurePresetsFile, loadPreset } from "../core/presets";
-import { shutdownCoordinator } from "../core/termination";
+import { installSigintDoubleTap, shutdownCoordinator } from "../core/termination";
 import { resolveThinkingLevelForPreference } from "../core/thinking";
 import { DOMAIN_REGISTRY } from "../domains";
 import { ensureAgentsYaml } from "../domains/agents/spec-registry";
@@ -196,6 +198,57 @@ async function runFullDiscovery(): Promise<{ results: DiscoveryResult[]; profile
   return { results, profiles };
 }
 
+/**
+ * Scan the run ledger for entries left in "running" or "pending" status from a
+ * previous session. Since we are booting fresh, those workers no longer exist.
+ * Mark them "interrupted" so the ledger accurately reflects reality.
+ *
+ * Operates directly on the JSON file to avoid importing domain code.
+ */
+function reapOrphanRuns(runtimeRoot: string): void {
+  const runsPath = join(runtimeRoot, "runs.json");
+  if (!existsSync(runsPath)) return;
+
+  let entries: unknown[];
+  try {
+    const raw = readFileSync(runsPath, "utf8");
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) {
+      console.error("[pancode:boot] Corrupt runs.json (not an array). Will be recreated on first dispatch.");
+      return;
+    }
+    entries = parsed;
+  } catch {
+    console.error("[pancode:boot] Corrupt runs.json (parse failed). Will be recreated on first dispatch.");
+    return;
+  }
+
+  const now = new Date().toISOString();
+  let reaped = 0;
+
+  for (const entry of entries) {
+    if (typeof entry !== "object" || entry === null) continue;
+    const record = entry as Record<string, unknown>;
+    // Skip session boundary markers (they have type "session_start" / "session_end").
+    if (record.type === "session_start" || record.type === "session_end") continue;
+    if (record.status === "running" || record.status === "pending") {
+      record.status = "interrupted";
+      record.completedAt = now;
+      reaped++;
+    }
+  }
+
+  if (reaped > 0) {
+    try {
+      atomicWriteJsonSync(runsPath, entries);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[pancode:boot] Failed to persist orphan cleanup: ${msg}`);
+    }
+    console.error(`[pancode:boot] Reaped ${reaped} orphaned run(s) from previous session.`);
+  }
+}
+
 export async function runOrchestratorEntry(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   if (args.help) {
@@ -270,6 +323,12 @@ export async function runOrchestratorEntry(): Promise<void> {
   }
 
   ensureProjectRuntime(config);
+
+  // Reap orphaned runs from a previous session before domains initialize.
+  // Any runs left in "running" or "pending" from a crashed or killed session
+  // are marked "interrupted" so the ledger is accurate at boot.
+  // RunLedger stores runs.json in <packageRoot>/.pancode/ (not the runtime/ subdir).
+  reapOrphanRuns(join(config.packageRoot, ".pancode"));
 
   const bootPhases: BootPhase[] = [];
 
@@ -459,10 +518,15 @@ export async function runOrchestratorEntry(): Promise<void> {
     process.exit(0);
   };
 
+  // Install SIGINT double-tap: first Ctrl+C gracefully shuts down,
+  // second Ctrl+C within 3 seconds forces immediate exit.
+  const removeSigintHandler = installSigintDoubleTap(shutdownCoordinator);
+
   process.on("SIGTERM", handleSigterm);
   try {
     await shell.run();
   } finally {
+    removeSigintHandler();
     process.off("SIGTERM", handleSigterm);
     if (!shutdownCoordinator.isDraining()) {
       await shutdownCoordinator.execute();

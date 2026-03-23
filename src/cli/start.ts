@@ -32,7 +32,7 @@ export function start(forwardedArgs: string[]): number {
     return EXIT_FAILURE;
   }
 
-  const sessionName = nextSessionName();
+  const sessionName = nextSessionName(process.cwd());
   const binPath = process.env.PANCODE_BIN_PATH ?? "src/loader.ts";
   const isTsx = binPath.endsWith(".ts");
   const nodePrefix = isTsx ? "node --import tsx" : "node";
