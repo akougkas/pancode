@@ -751,7 +751,9 @@ export const extension = defineExtension((pi) => {
     if (allRuns.length > 0) {
       const parts: string[] = [`${allRuns.length} dispatches`];
       if (activeCount > 0) parts.push(`${activeCount} active`);
-      if (summary && summary.totalCost > 0) parts.push(`$${summary.totalCost.toFixed(4)} spent`);
+      if (summary && summary.totalCost != null && summary.totalCost > 0) {
+        parts.push(`$${summary.totalCost.toFixed(4)} spent`);
+      }
       if (budget) {
         const state = budget.getState();
         if (state.totalCost > 0) parts.push(`$${state.ceiling.toFixed(2)} ceiling`);
@@ -894,7 +896,7 @@ export const extension = defineExtension((pi) => {
               resultPreview: r.result ? extractResultSummary(r.result) : undefined,
               runId: r.id,
               batchId: r.batchId,
-              cost: r.usage.cost != null && r.usage.cost > 0 ? r.usage.cost : undefined,
+              cost: r.usage.cost,
             }));
 
           const budget = getBudgetTracker();
@@ -904,11 +906,11 @@ export const extension = defineExtension((pi) => {
           // Compute per-agent stats and cache totals from the metrics ledger.
           const metricsRuns = summary?.runs ?? [];
           const agentStats = computeAgentStats(metricsRuns);
-          let totalCacheRead = 0;
-          let totalCacheWrite = 0;
+          let totalCacheRead: number | null = null;
+          let totalCacheWrite: number | null = null;
           for (const m of metricsRuns) {
-            totalCacheRead += m.cacheReadTokens ?? 0;
-            totalCacheWrite += m.cacheWriteTokens ?? 0;
+            if (m.cacheReadTokens != null) totalCacheRead = (totalCacheRead ?? 0) + m.cacheReadTokens;
+            if (m.cacheWriteTokens != null) totalCacheWrite = (totalCacheWrite ?? 0) + m.cacheWriteTokens;
           }
 
           // Construct a theme-backed colorizer so the pure renderer can
@@ -928,12 +930,12 @@ export const extension = defineExtension((pi) => {
               active,
               recent,
               totalRuns: allRuns.length,
-              totalCost: budget ? budget.getState().totalCost : 0,
+              totalCost: budget ? budget.getState().totalCost : null,
               budgetCeiling: budget ? budget.getState().ceiling : null,
-              totalInputTokens: summary?.totalInputTokens ?? 0,
-              totalOutputTokens: summary?.totalOutputTokens ?? 0,
-              totalCacheReadTokens: totalCacheRead > 0 ? totalCacheRead : undefined,
-              totalCacheWriteTokens: totalCacheWrite > 0 ? totalCacheWrite : undefined,
+              totalInputTokens: summary?.totalInputTokens ?? null,
+              totalOutputTokens: summary?.totalOutputTokens ?? null,
+              totalCacheReadTokens: totalCacheRead,
+              totalCacheWriteTokens: totalCacheWrite,
               agentStats: agentStats.length > 0 ? agentStats : undefined,
             },
             width,

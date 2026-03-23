@@ -35,10 +35,8 @@ export function renderAgentList(agents: AgentSpec[]): string[] {
 }
 
 export function renderMetricsSummary(metrics: SessionMetrics): string[] {
-  return [
-    `Runs: ${metrics.totalRuns}`,
-    `Cost: $${metrics.totalCost.toFixed(4)}`,
-    `Input: ${metrics.totalInputTokens} tokens`,
-    `Output: ${metrics.totalOutputTokens} tokens`,
-  ];
+  const costStr = metrics.totalCost != null ? `$${metrics.totalCost.toFixed(4)}` : "\u2014";
+  const inputStr = metrics.totalInputTokens != null ? `${metrics.totalInputTokens} tokens` : "\u2014";
+  const outputStr = metrics.totalOutputTokens != null ? `${metrics.totalOutputTokens} tokens` : "\u2014";
+  return [`Runs: ${metrics.totalRuns}`, `Cost: ${costStr}`, `Input: ${inputStr}`, `Output: ${outputStr}`];
 }

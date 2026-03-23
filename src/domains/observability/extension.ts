@@ -5,16 +5,22 @@ import { sharedBus } from "../../core/shared-bus";
 import { PiEvent } from "../../engine/events";
 import { defineExtension } from "../../engine/extensions";
 import { getRunLedger } from "../dispatch";
+import { DispatchLedger, type DispatchLedgerEntry } from "./dispatch-ledger";
 import { runHealthChecks } from "./health";
 import { MetricsLedger, type RunMetric } from "./metrics";
 import { type AuditTrail, createAuditTrail } from "./telemetry";
 
 let metricsLedger: MetricsLedger | null = null;
+let dispatchLedger: DispatchLedger | null = null;
 let auditTrail: AuditTrail | null = null;
 let budgetSnapshot = { totalCost: 0, ceiling: 10 };
 
 export function getMetricsLedger(): MetricsLedger | null {
   return metricsLedger;
+}
+
+export function getDispatchLedger(): DispatchLedger | null {
+  return dispatchLedger;
 }
 
 export function getAuditTrail(): AuditTrail | null {
@@ -29,6 +35,7 @@ export const extension = defineExtension((pi) => {
     }
     const runtimeRoot = packageRoot ? `${packageRoot}/.pancode` : ".pancode";
     metricsLedger = new MetricsLedger(runtimeRoot);
+    dispatchLedger = new DispatchLedger(runtimeRoot);
     auditTrail = createAuditTrail(1000);
 
     // Session boundary marker
@@ -68,6 +75,31 @@ export const extension = defineExtension((pi) => {
       };
 
       metricsLedger?.record(metric);
+
+      // Persistent dispatch ledger (NDJSON, survives restart).
+      // Look up the run envelope from the dispatch RunLedger for task and error fields.
+      const runEnvelope = getRunLedger()?.get(event.runId);
+      const ledgerEntry: DispatchLedgerEntry = {
+        ts: event.completedAt,
+        runId: event.runId,
+        agent: event.agent,
+        runtime: event.runtime ?? "pi",
+        model: runEnvelope?.model ?? null,
+        task: runEnvelope ? runEnvelope.task.slice(0, 200) : "",
+        status: event.status,
+        exitCode: event.status === "done" ? 0 : 1,
+        wallMs: Math.max(0, durationMs),
+        tokens: {
+          in: event.usage.inputTokens,
+          out: event.usage.outputTokens,
+          cacheRead: event.usage.cacheReadTokens,
+          cacheWrite: event.usage.cacheWriteTokens,
+        },
+        cost: event.usage.cost,
+        turns: event.usage.turns,
+        error: runEnvelope?.error || null,
+      };
+      dispatchLedger?.append(ledgerEntry);
 
       // Audit trail entry
       const severity = event.status === "error" ? "warn" : "info";
@@ -138,19 +170,22 @@ export const extension = defineExtension((pi) => {
       const summary = metricsLedger.getSummary();
       const recent = metricsLedger.getRecent(Number.parseInt(args.trim(), 10) || 10);
 
+      const costDisplay = summary.totalCost != null ? `$${summary.totalCost.toFixed(4)}` : "\u2014";
+      const inputDisplay = summary.totalInputTokens != null ? String(summary.totalInputTokens) : "\u2014";
+      const outputDisplay = summary.totalOutputTokens != null ? String(summary.totalOutputTokens) : "\u2014";
+
       const lines: string[] = [
         `Total runs: ${summary.totalRuns}`,
-        `Total cost: $${summary.totalCost.toFixed(4)}`,
-        `Total input tokens: ${summary.totalInputTokens}`,
-        `Total output tokens: ${summary.totalOutputTokens}`,
+        `Total cost: ${costDisplay}`,
+        `Total input tokens: ${inputDisplay}`,
+        `Total output tokens: ${outputDisplay}`,
         "",
       ];
 
       if (recent.length > 0) {
         lines.push("Recent:");
         for (const m of recent) {
-          const mCostVal = m.cost;
-          const costStr = mCostVal != null && mCostVal > 0 ? ` $${mCostVal.toFixed(4)}` : "";
+          const costStr = m.cost != null ? ` $${m.cost.toFixed(4)}` : " \u2014";
           const durationStr = m.durationMs > 0 ? ` ${(m.durationMs / 1000).toFixed(1)}s` : "";
           lines.push(`  [${m.runId}] ${m.status} ${m.agent}${costStr}${durationStr}`);
         }

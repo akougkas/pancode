@@ -23,9 +23,12 @@ export type MetricLedgerEntry = RunMetric | SessionBoundary;
 
 export interface SessionMetrics {
   totalRuns: number;
-  totalCost: number;
-  totalInputTokens: number;
-  totalOutputTokens: number;
+  /** Null when no run reported cost data. */
+  totalCost: number | null;
+  /** Null when no run reported input token data. */
+  totalInputTokens: number | null;
+  /** Null when no run reported output token data. */
+  totalOutputTokens: number | null;
   runs: RunMetric[];
 }
 
@@ -91,14 +94,14 @@ export class MetricsLedger {
 
   getSummary(): SessionMetrics {
     const metrics = this.getMetrics();
-    let totalCost = 0;
-    let totalInputTokens = 0;
-    let totalOutputTokens = 0;
+    let totalCost: number | null = null;
+    let totalInputTokens: number | null = null;
+    let totalOutputTokens: number | null = null;
 
     for (const m of metrics) {
-      totalCost += m.cost ?? 0;
-      totalInputTokens += m.inputTokens ?? 0;
-      totalOutputTokens += m.outputTokens ?? 0;
+      if (m.cost != null) totalCost = (totalCost ?? 0) + m.cost;
+      if (m.inputTokens != null) totalInputTokens = (totalInputTokens ?? 0) + m.inputTokens;
+      if (m.outputTokens != null) totalOutputTokens = (totalOutputTokens ?? 0) + m.outputTokens;
     }
 
     return {
