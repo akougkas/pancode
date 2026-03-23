@@ -1,7 +1,5 @@
-import type { SafetyLevel } from "../../core/config";
-import { isSafetyLevel } from "../../core/config-validator";
-import { PanMessageType } from "../../core/message-types";
-import { loadPresets } from "../../core/presets";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   BusChannel,
   type RunFinishedEvent,
@@ -9,7 +7,10 @@ import {
   type WarningEvent,
   type WorkerProgressEvent,
 } from "../../core/bus-events";
+import type { SafetyLevel } from "../../core/config";
+import { isSafetyLevel } from "../../core/config-validator";
 import { DEFAULT_REASONING_PREFERENCE, DEFAULT_SAFETY, DEFAULT_THEME } from "../../core/defaults";
+import { PanMessageType } from "../../core/message-types";
 import {
   MODE_DEFINITIONS,
   MODE_ORDER,
@@ -20,6 +21,7 @@ import {
   getToolsetForMode,
   setCurrentMode,
 } from "../../core/modes";
+import { loadPresets } from "../../core/presets";
 import { writePanCodeSettings } from "../../core/settings-state";
 import { sharedBus } from "../../core/shared-bus";
 import { PANCODE_PRODUCT_NAME, formatCategorizedHelp } from "../../core/shell-metadata";
@@ -33,14 +35,15 @@ import {
 } from "../../core/thinking";
 import { PiEvent } from "../../engine/events";
 import { type ExtensionContext, defineExtension } from "../../engine/extensions";
+import { runtimeRegistry } from "../../engine/runtimes";
 import { Container, Text, type ThemeColor, truncateToWidth, visibleWidth } from "../../engine/tui";
 import type { Api, Model } from "../../engine/types";
 import { agentRegistry } from "../agents";
 import { getRunLedger, taskList } from "../dispatch";
 import { getMetricsLedger } from "../observability";
+import { compileOrchestratorPrompt } from "../prompts";
 import { type MergedModelProfile, findModelProfile, getModelProfileCache } from "../providers";
 import { getBudgetTracker } from "../scheduling";
-import { runtimeRegistry } from "../../engine/runtimes";
 import {
   getContextPercent,
   getContextTokens,
@@ -51,7 +54,6 @@ import {
 import { renderDispatchBoard } from "./dispatch-board";
 import type { AgentStat, BoardColorizer, DispatchCardData } from "./dispatch-board";
 import { PanCodeEditor } from "./pancode-editor";
-import { compileOrchestratorPrompt } from "../prompts";
 import { extractResultSummary, formatTokenCount, truncate } from "./widget-utils";
 import {
   getLiveWorkers,
@@ -93,8 +95,21 @@ function buildNodeSummary(profiles: MergedModelProfile[]): string[] {
   return [...byNode.entries()].map(([node, count]) => `${node}:${count} model${count !== 1 ? "s" : ""}`);
 }
 
+let _cachedVersion: string | null = null;
+function readPackageVersion(): string {
+  if (_cachedVersion) return _cachedVersion;
+  try {
+    const root = process.env.PANCODE_PACKAGE_ROOT ?? process.cwd();
+    const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as { version?: unknown };
+    _cachedVersion = typeof pkg.version === "string" ? pkg.version : "dev";
+  } catch {
+    _cachedVersion = "dev";
+  }
+  return _cachedVersion;
+}
+
 function buildWelcomeScreen(modelLabel: string, modeName: string): string[] {
-  const version = process.env.npm_package_version ?? "dev";
+  const version = process.env.npm_package_version ?? readPackageVersion();
   const modelShort = modelLabel.includes("/") ? modelLabel.split("/").pop() ?? modelLabel : modelLabel;
   const profiles = getModelProfileCache();
   const agentCount = agentRegistry.getAll().length;
@@ -553,7 +568,7 @@ export const extension = defineExtension((pi) => {
     if (request === "all") {
       sendPanel(emitPanel, `${PANCODE_PRODUCT_NAME} Models`, [
         `Current: ${currentRef}`,
-        `Total available: ${registry.available.length} (including embeddings)`,
+        `Total available: ${registry.available.length} models`,
         "",
         ...formatAllAvailableLines(currentRef, registry.available, profiles),
       ]);
@@ -968,7 +983,7 @@ export const extension = defineExtension((pi) => {
         if (budgetState && budgetState.ceiling > 0 && budgetState.totalCost > 0) {
           quotaStr = theme.fg("muted", `$${budgetState.totalCost.toFixed(2)}/$${budgetState.ceiling.toFixed(0)}`);
         } else {
-          quotaStr = theme.fg("dim", "\u221E local");
+          quotaStr = theme.fg("dim", "cost: local");
         }
 
         // Context gauge

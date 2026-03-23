@@ -35,18 +35,18 @@ export const PANCODE_SHELL_COMMANDS: readonly PanCodeShellCommand[] = [
   // DISPATCH
   { name: "runs", args: "[count]", description: "Show dispatch run history", category: "dispatch" },
   { name: "batches", description: "Show batch dispatch history", category: "dispatch" },
-  { name: "stoprun", args: "<run-id>", description: "Stop a running dispatch (coming soon)", category: "dispatch" },
-  { name: "cost", description: "Show per-run cost breakdown (coming soon)", category: "dispatch" },
-  { name: "dispatch-insights", description: "Dispatch rule evaluation log (coming soon)", category: "dispatch" },
+  { name: "stoprun", args: "<run-id>", description: "Stop a running dispatch", category: "dispatch" },
+  { name: "cost", description: "Show per-run cost breakdown", category: "dispatch" },
+  { name: "dispatch-insights", description: "Dispatch rule evaluation log", category: "dispatch" },
 
   // AGENTS
   { name: "agents", description: "List registered PanCode agent specs", category: "agents" },
   { name: "runtimes", description: "List agent runtimes with availability status", category: "agents" },
-  { name: "skills", description: "List agent skills (coming soon)", category: "agents" },
+  { name: "skills", description: "List agent skills", category: "agents" },
 
   // OBSERVE
-  { name: "audit", description: "Structured audit trail (coming soon)", category: "observe" },
-  { name: "doctor", description: "Run diagnostic health checks (coming soon)", category: "observe" },
+  { name: "audit", description: "Structured audit trail", category: "observe" },
+  { name: "doctor", description: "Run diagnostic health checks", category: "observe" },
   { name: "metrics", args: "[count]", description: "Show dispatch metrics", category: "observe" },
 
   // SCHEDULE

@@ -115,7 +115,7 @@ export const extension = defineExtension((pi) => {
   pi.registerCommand("session", {
     description: "Show session info with PanCode state summary",
     async handler(_args, ctx) {
-      const lines: string[] = [`${PANCODE_PRODUCT_NAME} Session`, ""];
+      const lines: string[] = [];
 
       // Pi session info
       const sessionFile = ctx.sessionManager.getSessionFile();

@@ -7,21 +7,23 @@
  * Imported by extension.ts to power the dashboard widget's render loop.
  */
 
+import { readFileSync } from "node:fs";
 import os from "node:os";
-import { getModeDefinition } from "../../core/modes";
+import { join } from "node:path";
 import { DEFAULT_SAFETY } from "../../core/defaults";
+import { getModeDefinition } from "../../core/modes";
 import { PANCODE_PRODUCT_NAME } from "../../core/shell-metadata";
 import type { AgentSpec } from "../agents";
 import type { RunEnvelope } from "../dispatch";
 import type { MergedModelProfile } from "../providers";
-import {
-  type AgentEntry,
-  type AgentStatus,
-  type DashboardConfig,
-  type DashboardState,
-  type LogEntry,
-  type NodeInfo,
-  type TaskEntry,
+import type {
+  AgentEntry,
+  AgentStatus,
+  DashboardConfig,
+  DashboardState,
+  LogEntry,
+  NodeInfo,
+  TaskEntry,
 } from "./dashboard-theme";
 import type { LiveWorkerState } from "./worker-widgets";
 
@@ -29,10 +31,23 @@ import type { LiveWorkerState } from "./worker-widgets";
 // Config (stable across renders)
 // ---------------------------------------------------------------------------
 
+let _cachedVersion: string | null = null;
+function readPackageVersion(): string {
+  if (_cachedVersion) return _cachedVersion;
+  try {
+    const root = process.env.PANCODE_PACKAGE_ROOT ?? process.cwd();
+    const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as { version?: unknown };
+    _cachedVersion = typeof pkg.version === "string" ? pkg.version : "dev";
+  } catch {
+    _cachedVersion = "dev";
+  }
+  return _cachedVersion;
+}
+
 export function buildDashboardConfig(): DashboardConfig {
   return {
     productName: PANCODE_PRODUCT_NAME,
-    version: process.env.npm_package_version ?? "dev",
+    version: process.env.npm_package_version ?? readPackageVersion(),
   };
 }
 

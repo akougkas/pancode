@@ -44,17 +44,19 @@ export const extension = defineExtension((pi) => {
 
       // Table header
       const lines: string[] = [
-        `${"AGENT".padEnd(16)} ${"RUNTIME".padEnd(18)} ${"MODEL".padEnd(16)} ${"READONLY"}`,
-        `${"-----".padEnd(16)} ${"-------".padEnd(18)} ${"-----".padEnd(16)} ${"--------"}`,
+        `${"AGENT".padEnd(16)} ${"MODEL".padEnd(30)} ${"SPEED".padEnd(10)} ${"AUTONOMY".padEnd(14)} ${"TAGS".padEnd(20)} ${"READONLY"}`,
+        `${"-----".padEnd(16)} ${"-----".padEnd(30)} ${"-----".padEnd(10)} ${"--------".padEnd(14)} ${"----".padEnd(20)} ${"--------"}`,
       ];
 
       for (const spec of specs) {
         const agent = spec.name.padEnd(16);
-        const runtime = spec.runtime.padEnd(18);
         const modelName = spec.model ? (spec.model.split("/").pop() ?? spec.model) : "(provider)";
-        const model = modelName.slice(0, 14).padEnd(16);
+        const model = modelName.slice(0, 28).padEnd(30);
+        const speed = spec.speed.padEnd(10);
+        const autonomy = spec.autonomy.padEnd(14);
+        const tags = (spec.tags.length > 0 ? spec.tags.join(", ") : "-").slice(0, 18).padEnd(20);
         const readonly = spec.readonly ? "yes" : "no";
-        lines.push(`${agent} ${runtime} ${model} ${readonly}`);
+        lines.push(`${agent} ${model} ${speed} ${autonomy} ${tags} ${readonly}`);
       }
 
       pi.sendMessage({
@@ -81,8 +83,8 @@ export const extension = defineExtension((pi) => {
       }
 
       const lines: string[] = [
-        `${"RUNTIME".padEnd(20)} ${"TIER".padEnd(9)} ${"TELEMETRY".padEnd(11)} ${"VERSION".padEnd(12)} ${"STATUS".padEnd(10)} BINARY`,
-        `${"-------".padEnd(20)} ${"----".padEnd(9)} ${"---------".padEnd(11)} ${"-------".padEnd(12)} ${"------".padEnd(10)} ------`,
+        `${"RUNTIME".padEnd(20)} ${"TYPE".padEnd(9)} ${"TIER".padEnd(11)} ${"VERSION".padEnd(12)} ${"STATUS".padEnd(10)} BINARY`,
+        `${"-------".padEnd(20)} ${"----".padEnd(9)} ${"----".padEnd(11)} ${"-------".padEnd(12)} ${"------".padEnd(10)} ------`,
       ];
 
       for (const rt of allRuntimes) {

@@ -110,12 +110,32 @@ export function installPanCodeShellOverrides(): void {
   }
 
   // === Models ===
+  // Guard against Pi SDK prefix collision: if the SDK matches /mode as /model,
+  // the searchTerm will contain the mode name (e.g., "e build" from "/mode build"
+  // parsed as "/model" + " e build"). Detect this and reroute to /mode.
+  const MODE_NAMES = new Set(["capture", "plan", "build", "ask", "review"]);
   if (typeof prototype.handleModelCommand === "function") {
     prototype.handleModelCommand = async function handleModelCommand(
       this: ShellPatchedInteractiveMode,
       searchTerm?: string,
     ) {
-      const suffix = searchTerm?.trim() ? ` ${searchTerm.trim()}` : "";
+      // Detect /mode collision: if searchTerm starts with "e " followed by a mode name,
+      // or if searchTerm itself is a mode name (bare /mode → /model with no suffix),
+      // reroute to the /mode command.
+      const trimmed = searchTerm?.trim() ?? "";
+      if (trimmed.startsWith("e ")) {
+        const possibleMode = trimmed.slice(2).trim().toLowerCase();
+        if (MODE_NAMES.has(possibleMode) || possibleMode === "") {
+          await routeToShellCommand(this, `/mode ${possibleMode}`.trim());
+          return;
+        }
+      }
+      if (trimmed === "e") {
+        // Bare "/mode" → Pi SDK sees "/model" with searchTerm "e"
+        await routeToShellCommand(this, "/mode");
+        return;
+      }
+      const suffix = trimmed ? ` ${trimmed}` : "";
       await routeToShellCommand(this, `/models${suffix}`);
     };
   } else {
