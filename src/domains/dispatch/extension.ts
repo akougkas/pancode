@@ -1,16 +1,19 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { existsSync, readdirSync, statSync, unlinkSync } from "node:fs";
-import { join } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 import { Type } from "@sinclair/typebox";
+import { DEFAULT_AGENT } from "../../core/agent-names";
 import { BusChannel } from "../../core/bus-events";
+import { PanMessageType } from "../../core/message-types";
 import { getModeDefinition } from "../../core/modes";
 import { sharedBus } from "../../core/shared-bus";
-import { ToolName } from "../../core/tool-names";
 import { shutdownCoordinator } from "../../core/termination";
+import { ToolName } from "../../core/tool-names";
 import { PiEvent } from "../../engine/events";
 import { defineExtension } from "../../engine/extensions";
 import type { AgentToolResult } from "../../engine/types";
 import { agentRegistry } from "../agents";
+import { workerPool } from "../agents/worker-pool";
 import { compileWorkerPrompt } from "../prompts";
 import { findModelProfile } from "../providers";
 import { registerSafetyPreFlightChecks } from "../safety";
@@ -24,7 +27,7 @@ import { resolveWorkerRouting } from "./routing";
 import { DEFAULT_DISPATCH_RULES, type DispatchRule, evaluateRules } from "./rules";
 import { RunLedger, createRunEnvelope } from "./state";
 import { initTaskStore, taskCheck, taskList, taskUpdate, taskWrite } from "./task-tools";
-import { liveWorkerProcesses, spawnWorker, stopAllWorkers } from "./worker-spawn";
+import { liveWorkerProcesses, spawnWorker, stopAllWorkers, workerProcessByRunId } from "./worker-spawn";
 
 function textResult(text: string): AgentToolResult<unknown> {
   return { content: [{ type: "text", text }], details: undefined };
@@ -51,6 +54,67 @@ function extractProvider(model: string | null): string | null {
   if (!model) return null;
   const slash = model.indexOf("/");
   return slash > 0 ? model.slice(0, slash) : null;
+}
+
+// ---------------------------------------------------------------------------
+// File path pre-validation for dispatch tasks (tests 10b, 10c)
+// ---------------------------------------------------------------------------
+
+/** Regex to extract file paths from task text. Matches common source file patterns. */
+const FILE_PATH_RE = /(?:^|\s)((?:\.\/|\.\.\/|\/|src\/|lib\/|test\/)\S+\.\w{1,10})/g;
+
+interface PathValidation {
+  warnings: string[];
+  blocked: boolean;
+  blockReason?: string;
+}
+
+/**
+ * Scan task text for referenced file paths. Warn about missing files and
+ * block paths that escape the project root (scope violation).
+ */
+function validateTaskPaths(task: string, cwd: string): PathValidation {
+  const warnings: string[] = [];
+  let blocked = false;
+  let blockReason: string | undefined;
+
+  const matches = task.matchAll(FILE_PATH_RE);
+  for (const match of matches) {
+    const raw = match[1];
+    const full = isAbsolute(raw) ? raw : resolve(cwd, raw);
+    const normalized = resolve(full);
+
+    // Path escape detection: block any absolute path outside the project root.
+    if (!normalized.startsWith(cwd)) {
+      blocked = true;
+      blockReason = `Scope violation: "${raw}" resolves outside the project root. Workers must not access files outside ${cwd}.`;
+      break;
+    }
+
+    // Missing file warning: inform the user but allow dispatch so the agent can adapt.
+    if (!existsSync(normalized)) {
+      warnings.push(`File not found: ${raw}`);
+    }
+  }
+
+  return { warnings, blocked, blockReason };
+}
+
+// ---------------------------------------------------------------------------
+// Run status classification
+// ---------------------------------------------------------------------------
+
+/** Classify a WorkerResult into a RunStatus for the ledger. */
+function classifyRunStatus(workerResult: {
+  exitCode: number;
+  error: string;
+  timedOut?: boolean;
+  budgetExceeded?: boolean;
+}): "done" | "error" | "timeout" | "budget_exceeded" {
+  if (workerResult.timedOut) return "timeout";
+  if (workerResult.budgetExceeded) return "budget_exceeded";
+  if (workerResult.exitCode === 0 && !workerResult.error) return "done";
+  return "error";
 }
 
 /** Max age for worker artifacts before cleanup: 24 hours. */
@@ -182,13 +246,13 @@ export const extension = defineExtension((pi) => {
       "Delegate a task to a specialized PanCode worker agent. The worker runs as a separate subprocess with its own context window. Use this to parallelize work or delegate to specialized agents (dev, reviewer).",
     parameters: Type.Object({
       task: Type.String({ description: "The task description to send to the worker agent" }),
-      agent: Type.Optional(Type.String({ description: "Agent spec name (default: dev)", default: "dev" })),
+      agent: Type.Optional(Type.String({ description: "Agent spec name (default: dev)", default: DEFAULT_AGENT })),
       isolate: Type.Optional(
         Type.Boolean({ description: "Run in a git worktree for filesystem isolation", default: false }),
       ),
     }),
     async execute(_toolCallId, params, signal, onUpdate, ctx) {
-      const defaultAgent = process.env.PANCODE_DEFAULT_AGENT ?? "dev";
+      const defaultAgent = process.env.PANCODE_DEFAULT_AGENT ?? DEFAULT_AGENT;
       const agentName = params.agent || defaultAgent;
       const task = params.task;
       const isolate = params.isolate ?? false;
@@ -228,8 +292,27 @@ export const extension = defineExtension((pi) => {
         return textResult("Error: empty task");
       }
 
+      // File path pre-validation: block scope violations, warn about missing files.
+      const pathCheck = validateTaskPaths(task, ctx.cwd);
+      if (pathCheck.blocked) {
+        return textResult(`Dispatch blocked: ${pathCheck.blockReason}`);
+      }
+      if (pathCheck.warnings.length > 0) {
+        const warningText = pathCheck.warnings.join("; ");
+        sharedBus.emit(BusChannel.WARNING, { source: "dispatch", message: `Path warnings: ${warningText}` });
+        if (onUpdate) {
+          onUpdate(textResult(`Warning: ${warningText}. Dispatching anyway (agent may adapt).`));
+        }
+      }
+
       // Pre-flight admission checks (budget, safety, etc. registered by other domains)
-      const preflight = runPreFlightChecks({ task, agent: agentName, model: resolveWorkerRouting(agentName).model });
+      let preflightRouting: ReturnType<typeof resolveWorkerRouting>;
+      try {
+        preflightRouting = resolveWorkerRouting(agentName);
+      } catch (err) {
+        return textResult(err instanceof Error ? err.message : String(err));
+      }
+      const preflight = runPreFlightChecks({ task, agent: agentName, model: preflightRouting.model });
       if (!preflight.admit) {
         return textResult(`Dispatch blocked: ${preflight.reason}`);
       }
@@ -249,7 +332,17 @@ export const extension = defineExtension((pi) => {
         return textResult(`Task skipped by dispatch rules: ${dispatchAction.reason ?? "no reason provided"}`);
       }
 
-      const routing = resolveWorkerRouting(dispatchAction.agent);
+      // Reuse preflight routing if rules did not remap the agent to avoid duplicate warnings.
+      let routing: ReturnType<typeof resolveWorkerRouting>;
+      if (dispatchAction.agent === agentName) {
+        routing = preflightRouting;
+      } else {
+        try {
+          routing = resolveWorkerRouting(dispatchAction.agent);
+        } catch (err) {
+          return textResult(err instanceof Error ? err.message : String(err));
+        }
+      }
 
       // Provider backoff: reject dispatch if the provider is in a backoff window.
       const routingProvider = extractProvider(routing.model);
@@ -298,29 +391,50 @@ export const extension = defineExtension((pi) => {
       // Compile dynamic worker prompt from PanPrompt engine.
       const spec = agentRegistry.get(dispatchAction.agent);
       const workerProfile = routing.model ? resolveModelProfile(routing.model) : null;
-      const workerPrompt = compileWorkerPrompt(spec ?? null, {
-        agentName: dispatchAction.agent,
-        task: dispatchAction.task,
-        readonly: routing.readonly,
-        tools: routing.tools,
-        mode: getModeDefinition().id,
-        tier: "mid",
-      }, workerProfile);
+      const workerPrompt = compileWorkerPrompt(
+        spec ?? null,
+        {
+          agentName: dispatchAction.agent,
+          task: dispatchAction.task,
+          readonly: routing.readonly,
+          tools: routing.tools,
+          mode: getModeDefinition().id,
+          tier: "mid",
+        },
+        workerProfile,
+      );
 
-      const workerResult = await spawnWorker({
-        task: dispatchAction.task,
-        tools: routing.tools,
-        model: routing.model,
-        systemPrompt: workerPrompt,
-        cwd: workerCwd,
-        agentName: dispatchAction.agent,
-        sampling: routing.sampling,
-        signal: signal ?? undefined,
-        runId: run.id,
-        runtime: routing.runtime,
-        runtimeArgs: routing.runtimeArgs,
-        readonly: routing.readonly,
-      });
+      // Store receipt context on the envelope for post-dispatch receipt generation.
+      run.promptHash = createHash("sha256").update(workerPrompt).digest("hex");
+      run.workerTools = routing.tools;
+      ledger?.update(run.id, run);
+
+      // Track worker pool load for scoring
+      if (routing.workerId) {
+        workerPool.recordDispatchStart(routing.workerId);
+      }
+
+      let workerResult: Awaited<ReturnType<typeof spawnWorker>>;
+      try {
+        workerResult = await spawnWorker({
+          task: dispatchAction.task,
+          tools: routing.tools,
+          model: routing.model,
+          systemPrompt: workerPrompt,
+          cwd: workerCwd,
+          agentName: dispatchAction.agent,
+          sampling: routing.sampling,
+          signal: signal ?? undefined,
+          runId: run.id,
+          runtime: routing.runtime,
+          runtimeArgs: routing.runtimeArgs,
+          readonly: routing.readonly,
+        });
+      } finally {
+        if (routing.workerId) {
+          workerPool.recordDispatchEnd(routing.workerId);
+        }
+      }
 
       // Merge worktree delta back to parent
       if (isolation) {
@@ -339,7 +453,7 @@ export const extension = defineExtension((pi) => {
         }
       }
 
-      run.status = workerResult.exitCode === 0 && !workerResult.error ? "done" : "error";
+      run.status = classifyRunStatus(workerResult);
       run.result = workerResult.result;
       run.error = workerResult.error;
       run.usage = workerResult.usage;
@@ -362,15 +476,25 @@ export const extension = defineExtension((pi) => {
         completedAt: run.completedAt ?? new Date().toISOString(),
       });
 
+      const costVal = workerResult.usage.cost;
+      const turnsVal = workerResult.usage.turns;
       const usageStr =
-        workerResult.usage.cost > 0
-          ? ` | cost: $${workerResult.usage.cost.toFixed(4)} | turns: ${workerResult.usage.turns}`
-          : ` | turns: ${workerResult.usage.turns}`;
+        costVal != null && costVal > 0
+          ? ` | cost: $${costVal.toFixed(4)} | turns: ${turnsVal ?? "--"}`
+          : turnsVal != null
+            ? ` | turns: ${turnsVal}`
+            : "";
 
-      const statusEmoji = run.status === "done" ? "completed" : "failed";
-      const summary = `Worker ${statusEmoji} (${run.id})${usageStr}\n\nAgent: ${run.agent}${run.model ? ` | Model: ${run.model}` : ""}`;
+      const statusLabels: Record<string, string> = {
+        done: "completed",
+        error: "failed",
+        timeout: "timed out",
+        budget_exceeded: "budget exceeded",
+      };
+      const statusLabel = statusLabels[run.status] ?? "failed";
+      const summary = `Worker ${statusLabel} (${run.id})${usageStr}\n\nAgent: ${run.agent}${run.model ? ` | Model: ${run.model}` : ""}`;
 
-      if (run.status === "error") {
+      if (run.status !== "done") {
         return textResult(`${summary}\n\nError: ${run.error}`);
       }
 
@@ -390,14 +514,14 @@ export const extension = defineExtension((pi) => {
         maxItems: 8,
       }),
       agent: Type.Optional(
-        Type.String({ description: "Agent spec name for all tasks (default: dev)", default: "dev" }),
+        Type.String({ description: "Agent spec name for all tasks (default: dev)", default: DEFAULT_AGENT }),
       ),
       concurrency: Type.Optional(
         Type.Number({ description: "Max parallel workers (default: 4)", default: 4, minimum: 1, maximum: 8 }),
       ),
     }),
     async execute(_toolCallId, params, signal, onUpdate, ctx) {
-      const agentName = params.agent || "dev";
+      const agentName = params.agent || DEFAULT_AGENT;
       const concurrency = params.concurrency || 4;
       const tasks = params.tasks;
 
@@ -431,11 +555,29 @@ export const extension = defineExtension((pi) => {
         );
       }
 
+      // File path pre-validation for all batch tasks.
+      for (const batchTask of tasks) {
+        const batchPathCheck = validateTaskPaths(batchTask, ctx.cwd);
+        if (batchPathCheck.blocked) {
+          return textResult(`Batch dispatch blocked: ${batchPathCheck.blockReason}`);
+        }
+        if (batchPathCheck.warnings.length > 0) {
+          const warningText = batchPathCheck.warnings.join("; ");
+          sharedBus.emit(BusChannel.WARNING, { source: "dispatch", message: `Path warnings: ${warningText}` });
+        }
+      }
+
       // Pre-flight admission checks for batch dispatch
+      let batchPreflightRouting: ReturnType<typeof resolveWorkerRouting>;
+      try {
+        batchPreflightRouting = resolveWorkerRouting(agentName);
+      } catch (err) {
+        return textResult(err instanceof Error ? err.message : String(err));
+      }
       const batchPreflight = runPreFlightChecks({
         task: tasks[0],
         agent: agentName,
-        model: resolveWorkerRouting(agentName).model,
+        model: batchPreflightRouting.model,
       });
       if (!batchPreflight.admit) {
         return textResult(`Batch dispatch blocked: ${batchPreflight.reason}`);
@@ -446,7 +588,7 @@ export const extension = defineExtension((pi) => {
         return textResult(`Unknown agent "${agentName}". Available: ${available}`);
       }
 
-      const routing = resolveWorkerRouting(agentName);
+      const routing = batchPreflightRouting;
 
       // Provider backoff check for batch dispatch
       const batchProvider = extractProvider(routing.model);
@@ -486,14 +628,18 @@ export const extension = defineExtension((pi) => {
       const batchSpec = agentRegistry.get(agentName);
       const batchProfile = routing.model ? resolveModelProfile(routing.model) : null;
       const parallelTasks = tasks.map((task, i) => {
-        const wp = compileWorkerPrompt(batchSpec ?? null, {
-          agentName,
-          task,
-          readonly: routing.readonly,
-          tools: routing.tools,
-          mode: getModeDefinition().id,
-          tier: "mid",
-        }, batchProfile);
+        const wp = compileWorkerPrompt(
+          batchSpec ?? null,
+          {
+            agentName,
+            task,
+            readonly: routing.readonly,
+            tools: routing.tools,
+            mode: getModeDefinition().id,
+            tier: "mid",
+          },
+          batchProfile,
+        );
         return {
           task,
           tools: routing.tools,
@@ -518,7 +664,7 @@ export const extension = defineExtension((pi) => {
         const { result: workerResult } = results[i];
         const run = runs[i];
 
-        run.status = workerResult.exitCode === 0 && !workerResult.error ? "done" : "error";
+        run.status = classifyRunStatus(workerResult);
         run.result = workerResult.result;
         run.error = workerResult.error;
         run.usage = workerResult.usage;
@@ -526,7 +672,7 @@ export const extension = defineExtension((pi) => {
         run.completedAt = new Date().toISOString();
         ledger?.update(run.id, run);
         batchTracker.markCompleted(batch.id, run.status === "done");
-        totalCost += workerResult.usage.cost;
+        totalCost += workerResult.usage.cost ?? 0;
 
         // Record outcome for provider health tracking.
         recordDispatchOutcome(run.model, workerResult.exitCode, workerResult.error);
@@ -542,7 +688,8 @@ export const extension = defineExtension((pi) => {
         });
 
         const statusStr = run.status === "done" ? "OK" : "FAIL";
-        const costStr = workerResult.usage.cost > 0 ? ` $${workerResult.usage.cost.toFixed(4)}` : "";
+        const batchCostVal = workerResult.usage.cost;
+        const costStr = batchCostVal != null && batchCostVal > 0 ? ` $${batchCostVal.toFixed(4)}` : "";
         const truncatedTask = run.task.length > 50 ? `${run.task.slice(0, 47)}...` : run.task;
         summaryLines.push(`  [${run.id}] ${statusStr} ${run.agent} ${truncatedTask}${costStr}`);
 
@@ -583,7 +730,7 @@ export const extension = defineExtension((pi) => {
       originalTask: Type.String({ description: "The original high-level task description." }),
     }),
     async execute(_toolCallId, params, signal, onUpdate, ctx) {
-      const defaultAgent = process.env.PANCODE_DEFAULT_AGENT ?? "dev";
+      const defaultAgent = process.env.PANCODE_DEFAULT_AGENT ?? DEFAULT_AGENT;
 
       // Mode gating
       const mode = getModeDefinition();
@@ -617,11 +764,29 @@ export const extension = defineExtension((pi) => {
         );
       }
 
+      // File path pre-validation for chain steps.
+      for (const step of params.steps) {
+        const chainPathCheck = validateTaskPaths(step.task, ctx.cwd);
+        if (chainPathCheck.blocked) {
+          return textResult(`Chain dispatch blocked: ${chainPathCheck.blockReason}`);
+        }
+        if (chainPathCheck.warnings.length > 0) {
+          const warningText = chainPathCheck.warnings.join("; ");
+          sharedBus.emit(BusChannel.WARNING, { source: "dispatch", message: `Path warnings: ${warningText}` });
+        }
+      }
+
       // Pre-flight
+      let chainPreflightRouting: ReturnType<typeof resolveWorkerRouting>;
+      try {
+        chainPreflightRouting = resolveWorkerRouting(defaultAgent);
+      } catch (err) {
+        return textResult(err instanceof Error ? err.message : String(err));
+      }
       const preflight = runPreFlightChecks({
         task: params.originalTask,
         agent: defaultAgent,
-        model: resolveWorkerRouting(defaultAgent).model,
+        model: chainPreflightRouting.model,
       });
       if (!preflight.admit) {
         return textResult(`Chain dispatch blocked: ${preflight.reason}`);
@@ -666,14 +831,18 @@ export const extension = defineExtension((pi) => {
           // Compile dynamic worker prompt from PanPrompt engine.
           const chainSpec = agentRegistry.get(agent);
           const chainProfile = routing.model ? resolveModelProfile(routing.model) : null;
-          const chainPrompt = compileWorkerPrompt(chainSpec ?? null, {
-            agentName: agent,
-            task,
-            readonly: routing.readonly,
-            tools: routing.tools,
-            mode: getModeDefinition().id,
-            tier: "mid",
-          }, chainProfile);
+          const chainPrompt = compileWorkerPrompt(
+            chainSpec ?? null,
+            {
+              agentName: agent,
+              task,
+              readonly: routing.readonly,
+              tools: routing.tools,
+              mode: getModeDefinition().id,
+              tier: "mid",
+            },
+            chainProfile,
+          );
 
           const result = await spawnWorker({
             task,
@@ -690,7 +859,7 @@ export const extension = defineExtension((pi) => {
             readonly: routing.readonly,
           });
 
-          run.status = result.exitCode === 0 && !result.error ? "done" : "error";
+          run.status = classifyRunStatus(result);
           run.result = result.result;
           run.error = result.error;
           run.usage = result.usage;
@@ -724,7 +893,8 @@ export const extension = defineExtension((pi) => {
       ];
       for (const step of chainResult.steps) {
         const statusStr = step.result.exitCode === 0 && !step.result.error ? "OK" : "FAIL";
-        const costStr = step.result.usage.cost > 0 ? ` $${step.result.usage.cost.toFixed(4)}` : "";
+        const stepCostVal = step.result.usage.cost;
+        const costStr = stepCostVal != null && stepCostVal > 0 ? ` $${stepCostVal.toFixed(4)}` : "";
         const durStr = ` ${(step.durationMs / 1000).toFixed(1)}s`;
         const truncatedTask = step.task.length > 50 ? `${step.task.slice(0, 47)}...` : step.task;
         lines.push(`  Step ${step.stepIndex + 1}: [${statusStr}] ${step.agent} ${truncatedTask}${costStr}${durStr}`);
@@ -771,21 +941,45 @@ export const extension = defineExtension((pi) => {
         return;
       }
 
-      // Kill worker process
+      // Kill the specific worker process for this run using the runId map.
+      // Falls back to the legacy liveWorkerProcesses set if the map entry is missing.
       let killed = false;
-      for (const proc of liveWorkerProcesses) {
-        // Worker processes are matched by liveness. Kill the first one matching the run.
+      const targetProc = workerProcessByRunId.get(match.id);
+      if (targetProc) {
         try {
-          proc.kill("SIGTERM");
+          targetProc.kill("SIGTERM");
           killed = true;
-          break;
+          // Escalate to SIGKILL if SIGTERM does not terminate within 5s.
+          setTimeout(() => {
+            if (targetProc.exitCode === null) {
+              try {
+                targetProc.kill("SIGKILL");
+              } catch {
+                // ignore
+              }
+            }
+          }, 5000).unref();
         } catch {
           // process already dead
+        }
+      } else {
+        // Legacy fallback: kill first live process (best effort for untracked runs).
+        for (const proc of liveWorkerProcesses) {
+          try {
+            proc.kill("SIGTERM");
+            killed = true;
+            break;
+          } catch {
+            // process already dead
+          }
         }
       }
 
       match.status = "cancelled";
       match.completedAt = new Date().toISOString();
+      if (!match.error) {
+        match.error = "Cancelled by user via /stoprun";
+      }
       ledger.update(match.id, match);
 
       sharedBus.emit(BusChannel.RUN_FINISHED, {
@@ -807,7 +1001,7 @@ export const extension = defineExtension((pi) => {
     async handler(_args, _ctx) {
       if (!ledger) {
         pi.sendMessage({
-          customType: "pancode-panel",
+          customType: PanMessageType.PANEL,
           content: "Dispatch ledger not initialized.",
           display: true,
           details: { title: "PanCode Cost" },
@@ -818,7 +1012,7 @@ export const extension = defineExtension((pi) => {
       const allRuns = ledger.getAll();
       if (allRuns.length === 0) {
         pi.sendMessage({
-          customType: "pancode-panel",
+          customType: PanMessageType.PANEL,
           content: "No runs recorded.",
           display: true,
           details: { title: "PanCode Cost" },
@@ -832,24 +1026,25 @@ export const extension = defineExtension((pi) => {
       const byRuntime = new Map<string, { runs: number; cost: number; hasCosts: boolean }>();
 
       for (const run of allRuns) {
-        totalCost += run.usage.cost;
+        const runCost = run.usage.cost ?? 0;
+        totalCost += runCost;
 
         const agentStats = byAgent.get(run.agent) ?? { runs: 0, cost: 0 };
         agentStats.runs++;
-        agentStats.cost += run.usage.cost;
+        agentStats.cost += runCost;
         byAgent.set(run.agent, agentStats);
 
         const modelKey = run.model ?? "(unresolved)";
         const modelStats = byModel.get(modelKey) ?? { runs: 0, cost: 0 };
         modelStats.runs++;
-        modelStats.cost += run.usage.cost;
+        modelStats.cost += runCost;
         byModel.set(modelKey, modelStats);
 
         const runtimeKey = run.runtime ?? "pi";
         const runtimeStats = byRuntime.get(runtimeKey) ?? { runs: 0, cost: 0, hasCosts: false };
         runtimeStats.runs++;
-        runtimeStats.cost += run.usage.cost;
-        if (run.usage.cost > 0) runtimeStats.hasCosts = true;
+        runtimeStats.cost += runCost;
+        if (run.usage.cost != null && run.usage.cost > 0) runtimeStats.hasCosts = true;
         byRuntime.set(runtimeKey, runtimeStats);
       }
 
@@ -883,7 +1078,7 @@ export const extension = defineExtension((pi) => {
       }
 
       pi.sendMessage({
-        customType: "pancode-panel",
+        customType: PanMessageType.PANEL,
         content: lines.join("\n"),
         display: true,
         details: { title: "PanCode Cost" },
@@ -896,7 +1091,7 @@ export const extension = defineExtension((pi) => {
     async handler(_args, _ctx) {
       if (!ledger) {
         pi.sendMessage({
-          customType: "pancode-panel",
+          customType: PanMessageType.PANEL,
           content: "Dispatch ledger not initialized.",
           display: true,
           details: { title: "PanCode Dispatch Insights" },
@@ -907,7 +1102,7 @@ export const extension = defineExtension((pi) => {
       const allRuns = ledger.getAll();
       if (allRuns.length === 0) {
         pi.sendMessage({
-          customType: "pancode-panel",
+          customType: PanMessageType.PANEL,
           content: "No dispatch history.",
           display: true,
           details: { title: "PanCode Dispatch Insights" },
@@ -933,9 +1128,9 @@ export const extension = defineExtension((pi) => {
         const runtimeKey = run.runtime ?? "pi";
         const rtStats = byRuntime.get(runtimeKey) ?? { runs: 0, cost: 0, totalMs: 0, hasCosts: false };
         rtStats.runs++;
-        rtStats.cost += run.usage.cost;
+        rtStats.cost += run.usage.cost ?? 0;
         rtStats.totalMs += dMs;
-        if (run.usage.cost > 0) rtStats.hasCosts = true;
+        if (run.usage.cost != null && run.usage.cost > 0) rtStats.hasCosts = true;
         byRuntime.set(runtimeKey, rtStats);
       }
 
@@ -987,7 +1182,7 @@ export const extension = defineExtension((pi) => {
       }
 
       pi.sendMessage({
-        customType: "pancode-panel",
+        customType: PanMessageType.PANEL,
         content: lines.join("\n"),
         display: true,
         details: { title: "PanCode Dispatch Insights" },
@@ -1000,7 +1195,7 @@ export const extension = defineExtension((pi) => {
     async handler(args, _ctx) {
       if (!ledger) {
         pi.sendMessage({
-          customType: "pancode-panel",
+          customType: PanMessageType.PANEL,
           content: "Dispatch ledger not initialized.",
           display: true,
           details: { title: "PanCode Runs" },
@@ -1021,18 +1216,25 @@ export const extension = defineExtension((pi) => {
       if (runs.length === 0) {
         lines.push("No runs recorded.");
       } else {
+        const failStatuses = new Set(["error", "timeout", "cancelled", "interrupted", "budget_exceeded"]);
         for (const run of runs) {
-          const costStr = run.usage.cost > 0 ? ` $${run.usage.cost.toFixed(4)}` : "";
+          const runsCostVal = run.usage.cost;
+          const costStr = runsCostVal != null && runsCostVal > 0 ? ` $${runsCostVal.toFixed(4)}` : "";
           const runtimeLabel = (run.runtime ?? "pi").padEnd(16);
           const truncatedTask = run.task.length > 50 ? `${run.task.slice(0, 47)}...` : run.task;
           lines.push(
             `[${run.id}] ${run.status.padEnd(9)} ${run.agent.padEnd(10)} ${runtimeLabel} ${truncatedTask}${costStr}`,
           );
+          // Show error details on a dedicated line so they are visible at any terminal width.
+          if (failStatuses.has(run.status) && run.error) {
+            const truncErr = run.error.length > 80 ? `${run.error.slice(0, 77)}...` : run.error;
+            lines.push(`           ERR: ${truncErr}`);
+          }
         }
       }
 
       pi.sendMessage({
-        customType: "pancode-panel",
+        customType: PanMessageType.PANEL,
         content: lines.join("\n"),
         display: true,
         details: { title: `PanCode Runs (last ${count})` },
@@ -1046,7 +1248,7 @@ export const extension = defineExtension((pi) => {
       const batches = batchTracker.getRecent(10);
       if (batches.length === 0) {
         pi.sendMessage({
-          customType: "pancode-panel",
+          customType: PanMessageType.PANEL,
           content: "No batches recorded.",
           display: true,
           details: { title: "PanCode Batches" },
@@ -1063,7 +1265,7 @@ export const extension = defineExtension((pi) => {
       }
 
       pi.sendMessage({
-        customType: "pancode-panel",
+        customType: PanMessageType.PANEL,
         content: lines.join("\n"),
         display: true,
         details: { title: "PanCode Batches" },

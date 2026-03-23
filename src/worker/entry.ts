@@ -1,9 +1,11 @@
 import { spawn } from "node:child_process";
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { type PanCodeConfig, loadConfig } from "../core/config";
+import { atomicWriteJsonSync, atomicWriteTextSync } from "../core/config-writer";
 import { ensureProjectRuntime } from "../core/init";
+import { redact } from "../core/redaction";
 import { buildWorkerModelArgs, createWorkerEnvironment } from "./provider-bridge";
 
 interface WorkerArgs {
@@ -255,7 +257,7 @@ function writeTempFile(prefix: string, content: string): string {
   mkdirSync(dir, { recursive: true });
   const filename = `${prefix}-${process.pid}-${Date.now()}.txt`;
   const filepath = join(dir, filename);
-  writeFileSync(filepath, content, { encoding: "utf8", mode: 0o600 });
+  atomicWriteTextSync(filepath, content, { mode: 0o600 });
   tempFilesToCleanup.push(filepath);
   return filepath;
 }
@@ -329,15 +331,56 @@ function buildPiArgs(config: WorkerPiConfig, prompt: string): string[] {
 function monitorParent(): void {
   const parentPid = Number.parseInt(process.env.PANCODE_PARENT_PID ?? "", 10);
   if (!Number.isInteger(parentPid) || parentPid <= 0) return;
-  const heartbeat = setInterval(() => {
+  const parentCheck = setInterval(() => {
     try {
       process.kill(parentPid, 0);
     } catch {
-      clearInterval(heartbeat);
+      clearInterval(parentCheck);
       process.exit(1);
     }
   }, 5000);
-  heartbeat.unref();
+  parentCheck.unref();
+}
+
+// ---------------------------------------------------------------------------
+// Heartbeat and lifecycle event emission
+// ---------------------------------------------------------------------------
+
+/** Write a structured NDJSON event to stdout for the orchestrator to parse. */
+function emitWorkerEvent(event: Record<string, unknown>): void {
+  try {
+    process.stdout.write(`${JSON.stringify(event)}\n`);
+  } catch {
+    // Stdout may be closed if the orchestrator terminated. Ignore silently.
+  }
+}
+
+/**
+ * Start a periodic heartbeat emitter. Each tick writes one NDJSON heartbeat
+ * line to stdout. The orchestrator uses heartbeat timing to classify worker
+ * health as healthy, stale, or dead.
+ *
+ * Frequency defaults to 10 seconds, configurable via PANCODE_HEARTBEAT_INTERVAL_MS.
+ */
+function startHeartbeat(runId: string): NodeJS.Timeout {
+  const intervalMs = Number.parseInt(process.env.PANCODE_HEARTBEAT_INTERVAL_MS ?? "10000", 10);
+  const timer = setInterval(() => {
+    emitWorkerEvent({
+      type: "heartbeat",
+      ts: new Date().toISOString(),
+      runId,
+      turns: 0,
+      lastToolCall: null,
+      tokensThisBeat: { in: 0, out: 0 },
+    });
+  }, intervalMs);
+  timer.unref();
+  return timer;
+}
+
+/** Emit a structured lifecycle event to stdout. */
+function emitLifecycle(event: string, runId: string, extra?: Record<string, unknown>): void {
+  emitWorkerEvent({ type: "lifecycle", event, runId, ...extra });
 }
 
 interface FullWorkerConfig extends WorkerPiConfig {
@@ -392,7 +435,7 @@ async function runPi(config: FullWorkerConfig): Promise<PiRunResult> {
       }
 
       const stdoutText = readFileSync(stdoutPath, "utf8");
-      const stderrText = readFileSync(stderrPath, "utf8");
+      const stderrText = redact(readFileSync(stderrPath, "utf8"));
       const parsed = parseCapturedStdout(stdoutText);
 
       resolve({
@@ -413,8 +456,7 @@ async function runPi(config: FullWorkerConfig): Promise<PiRunResult> {
 }
 
 function writeResultFile(resultFile: string, payload: Record<string, unknown>): void {
-  mkdirSync(dirname(resultFile), { recursive: true });
-  writeFileSync(resultFile, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+  atomicWriteJsonSync(resultFile, payload);
 }
 
 /**
@@ -472,8 +514,23 @@ async function main(): Promise<void> {
 
   monitorParent();
 
+  // Resolve run ID from orchestrator env var or extract from result file path.
+  const runId =
+    process.env.PANCODE_RUN_ID ??
+    args.resultFile.match(/worker-([a-f0-9-]+)\.result\.json$/)?.[1] ??
+    `w-${process.pid}`;
+
+  const agentName = process.env.PANCODE_AGENT_NAME ?? "worker";
+
+  // Emit lifecycle started event and begin heartbeat.
+  emitLifecycle("started", runId, { agent: agentName, runtime: "pi" });
+  const heartbeatTimer = startHeartbeat(runId);
+
   try {
     const result = await runPi(workerConfig);
+    clearInterval(heartbeatTimer);
+    emitLifecycle("completed", runId, { exitCode: result.exitCode ?? 0 });
+
     writeResultFile(args.resultFile, {
       ok: result.exitCode === 0 && !result.assistantError,
       prompt: workerConfig.prompt,
@@ -494,6 +551,9 @@ async function main(): Promise<void> {
       process.exitCode = result.exitCode ?? 1;
     }
   } catch (error) {
+    clearInterval(heartbeatTimer);
+    emitLifecycle("completed", runId, { exitCode: 1 });
+
     writeResultFile(args.resultFile, {
       ok: false,
       prompt: args.prompt,
@@ -504,7 +564,7 @@ async function main(): Promise<void> {
       assistantText: "",
       assistantError: "",
       stdoutNoise: "",
-      stderr: error instanceof Error ? error.message : String(error),
+      stderr: redact(error instanceof Error ? error.message : String(error)),
       stdoutPath: "",
       stderrPath: "",
     });
@@ -515,6 +575,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((error) => {
-  console.error(`[pancode:worker] ${error instanceof Error ? error.message : String(error)}`);
+  console.error(`[pancode:worker] ${redact(error instanceof Error ? error.message : String(error))}`);
   process.exitCode = 1;
 });

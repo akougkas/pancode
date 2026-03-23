@@ -2,16 +2,17 @@
 // Generates dynamic system prompts at dispatch time based on agent spec,
 // task context, model tier, and mode constraints.
 
+import { AgentName } from "../../core/agent-names";
 import { compilePrompt } from "./compiler";
 import { ALL_FRAGMENTS } from "./fragments";
 import { classifyModelTier, deriveProviderHint } from "./tiering";
 import type { CompilationContext, CompiledPrompt, ModelTier, WorkerPromptContext } from "./types";
 
 /** Token budget for worker system prompts. */
-const WORKER_PROMPT_BUDGET = 500;
+const WORKER_PROMPT_BUDGET = 2048;
 
 /** Token budget for scout system prompts. */
-const SCOUT_PROMPT_BUDGET = 250;
+const SCOUT_PROMPT_BUDGET = 1024;
 
 /** Recent worker compilations ring buffer for debugging. */
 const recentCompilations: CompiledPrompt[] = [];
@@ -47,7 +48,7 @@ export interface WorkerModelProfileSlice {
  * Assembles role identity, task framing, safety constraints, tool strategy,
  * and output contract based on the agent spec and dispatch context.
  *
- * Falls back to the static agents.yaml system_prompt if the agent has a
+ * Falls back to the static panagents.yaml system_prompt if the agent has a
  * custom prompt (non-default). Default agents (dev, reviewer) get dynamic
  * prompts from the fragment library.
  */
@@ -57,7 +58,7 @@ export function compileWorkerPrompt(
   modelProfile: WorkerModelProfileSlice | null,
 ): string {
   // If the agent spec has a custom system prompt that was explicitly set
-  // (not a default empty string), preserve it. Custom agents from agents.yaml
+  // (not a default empty string), preserve it. Custom agents from panagents.yaml
   // retain their user-authored prompts.
   if (spec?.systemPrompt && isCustomAgentPrompt(spec.name, spec.systemPrompt)) {
     return spec.systemPrompt;
@@ -119,7 +120,7 @@ export function getRecentWorkerCompilations(count = 10): readonly CompiledPrompt
  */
 function isCustomAgentPrompt(agentName: string, prompt: string): boolean {
   // Known default agent names get dynamic prompts from the fragment library.
-  const defaultAgents = new Set(["dev", "reviewer"]);
+  const defaultAgents: ReadonlySet<string> = new Set([AgentName.DEV, AgentName.REVIEWER]);
   if (defaultAgents.has(agentName)) return false;
 
   // Any other agent with a non-empty system prompt is considered custom.

@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { atomicWriteJsonSync } from "./config-writer";
 import { DEFAULT_REASONING_PREFERENCE, DEFAULT_THEME } from "./defaults";
@@ -15,13 +16,17 @@ export interface PanCodeSettings {
   intelligence: boolean | null;
 }
 
-// Set by loader.ts at boot
-const pancodeHome = process.env.PANCODE_HOME;
-if (!pancodeHome) {
-  throw new Error("PANCODE_HOME must be set before loading settings-state");
+// Set by loader.ts at boot. Falls back to ~/.pancode with a warning if unset.
+function resolvePancodeHome(): string {
+  const fromEnv = process.env.PANCODE_HOME?.trim();
+  if (fromEnv && fromEnv.length > 0) return fromEnv;
+  const fallback = join(homedir(), ".pancode");
+  process.stderr.write(`[pancode:settings] PANCODE_HOME not set. Defaulting to ${fallback}\n`);
+  process.env.PANCODE_HOME = fallback;
+  return fallback;
 }
 
-export const PANCODE_HOME = pancodeHome;
+export const PANCODE_HOME = resolvePancodeHome();
 export const PANCODE_SETTINGS_PATH = join(PANCODE_HOME, "settings.json");
 
 function normalizeOptionalString(value: unknown): string | null {
@@ -31,7 +36,12 @@ function normalizeOptionalString(value: unknown): string | null {
 }
 
 function normalizeTheme(value: unknown): string {
-  return normalizeOptionalString(value) ?? DEFAULT_THEME;
+  let raw = normalizeOptionalString(value) ?? DEFAULT_THEME;
+  // Migrate old "pancode-dark" / "pancode-light" names to "dark" / "light".
+  if (raw.startsWith("pancode-")) {
+    raw = raw.slice("pancode-".length);
+  }
+  return raw;
 }
 
 function normalizeReasoningPreference(value: unknown): PanCodeReasoningPreference {
@@ -71,8 +81,12 @@ export function loadPanCodeSettings(): PanCodeSettings {
 
   try {
     const content = readFileSync(PANCODE_SETTINGS_PATH, "utf8");
-    return normalizeSettings(JSON.parse(content));
-  } catch {
+    const trimmed = content.trim();
+    if (!trimmed) return normalizeSettings({});
+    return normalizeSettings(JSON.parse(trimmed));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    process.stderr.write(`[pancode:settings] Failed to parse ${PANCODE_SETTINGS_PATH}: ${message}. Using defaults.\n`);
     return normalizeSettings({});
   }
 }
@@ -82,4 +96,3 @@ export function writePanCodeSettings(settings: Partial<PanCodeSettings>): PanCod
   atomicWriteJsonSync(PANCODE_SETTINGS_PATH, next);
   return next;
 }
-

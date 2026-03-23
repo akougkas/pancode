@@ -91,11 +91,10 @@ PanCode: Dispatching to reviewer worker...
 If you want to control the behavior before dispatching, switch modes with
 `Shift+Tab` or `/mode`:
 
-- `capture` - record tasks only
 - `plan` - analyze and plan, no dispatch
 - `build` - full dispatch and edits
-- `ask` - readonly research
 - `review` - readonly review workers
+- `admin` - full system management and diagnostics (Alt+A only)
 
 ## Core Shell Commands
 

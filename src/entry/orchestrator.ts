@@ -1,29 +1,36 @@
-import { performance } from "node:perf_hooks";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { performance } from "node:perf_hooks";
+import { resetRuntimeState } from "../cli/reset";
+import { type BootPhaseRecord, setBootTimings } from "../core/boot-timing";
 import { type PanCodeConfig, type SafetyLevel, loadConfig } from "../core/config";
-import { ensurePresetsFile, loadPreset } from "../core/presets";
+import { atomicWriteJsonSync } from "../core/config-writer";
+import { DEFAULT_STARTUP_BUDGET_MS } from "../core/defaults";
 import { collectDomainExtensions, filterValidDomains, resolveDomainOrder } from "../core/domain-loader";
 import { createSafeEventBus } from "../core/event-bus";
 import { ensureProjectRuntime } from "../core/init";
 import { resolvePackageRoot } from "../core/package-root";
-import { shutdownCoordinator } from "../core/termination";
+import { ensurePresetsFile, loadPreset } from "../core/presets";
+import { installSigintDoubleTap, shutdownCoordinator } from "../core/termination";
 import { resolveThinkingLevelForPreference } from "../core/thinking";
 import { DOMAIN_REGISTRY } from "../domains";
 import { ensureAgentsYaml } from "../domains/agents/spec-registry";
 import {
+  type MergedModelProfile,
   PANCODE_HOME,
   createSharedAuth,
   discoverEngines,
   loadModelKnowledgeBase,
+  loadRegistryMetadata,
   matchAllModels,
   readModelCacheYaml,
   registerApiProvidersOnRegistry,
   registerDiscoveredModels,
   resolveConfiguredModel,
   setModelProfileCache,
+  setRegistryMetadata,
   writeModelCacheYaml,
   writeProvidersYaml,
-  type MergedModelProfile,
 } from "../domains/providers";
 import type { DiscoveryResult } from "../domains/providers";
 import { DefaultResourceLoader, SessionManager, SettingsManager } from "../engine/resources";
@@ -39,6 +46,7 @@ interface ParsedArgs {
   safety: SafetyLevel | null;
   theme: string | null;
   rediscover: boolean;
+  fresh: boolean;
   help: boolean;
 }
 
@@ -57,9 +65,10 @@ Options:
   --safety <level>     suggest | auto-edit | full-auto
   --theme <name>       Pi TUI theme name
   --rediscover         Force full engine discovery (ignore cache)
+  --fresh              Clear runtime state (runs, metrics, sessions) before boot
   --help               Show this help
 
-Presets are defined in ~/.pancode/presets.yaml. Edit freely.`);
+Presets are defined in ~/.pancode/panpresets.yaml. Edit freely.`);
 }
 
 function parseSafetyLevel(value: string | undefined): SafetyLevel | null {
@@ -83,6 +92,7 @@ function parseArgs(argv: string[]): ParsedArgs {
     safety: null,
     theme: null,
     rediscover: false,
+    fresh: false,
     help: false,
   };
 
@@ -95,6 +105,10 @@ function parseArgs(argv: string[]): ParsedArgs {
     }
     if (arg === "--rediscover") {
       parsed.rediscover = true;
+      continue;
+    }
+    if (arg === "--fresh") {
+      parsed.fresh = true;
       continue;
     }
     if (arg === "--cwd") {
@@ -176,12 +190,65 @@ async function runFullDiscovery(): Promise<{ results: DiscoveryResult[]; profile
   const packageRoot = resolvePackageRoot(import.meta.url);
   const modelsDir = join(packageRoot, "models");
   const knowledgeBase = loadModelKnowledgeBase(modelsDir);
+  const registry = loadRegistryMetadata(modelsDir);
+  setRegistryMetadata(registry);
 
   const allModels = results.flatMap((r) => r.models);
-  const profiles = matchAllModels(allModels, knowledgeBase);
+  const profiles = matchAllModels(allModels, knowledgeBase, registry);
   writeModelCacheYaml(profiles, PANCODE_HOME);
 
   return { results, profiles };
+}
+
+/**
+ * Scan the run ledger for entries left in "running" or "pending" status from a
+ * previous session. Since we are booting fresh, those workers no longer exist.
+ * Mark them "interrupted" so the ledger accurately reflects reality.
+ *
+ * Operates directly on the JSON file to avoid importing domain code.
+ */
+function reapOrphanRuns(runtimeRoot: string): void {
+  const runsPath = join(runtimeRoot, "runs.json");
+  if (!existsSync(runsPath)) return;
+
+  let entries: unknown[];
+  try {
+    const raw = readFileSync(runsPath, "utf8");
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) {
+      console.error("[pancode:boot] Corrupt runs.json (not an array). Will be recreated on first dispatch.");
+      return;
+    }
+    entries = parsed;
+  } catch {
+    console.error("[pancode:boot] Corrupt runs.json (parse failed). Will be recreated on first dispatch.");
+    return;
+  }
+
+  const now = new Date().toISOString();
+  let reaped = 0;
+
+  for (const entry of entries) {
+    if (typeof entry !== "object" || entry === null) continue;
+    const record = entry as Record<string, unknown>;
+    // Skip session boundary markers (they have type "session_start" / "session_end").
+    if (record.type === "session_start" || record.type === "session_end") continue;
+    if (record.status === "running" || record.status === "pending") {
+      record.status = "interrupted";
+      record.completedAt = now;
+      reaped++;
+    }
+  }
+
+  if (reaped > 0) {
+    try {
+      atomicWriteJsonSync(runsPath, entries);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[pancode:boot] Failed to persist orphan cleanup: ${msg}`);
+    }
+    console.error(`[pancode:boot] Reaped ${reaped} orphaned run(s) from previous session.`);
+  }
 }
 
 export async function runOrchestratorEntry(): Promise<void> {
@@ -191,6 +258,9 @@ export async function runOrchestratorEntry(): Promise<void> {
     return;
   }
 
+  // Pi SDK interop environment variables.
+  // These control the vendored Pi SDK and must keep their PI_* prefix.
+  // PanCode-owned env vars use the PANCODE_* prefix exclusively.
   process.env.PI_SKIP_VERSION_CHECK = "1";
 
   // Resolve preset before config so preset values feed into overrides.
@@ -201,7 +271,7 @@ export async function runOrchestratorEntry(): Promise<void> {
   let presetWorkerModel: string | null = null;
   let presetScoutModel: string | null = null;
 
-  // Ensure presets.yaml exists (seeds defaults on first run).
+  // Ensure panpresets.yaml exists (seeds defaults on first run).
   // PANCODE_HOME is set by loader.ts before this entry point runs.
   const pancodeHomeForPresets = process.env.PANCODE_HOME;
   if (pancodeHomeForPresets) {
@@ -211,7 +281,7 @@ export async function runOrchestratorEntry(): Promise<void> {
   if (args.preset && pancodeHomeForPresets) {
     const preset = loadPreset(pancodeHomeForPresets, args.preset);
     if (!preset) {
-      console.error(`[pancode] Unknown preset: ${args.preset}. Check ~/.pancode/presets.yaml`);
+      console.error(`[pancode] Unknown preset: ${args.preset}. Check ~/.pancode/panpresets.yaml`);
       process.exit(1);
     }
     presetModel = preset.model;
@@ -248,7 +318,19 @@ export async function runOrchestratorEntry(): Promise<void> {
   process.env.PANCODE_THEME = config.theme;
   process.env.PANCODE_RUNTIME_ROOT = config.runtimeRoot;
 
+  // --fresh: wipe runtime state before boot so the dashboard starts clean.
+  if (args.fresh) {
+    console.log("[pancode] --fresh: clearing runtime state...");
+    resetRuntimeState(config.packageRoot, { quiet: false });
+  }
+
   ensureProjectRuntime(config);
+
+  // Reap orphaned runs from a previous session before domains initialize.
+  // Any runs left in "running" or "pending" from a crashed or killed session
+  // are marked "interrupted" so the ledger is accurate at boot.
+  // RunLedger stores runs.json in <packageRoot>/.pancode/ (not the runtime/ subdir).
+  reapOrphanRuns(join(config.packageRoot, ".pancode"));
 
   const bootPhases: BootPhase[] = [];
 
@@ -376,6 +458,32 @@ export async function runOrchestratorEntry(): Promise<void> {
 
   printBootTimingTable(bootMode, bootPhases);
 
+  // Export boot timing data so the /perf command can display it.
+  const phaseRecords: BootPhaseRecord[] = bootPhases.map((p) => ({
+    name: p.name,
+    label: p.label,
+    durationMs: p.endMs - p.startMs,
+  }));
+  const totalBootMs = phaseRecords.reduce((sum, p) => sum + p.durationMs, 0);
+  const budgetMs = Number.parseInt(process.env.PANCODE_STARTUP_BUDGET_MS ?? "", 10) || DEFAULT_STARTUP_BUDGET_MS;
+  const budgetExceeded = totalBootMs > budgetMs;
+
+  setBootTimings({
+    mode: bootMode,
+    phases: phaseRecords,
+    totalMs: totalBootMs,
+    budgetMs,
+    budgetExceeded,
+  });
+
+  if (budgetExceeded) {
+    const slowest = phaseRecords.reduce((a, b) => (b.durationMs > a.durationMs ? b : a));
+    process.stderr.write(
+      `[pancode:boot] WARNING: Startup took ${totalBootMs.toFixed(0)}ms, exceeding budget of ${budgetMs}ms. ` +
+        `Slowest phase: ${slowest.label} (${slowest.durationMs.toFixed(0)}ms).\n`,
+    );
+  }
+
   // -----------------------------------------------------------------------
   // Background discovery (warm boot only)
   // -----------------------------------------------------------------------
@@ -438,10 +546,15 @@ export async function runOrchestratorEntry(): Promise<void> {
     process.exit(0);
   };
 
+  // Install SIGINT double-tap: first Ctrl+C gracefully shuts down,
+  // second Ctrl+C within 3 seconds forces immediate exit.
+  const removeSigintHandler = installSigintDoubleTap(shutdownCoordinator);
+
   process.on("SIGTERM", handleSigterm);
   try {
     await shell.run();
   } finally {
+    removeSigintHandler();
     process.off("SIGTERM", handleSigterm);
     if (!shutdownCoordinator.isDraining()) {
       await shutdownCoordinator.execute();

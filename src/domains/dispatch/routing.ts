@@ -1,6 +1,8 @@
 import { BusChannel, type WarningEvent } from "../../core/bus-events";
 import { sharedBus } from "../../core/shared-bus";
 import { agentRegistry } from "../agents";
+import { workerPool } from "../agents/worker-pool";
+import { classifyModelTier, deriveProviderHint } from "../prompts/tiering";
 import { type SamplingPreset, findModelProfile, getSamplingPreset } from "../providers";
 
 export interface WorkerRouting {
@@ -11,6 +13,7 @@ export interface WorkerRouting {
   runtime: string; // Runtime ID from agent spec
   runtimeArgs: string[]; // Extra args from agent spec
   readonly: boolean; // From agent spec
+  workerId: string | null; // PanWorker ID if resolved from pool
 }
 
 function getWorkerModel(): string | null {
@@ -29,10 +32,9 @@ function resolveModelSampling(model: string | null, presetName: string | undefin
 
   const sampling = getSamplingPreset(providerId, modelId, presetName) ?? null;
   if (!sampling) {
-    const message = `Sampling preset "${presetName}" not found for ${providerId}/${modelId}. Worker will use model defaults.`;
-    console.error(`[pancode:routing] ${message}`);
-    // Also surface this in the TUI so the user can correct agents.yaml without checking stderr.
-    sharedBus.emit(BusChannel.WARNING, { source: "dispatch", message } satisfies WarningEvent);
+    // Missing presets are expected for local models that have no sampling profiles.
+    // Log at debug level to stderr only; do not surface in the TUI.
+    console.error(`[pancode:routing] Sampling preset "${presetName}" not found for ${providerId}/${modelId}. Using model defaults.`);
   }
   return sampling;
 }
@@ -50,6 +52,7 @@ export function resolveWorkerRouting(agentName: string): WorkerRouting {
       runtime: "pi",
       runtimeArgs: [],
       readonly: false,
+      workerId: null,
     };
   }
 
@@ -69,6 +72,40 @@ export function resolveWorkerRouting(agentName: string): WorkerRouting {
     }
   }
 
+  // Tier advisory: warn when the resolved model is below the agent's recommended tier.
+  if (spec.tier !== "any" && model) {
+    const slashIdx = model.indexOf("/");
+    if (slashIdx !== -1) {
+      const profile = findModelProfile(model.slice(0, slashIdx), model.slice(slashIdx + 1));
+      if (profile) {
+        const hint = deriveProviderHint(model.slice(0, slashIdx));
+        const modelTier = classifyModelTier(profile.capabilities, hint, profile.family);
+        const tierRank: Record<string, number> = { frontier: 3, mid: 2, small: 1 };
+        const requiredRank = tierRank[spec.tier] ?? 0;
+        const actualRank = tierRank[modelTier] ?? 0;
+        if (actualRank < requiredRank) {
+          const message = `Agent "${agentName}" recommends tier "${spec.tier}" but model ${model} is "${modelTier}". Results may be degraded.`;
+          console.error(`[pancode:routing] ${message}`);
+          sharedBus.emit(BusChannel.WARNING, { source: "dispatch", message } satisfies WarningEvent);
+          if (process.env.PANCODE_STRICT_TIERS === "1") {
+            throw new Error(`Dispatch blocked: ${message}`);
+          }
+        }
+      }
+    }
+  }
+
+  // Consult the worker pool for the best available worker (advisory).
+  const bestWorker = workerPool.bestForAgent(agentName);
+  const workerId = bestWorker?.id ?? null;
+
+  // If the pool has a better model suggestion, log it (advisory only).
+  if (bestWorker?.model && !spec.model) {
+    console.error(
+      `[pancode:routing] Pool suggests model ${bestWorker.model} for ${agentName} (score: ${bestWorker.score.overall.toFixed(3)})`,
+    );
+  }
+
   return {
     model,
     tools: spec.tools,
@@ -77,5 +114,6 @@ export function resolveWorkerRouting(agentName: string): WorkerRouting {
     runtime: spec.runtime,
     runtimeArgs: spec.runtimeArgs,
     readonly: spec.readonly,
+    workerId,
   };
 }

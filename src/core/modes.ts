@@ -5,7 +5,7 @@
 import type { PanCodeThinkingLevel } from "./thinking";
 import { ToolName } from "./tool-names";
 
-export type OrchestratorMode = "capture" | "plan" | "build" | "ask" | "review";
+export type OrchestratorMode = "admin" | "plan" | "build" | "review";
 
 export interface ModeDefinition {
   id: OrchestratorMode;
@@ -21,14 +21,14 @@ export interface ModeDefinition {
 
 export const MODE_DEFINITIONS: ModeDefinition[] = [
   {
-    id: "capture",
-    name: "Capture",
+    id: "admin",
+    name: "Admin",
     color: "#3b82f6",
-    description: "Log tasks and ideas. No dispatch, no planning.",
-    dispatchEnabled: false,
-    shadowEnabled: false,
+    description: "PanCode God Mode. Full system management, configuration, and diagnostic dispatch.",
+    dispatchEnabled: true,
+    shadowEnabled: true,
     mutationsAllowed: false,
-    reasoningLevel: "medium",
+    reasoningLevel: "xhigh",
   },
   {
     id: "plan",
@@ -51,16 +51,6 @@ export const MODE_DEFINITIONS: ModeDefinition[] = [
     reasoningLevel: "medium",
   },
   {
-    id: "ask",
-    name: "Ask",
-    color: "#fdac53",
-    description: "Questions and research. Readonly workers only.",
-    dispatchEnabled: true,
-    shadowEnabled: true,
-    mutationsAllowed: false,
-    reasoningLevel: "low",
-  },
-  {
     id: "review",
     name: "Review",
     color: "#dc5663",
@@ -72,7 +62,11 @@ export const MODE_DEFINITIONS: ModeDefinition[] = [
   },
 ];
 
-export const MODE_ORDER: OrchestratorMode[] = ["capture", "plan", "build", "ask", "review"];
+/** Full set of modes including admin. Used for lookup and /modes command. */
+export const MODE_ORDER: OrchestratorMode[] = ["admin", "plan", "build", "review"];
+
+/** Shift+tab cycle excludes admin (Alt+A only). */
+export const CYCLE_ORDER: OrchestratorMode[] = ["plan", "build", "review"];
 
 let currentMode: OrchestratorMode = "build";
 
@@ -84,20 +78,14 @@ export function setCurrentMode(mode: OrchestratorMode): void {
   currentMode = mode;
 }
 
-export function cycleMode(direction: 1 | -1 = 1): OrchestratorMode {
-  const idx = MODE_ORDER.indexOf(currentMode);
-  const next = (idx + direction + MODE_ORDER.length) % MODE_ORDER.length;
-  currentMode = MODE_ORDER[next];
-  return currentMode;
-}
-
 /**
  * Returns the tool names that should be active for a given mode.
  * Called by the UI extension when mode changes to gate tool visibility.
  *
  * Built-in tools: read, bash, grep, find, ls, edit, write
  * Extension tools: shadow_explore, dispatch_agent, batch_dispatch,
- *   dispatch_chain, task_write, task_check, task_update, task_list
+ *   dispatch_chain, task_write, task_check, task_update, task_list,
+ *   pan_read_config, pan_apply_config
  */
 export function getToolsetForMode(mode: OrchestratorMode): string[] {
   const readonly = [ToolName.READ, ToolName.BASH, ToolName.GREP, ToolName.FIND, ToolName.LS];
@@ -105,18 +93,17 @@ export function getToolsetForMode(mode: OrchestratorMode): string[] {
   const shadow = [ToolName.SHADOW_EXPLORE];
   const tasks = [ToolName.TASK_WRITE, ToolName.TASK_CHECK, ToolName.TASK_UPDATE, ToolName.TASK_LIST];
   const dispatch = [ToolName.DISPATCH_AGENT, ToolName.BATCH_DISPATCH, ToolName.DISPATCH_CHAIN];
+  const config = [ToolName.PAN_READ_CONFIG, ToolName.PAN_APPLY_CONFIG];
 
   switch (mode) {
-    case "capture":
-      return [...tasks];
+    case "admin":
+      return [...readonly, ...shadow, ...tasks, ...dispatch, ...config];
     case "plan":
-      return [...readonly, ...shadow, ...tasks];
+      return [...readonly, ...shadow, ...tasks, ...config];
     case "build":
-      return [...mutable, ...shadow, ...tasks, ...dispatch];
-    case "ask":
-      return [...readonly, ...shadow];
+      return [...mutable, ...shadow, ...tasks, ...dispatch, ...config];
     case "review":
-      return [...readonly, ...shadow, ...dispatch];
+      return [...readonly, ...shadow, ...dispatch, ...config];
   }
 }
 

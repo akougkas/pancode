@@ -15,6 +15,7 @@ export type PromptRole = "orchestrator" | "worker" | "scout";
  */
 export type FragmentCategory =
   | "identity"
+  | "constitution"
   | "mode"
   | "dispatch"
   | "safety"
@@ -25,6 +26,7 @@ export type FragmentCategory =
 /** Ordered category list for compilation. Identity is highest priority. */
 export const CATEGORY_ORDER: readonly FragmentCategory[] = [
   "identity",
+  "constitution",
   "mode",
   "dispatch",
   "safety",
@@ -49,6 +51,8 @@ export interface Fragment {
   readonly tiers: readonly ModelTier[];
   /** Which orchestrator modes include this fragment. Empty array means all modes. */
   readonly modes: readonly OrchestratorMode[];
+  /** Which runtimes include this fragment. Empty array means all runtimes. */
+  readonly runtimes?: readonly string[];
   /** Category determines ordering and budget priority. */
   readonly category: FragmentCategory;
   /** Pre-computed token estimate for budget enforcement. */
@@ -64,6 +68,8 @@ export interface CompilationContext {
   readonly role: PromptRole;
   readonly tier: ModelTier;
   readonly mode: OrchestratorMode;
+  /** Runtime identifier for runtime-specific fragment filtering. */
+  readonly runtime?: string;
   /** Template variables for ${VAR} expansion in fragment text. */
   readonly variables: Readonly<Record<string, string>>;
   /** Maximum token budget for the compiled output. */

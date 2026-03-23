@@ -12,7 +12,7 @@ export interface TerminationCheck {
 
 export interface RunStatusEntry {
   id: string;
-  status: "running" | "done" | "error" | "timeout" | "cancelled" | "interrupted";
+  status: "running" | "done" | "error" | "timeout" | "cancelled" | "interrupted" | "budget_exceeded";
 }
 
 export class TerminationPolicy {
@@ -145,3 +145,40 @@ export class ShutdownCoordinator {
 }
 
 export const shutdownCoordinator = new ShutdownCoordinator();
+
+/**
+ * Install a SIGINT double-tap handler on the process.
+ *
+ * First Ctrl+C triggers graceful shutdown via ShutdownCoordinator (SIGTERM to
+ * workers, flush state, cleanup). A second Ctrl+C within `windowMs` forces an
+ * immediate exit so users are never stuck in a hung session.
+ *
+ * Returns a cleanup function that removes the listener.
+ */
+export function installSigintDoubleTap(coordinator: ShutdownCoordinator, windowMs = 3000): () => void {
+  let firstSigintTs = 0;
+  let shutdownInProgress = false;
+
+  const handler = () => {
+    const now = Date.now();
+
+    // Second SIGINT within the window: force exit immediately.
+    if (shutdownInProgress && now - firstSigintTs < windowMs) {
+      console.error("\n[pancode] Force exit (second interrupt).");
+      process.exit(1);
+    }
+
+    // First SIGINT: start graceful shutdown.
+    firstSigintTs = now;
+    shutdownInProgress = true;
+    console.error("\n[pancode] Shutting down gracefully. Press Ctrl+C again to force exit.");
+    coordinator.execute().then(() => {
+      process.exit(0);
+    });
+  };
+
+  process.on("SIGINT", handler);
+  return () => {
+    process.off("SIGINT", handler);
+  };
+}

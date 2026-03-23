@@ -17,6 +17,9 @@
 
 export type WorkerStatus = "pending" | "running" | "done" | "error" | "cancelled" | "timeout" | "interrupted";
 
+/** Health state classification from heartbeat monitoring. */
+export type { HealthState } from "../../core/bus-events";
+
 export interface LiveWorkerState {
   runId: string;
   agent: string;
@@ -32,6 +35,7 @@ export interface LiveWorkerState {
   currentToolArgs: string | null; // Truncated preview of current tool args
   recentTools: string[]; // Ring buffer of recently completed tools (max 5)
   toolCount: number; // Total tool calls observed
+  healthState: "healthy" | "stale" | "dead" | "recovered" | null; // Heartbeat health classification
 }
 
 // ---------------------------------------------------------------------------
@@ -68,6 +72,7 @@ export function trackWorkerStart(
     currentToolArgs: null,
     recentTools: [],
     toolCount: 0,
+    healthState: null,
   });
 }
 
@@ -90,6 +95,13 @@ export function updateWorkerProgress(
     if (currentToolArgs !== undefined) worker.currentToolArgs = currentToolArgs;
     if (recentTools !== undefined) worker.recentTools = recentTools;
     if (toolCount !== undefined) worker.toolCount = toolCount;
+  }
+}
+
+export function updateWorkerHealth(runId: string, healthState: "healthy" | "stale" | "dead" | "recovered"): void {
+  const worker = liveWorkers.get(runId);
+  if (worker) {
+    worker.healthState = healthState;
   }
 }
 

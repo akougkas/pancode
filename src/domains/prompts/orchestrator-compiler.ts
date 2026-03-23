@@ -10,7 +10,7 @@ import { classifyModelTier, deriveProviderHint } from "./tiering";
 import type { CompilationContext, CompiledPrompt, ModelTier } from "./types";
 
 /** Token budget for PanCode's orchestrator content (identity + mode + dispatch + ...). */
-const ORCHESTRATOR_PANCODE_BUDGET = 800;
+const ORCHESTRATOR_PANCODE_BUDGET = 4096;
 
 /** Last compilation result for debugging via /prompt-debug. */
 let lastCompilation: CompiledPrompt | null = null;

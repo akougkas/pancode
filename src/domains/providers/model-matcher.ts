@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import YAML from "yaml";
 import type { DiscoveredModel, ModelCapabilities } from "./engines/types";
@@ -83,6 +83,134 @@ export function loadModelKnowledgeBase(modelsDir: string): ModelFamilyProfile[] 
   }
 
   return profiles;
+}
+
+// ---------------------------------------------------------------------------
+// Registry metadata: avoid lists, recommendations, context caps, and quirks.
+// Loaded from models/registry-metadata.yaml alongside the family profiles.
+// ---------------------------------------------------------------------------
+
+export interface AvoidEntry {
+  pattern: string;
+  reason: string;
+}
+
+export interface RecommendedEntry {
+  family: string;
+  variant: string;
+  reason: string;
+}
+
+export interface ContextCapEntry {
+  pattern: string;
+  max_context: number;
+  reason: string;
+}
+
+export interface RegistryMetadata {
+  avoid: AvoidEntry[];
+  recommended: Record<string, RecommendedEntry[]>;
+  context_caps: ContextCapEntry[];
+}
+
+const EMPTY_REGISTRY: RegistryMetadata = { avoid: [], recommended: {}, context_caps: [] };
+
+export function loadRegistryMetadata(modelsDir: string): RegistryMetadata {
+  const filePath = join(modelsDir, "registry-metadata.yaml");
+  if (!existsSync(filePath)) return EMPTY_REGISTRY;
+
+  try {
+    const content = readFileSync(filePath, "utf8");
+    const parsed = YAML.parse(content) as Partial<RegistryMetadata>;
+    return {
+      avoid: Array.isArray(parsed.avoid) ? parsed.avoid : [],
+      recommended: parsed.recommended && typeof parsed.recommended === "object" ? parsed.recommended : {},
+      context_caps: Array.isArray(parsed.context_caps) ? parsed.context_caps : [],
+    };
+  } catch (err) {
+    console.error(
+      `[pancode:models] Failed to load registry-metadata.yaml: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    return EMPTY_REGISTRY;
+  }
+}
+
+/**
+ * Check whether a model ID matches any pattern in the avoid list.
+ * Returns the avoid entry if matched, or null if the model is safe to use.
+ */
+export function checkModelAvoided(modelId: string, registry: RegistryMetadata): AvoidEntry | null {
+  const lower = modelId.toLowerCase().replace(/[.\-_\s]/g, "");
+  for (const entry of registry.avoid) {
+    const pattern = entry.pattern.toLowerCase().replace(/[.\-_\s]/g, "");
+    if (lower.includes(pattern)) return entry;
+  }
+  return null;
+}
+
+/**
+ * Get recommended models for a given agent role (orchestrator, worker, scout).
+ */
+export function getRecommendedModels(role: string, registry: RegistryMetadata): RecommendedEntry[] {
+  return registry.recommended[role] ?? [];
+}
+
+/**
+ * Apply context window caps from the registry. If the model's reported or
+ * profile-based context window exceeds a known-accurate cap, clamp it.
+ * Prevents models that over-report their context from causing OOM or truncation.
+ */
+function applyContextCap(modelId: string, contextWindow: number | null, registry: RegistryMetadata): number | null {
+  if (contextWindow === null) return null;
+  const lower = modelId.toLowerCase().replace(/[.\-_\s]/g, "");
+  for (const cap of registry.context_caps) {
+    const pattern = cap.pattern.toLowerCase().replace(/[.\-_\s]/g, "");
+    if (lower.includes(pattern) && contextWindow > cap.max_context) {
+      return cap.max_context;
+    }
+  }
+  return contextWindow;
+}
+
+/**
+ * Apply model-specific quirks after profile merging.
+ *
+ * Current quirks:
+ * 1. Qwen thinking format on LM Studio: disable enable_thinking (locked decision #52).
+ *    LM Studio does not correctly pass enable_thinking to Qwen models, causing
+ *    infinite thinking token loops.
+ * 2. Unverified tool-calling: if a model is unmatched and has no confirmed
+ *    tool_calling capability, set toolCalling to false.
+ */
+function applyQuirks(profile: MergedModelProfile): MergedModelProfile {
+  const result = { ...profile, capabilities: { ...profile.capabilities }, compat: { ...profile.compat } };
+
+  // Quirk 1: Qwen thinking format on LM Studio disables thinking.
+  // The LM Studio engine cannot properly handle the enable_thinking parameter
+  // for Qwen-family models, resulting in infinite thinking token loops.
+  if (result.compat.thinkingFormat === "qwen" && result.engine === "lmstudio") {
+    result.compat.thinkingFormat = null;
+    result.thinkingFormat = null;
+    result.capabilities.thinkingFormat = null;
+  }
+
+  // Quirk 2: Unmatched models without verified tool-calling get it disabled.
+  if (result.matchType === "unmatched" && result.capabilities.toolCalling === null) {
+    result.capabilities.toolCalling = false;
+  }
+
+  return result;
+}
+
+// Module-level registry metadata, set during discovery alongside the knowledge base.
+let registryMetadataCache: RegistryMetadata = EMPTY_REGISTRY;
+
+export function setRegistryMetadata(metadata: RegistryMetadata): void {
+  registryMetadataCache = metadata;
+}
+
+export function getRegistryMetadata(): RegistryMetadata {
+  return registryMetadataCache;
 }
 
 export function matchModel(discovered: DiscoveredModel, knowledgeBase: ModelFamilyProfile[]): MergedModelProfile {
@@ -172,8 +300,26 @@ function buildCompat(engine: string, thinkingFormat: string | null): ModelCompat
 export function matchAllModels(
   discovered: DiscoveredModel[],
   knowledgeBase: ModelFamilyProfile[],
+  registry?: RegistryMetadata,
 ): MergedModelProfile[] {
-  return discovered.map((model) => matchModel(model, knowledgeBase));
+  const reg = registry ?? EMPTY_REGISTRY;
+  return discovered.map((model) => {
+    let profile = matchModel(model, knowledgeBase);
+
+    // Apply context window caps from the registry
+    profile = {
+      ...profile,
+      capabilities: {
+        ...profile.capabilities,
+        contextWindow: applyContextCap(profile.modelId, profile.capabilities.contextWindow, reg),
+      },
+    };
+
+    // Apply model-specific quirks
+    profile = applyQuirks(profile);
+
+    return profile;
+  });
 }
 
 export function writeModelCacheYaml(profiles: MergedModelProfile[], pancodeHome: string): void {
@@ -194,8 +340,10 @@ export function writeModelCacheYaml(profiles: MergedModelProfile[], pancodeHome:
   };
 
   const filePath = join(pancodeHome, "model-cache.yaml");
+  const tempPath = `${filePath}.tmp`;
   mkdirSync(dirname(filePath), { recursive: true });
-  writeFileSync(filePath, YAML.stringify(serializable), "utf8");
+  writeFileSync(tempPath, YAML.stringify(serializable), "utf8");
+  renameSync(tempPath, filePath);
 }
 
 // Default cache TTL: 4 hours. Fresh homelab configs rarely change mid-session.

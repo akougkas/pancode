@@ -17,9 +17,16 @@ export function renderRunBoard(runs: RunEnvelope[]): string[] {
   for (const run of runs) {
     const status = run.status.padEnd(9);
     const agent = run.agent.padEnd(10);
-    const costStr = run.usage.cost > 0 ? ` $${run.usage.cost.toFixed(4)}` : "";
+    const renderCostVal = run.usage.cost;
+    const costStr = renderCostVal != null && renderCostVal > 0 ? ` $${renderCostVal.toFixed(4)}` : "";
     const task = run.task.length > 50 ? `${run.task.slice(0, 47)}...` : run.task;
-    lines.push(`[${run.id}] ${status} ${agent} ${task}${costStr}`);
+    // For failed runs, append the error reason (truncated) so /runs shows why it failed.
+    let errorSuffix = "";
+    if (run.status === "error" && run.error) {
+      const truncated = run.error.length > 60 ? `${run.error.slice(0, 57)}...` : run.error;
+      errorSuffix = `  ${truncated}`;
+    }
+    lines.push(`[${run.id}] ${status} ${agent} ${task}${costStr}${errorSuffix}`);
   }
   return lines;
 }
@@ -34,10 +41,8 @@ export function renderAgentList(agents: AgentSpec[]): string[] {
 }
 
 export function renderMetricsSummary(metrics: SessionMetrics): string[] {
-  return [
-    `Runs: ${metrics.totalRuns}`,
-    `Cost: $${metrics.totalCost.toFixed(4)}`,
-    `Input: ${metrics.totalInputTokens} tokens`,
-    `Output: ${metrics.totalOutputTokens} tokens`,
-  ];
+  const costStr = metrics.totalCost != null ? `$${metrics.totalCost.toFixed(4)}` : "\u2014";
+  const inputStr = metrics.totalInputTokens != null ? `${metrics.totalInputTokens} tokens` : "\u2014";
+  const outputStr = metrics.totalOutputTokens != null ? `${metrics.totalOutputTokens} tokens` : "\u2014";
+  return [`Runs: ${metrics.totalRuns}`, `Cost: ${costStr}`, `Input: ${inputStr}`, `Output: ${outputStr}`];
 }

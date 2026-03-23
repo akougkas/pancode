@@ -58,6 +58,7 @@ interface CodexJsonEvent {
 export class CodexRuntime extends CliRuntime {
   readonly id = "cli:codex";
   readonly displayName = "Codex";
+  override readonly telemetryTier = "silver" as const;
   readonly binaryName = "codex";
 
   buildCliArgs(config: RuntimeTaskConfig): string[] {
@@ -81,6 +82,9 @@ export class CodexRuntime extends CliRuntime {
     if (!config.readonly) {
       args.push("--full-auto");
     }
+
+    // Codex CLI does not support a --timeout flag. The cli-entry.ts wrapper
+    // provides a process-level kill timer as the fallback timeout mechanism.
 
     // Pass through any extra runtime args from agent spec
     args.push(...config.runtimeArgs);
@@ -164,8 +168,8 @@ export class CodexRuntime extends CliRuntime {
       usage: {
         inputTokens: totalInputTokens,
         outputTokens: totalOutputTokens,
-        cacheReadTokens: 0, // Codex does not report cache tokens
-        cacheWriteTokens: 0,
+        cacheReadTokens: null, // Codex does not report cache tokens
+        cacheWriteTokens: null,
         cost: totalCost,
         turns,
       },

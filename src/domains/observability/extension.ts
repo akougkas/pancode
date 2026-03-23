@@ -1,28 +1,42 @@
 import { randomUUID } from "node:crypto";
 import {
-  BusChannel,
   type BudgetUpdatedEvent,
+  BusChannel,
   type RunFinishedEvent,
   type WarningEvent,
+  type WorkerProgressEvent,
 } from "../../core/bus-events";
+import { PanMessageType } from "../../core/message-types";
 import { sharedBus } from "../../core/shared-bus";
 import { PiEvent } from "../../engine/events";
 import { defineExtension } from "../../engine/extensions";
 import { getRunLedger } from "../dispatch";
+import { DispatchLedger, type DispatchLedgerEntry } from "./dispatch-ledger";
 import { runHealthChecks } from "./health";
 import { MetricsLedger, type RunMetric } from "./metrics";
+import { ReceiptWriter, listReceipts, verifyReceipt } from "./receipts";
 import { type AuditTrail, createAuditTrail } from "./telemetry";
 
 let metricsLedger: MetricsLedger | null = null;
+let dispatchLedger: DispatchLedger | null = null;
 let auditTrail: AuditTrail | null = null;
+let receiptWriter: ReceiptWriter | null = null;
 let budgetSnapshot = { totalCost: 0, ceiling: 10 };
 
 export function getMetricsLedger(): MetricsLedger | null {
   return metricsLedger;
 }
 
+export function getDispatchLedger(): DispatchLedger | null {
+  return dispatchLedger;
+}
+
 export function getAuditTrail(): AuditTrail | null {
   return auditTrail;
+}
+
+export function getReceiptWriter(): ReceiptWriter | null {
+  return receiptWriter;
 }
 
 export const extension = defineExtension((pi) => {
@@ -33,7 +47,9 @@ export const extension = defineExtension((pi) => {
     }
     const runtimeRoot = packageRoot ? `${packageRoot}/.pancode` : ".pancode";
     metricsLedger = new MetricsLedger(runtimeRoot);
+    dispatchLedger = new DispatchLedger(runtimeRoot);
     auditTrail = createAuditTrail(1000);
+    receiptWriter = new ReceiptWriter(runtimeRoot);
 
     // Session boundary marker
     const sessionId = process.env.PANCODE_SESSION_ID ?? randomUUID().slice(0, 8);
@@ -73,15 +89,51 @@ export const extension = defineExtension((pi) => {
 
       metricsLedger?.record(metric);
 
-      // Audit trail entry
+      // Persistent dispatch ledger (NDJSON, survives restart).
+      // Look up the run envelope from the dispatch RunLedger for task and error fields.
+      const runEnvelope = getRunLedger()?.get(event.runId);
+      const ledgerEntry: DispatchLedgerEntry = {
+        ts: event.completedAt,
+        runId: event.runId,
+        agent: event.agent,
+        runtime: event.runtime ?? "pi",
+        model: runEnvelope?.model ?? null,
+        task: runEnvelope ? runEnvelope.task.slice(0, 200) : "",
+        status: event.status,
+        exitCode: event.status === "done" ? 0 : 1,
+        wallMs: Math.max(0, durationMs),
+        tokens: {
+          in: event.usage.inputTokens,
+          out: event.usage.outputTokens,
+          cacheRead: event.usage.cacheReadTokens,
+          cacheWrite: event.usage.cacheWriteTokens,
+        },
+        cost: event.usage.cost,
+        turns: event.usage.turns,
+        error: runEnvelope?.error || null,
+      };
+      dispatchLedger?.append(ledgerEntry);
+
+      // Audit trail entry with correlation ID for lifecycle reconstruction.
       const severity = event.status === "error" ? "warn" : "info";
+      const costLabel = event.usage.cost != null ? `$${event.usage.cost.toFixed(4)}` : "--";
       auditTrail?.record({
         domain: "dispatch",
         event: `run-${event.status}`,
         agent: event.agent,
-        detail: `Run ${event.runId}: ${event.status} (${(durationMs / 1000).toFixed(1)}s, $${event.usage.cost.toFixed(4)})`,
+        detail: `Run ${event.runId}: ${event.status} (${(durationMs / 1000).toFixed(1)}s, ${costLabel})`,
         severity,
+        correlationId: event.runId,
       });
+
+      // Write reproducibility receipt for this dispatch.
+      receiptWriter?.writeReceipt(event, runEnvelope);
+    });
+
+    // Subscribe to worker progress for receipt action tracking
+    sharedBus.on(BusChannel.WORKER_PROGRESS, (payload) => {
+      const event = payload as WorkerProgressEvent;
+      receiptWriter?.recordProgress(event);
     });
 
     // Subscribe to warnings
@@ -130,7 +182,7 @@ export const extension = defineExtension((pi) => {
     async handler(args, _ctx) {
       if (!metricsLedger) {
         pi.sendMessage({
-          customType: "pancode-panel",
+          customType: PanMessageType.PANEL,
           content: "Metrics ledger not initialized.",
           display: true,
           details: { title: "PanCode Metrics" },
@@ -141,18 +193,22 @@ export const extension = defineExtension((pi) => {
       const summary = metricsLedger.getSummary();
       const recent = metricsLedger.getRecent(Number.parseInt(args.trim(), 10) || 10);
 
+      const costDisplay = summary.totalCost != null ? `$${summary.totalCost.toFixed(4)}` : "\u2014";
+      const inputDisplay = summary.totalInputTokens != null ? String(summary.totalInputTokens) : "\u2014";
+      const outputDisplay = summary.totalOutputTokens != null ? String(summary.totalOutputTokens) : "\u2014";
+
       const lines: string[] = [
         `Total runs: ${summary.totalRuns}`,
-        `Total cost: $${summary.totalCost.toFixed(4)}`,
-        `Total input tokens: ${summary.totalInputTokens}`,
-        `Total output tokens: ${summary.totalOutputTokens}`,
+        `Total cost: ${costDisplay}`,
+        `Total input tokens: ${inputDisplay}`,
+        `Total output tokens: ${outputDisplay}`,
         "",
       ];
 
       if (recent.length > 0) {
         lines.push("Recent:");
         for (const m of recent) {
-          const costStr = m.cost > 0 ? ` $${m.cost.toFixed(4)}` : "";
+          const costStr = m.cost != null ? ` $${m.cost.toFixed(4)}` : " \u2014";
           const durationStr = m.durationMs > 0 ? ` ${(m.durationMs / 1000).toFixed(1)}s` : "";
           lines.push(`  [${m.runId}] ${m.status} ${m.agent}${costStr}${durationStr}`);
         }
@@ -161,7 +217,7 @@ export const extension = defineExtension((pi) => {
       }
 
       pi.sendMessage({
-        customType: "pancode-panel",
+        customType: PanMessageType.PANEL,
         content: lines.join("\n"),
         display: true,
         details: { title: "PanCode Metrics" },
@@ -175,7 +231,7 @@ export const extension = defineExtension((pi) => {
     async handler(args, _ctx) {
       if (!auditTrail) {
         pi.sendMessage({
-          customType: "pancode-panel",
+          customType: PanMessageType.PANEL,
           content: "Audit trail not initialized.",
           display: true,
           details: { title: "PanCode Audit" },
@@ -186,8 +242,11 @@ export const extension = defineExtension((pi) => {
       const filter = args.trim().toLowerCase();
       let entries = auditTrail.getRecent(50);
 
-      // Filter by domain or severity
-      if (filter === "error" || filter === "warn" || filter === "info") {
+      // Filter by correlation ID (run:<runId>), severity, or domain.
+      if (filter.startsWith("run:")) {
+        const runId = filter.slice(4);
+        entries = auditTrail.getByCorrelationId(runId).slice(-50);
+      } else if (filter === "error" || filter === "warn" || filter === "info") {
         entries = auditTrail.getBySeverity(filter).slice(-50);
       } else if (filter) {
         entries = auditTrail.getByDomain(filter).slice(-50);
@@ -195,7 +254,7 @@ export const extension = defineExtension((pi) => {
 
       if (entries.length === 0) {
         pi.sendMessage({
-          customType: "pancode-panel",
+          customType: PanMessageType.PANEL,
           content: filter ? `No audit entries matching "${filter}".` : "No audit entries recorded.",
           display: true,
           details: { title: "PanCode Audit" },
@@ -218,10 +277,10 @@ export const extension = defineExtension((pi) => {
         lines.push(`${time.padEnd(12)} ${sev} ${domain} ${event} ${detail}`);
       }
 
-      lines.push("", "Filters: /audit <domain>, /audit error, /audit warn, /audit info");
+      lines.push("", "Filters: /audit <domain>, /audit error, /audit warn, /audit info, /audit run:<runId>");
 
       pi.sendMessage({
-        customType: "pancode-panel",
+        customType: PanMessageType.PANEL,
         content: lines.join("\n"),
         display: true,
         details: { title: "PanCode Audit" },
@@ -270,10 +329,90 @@ export const extension = defineExtension((pi) => {
       }
 
       pi.sendMessage({
-        customType: "pancode-panel",
+        customType: PanMessageType.PANEL,
         content: lines.join("\n"),
         display: true,
         details: { title: "PanCode Doctor" },
+      });
+    },
+  });
+
+  // === /receipt ===
+  pi.registerCommand("receipt", {
+    description: "List or verify reproducibility receipts",
+    async handler(args, _ctx) {
+      if (!receiptWriter) {
+        pi.sendMessage({
+          customType: PanMessageType.PANEL,
+          content: "Receipt writer not initialized.",
+          display: true,
+          details: { title: "PanCode Receipts" },
+        });
+        return;
+      }
+
+      const receiptsDir = receiptWriter.getReceiptsDir();
+      const parts = args.trim().split(/\s+/);
+      const subcommand = parts[0]?.toLowerCase() ?? "";
+      const receiptId = parts[1] ?? "";
+
+      if (subcommand === "verify" && receiptId) {
+        const result = verifyReceipt(receiptsDir, receiptId);
+        const statusLabel =
+          result.status === "PASS" ? "PASS" : result.status === "TAMPERED" ? "TAMPERED" : result.status;
+        const lines: string[] = [`Verification: ${statusLabel}`, "", result.message];
+
+        if (result.receipt && result.status === "PASS") {
+          const r = result.receipt;
+          lines.push(
+            "",
+            `  Run:      ${r.runId}`,
+            `  Agent:    ${r.agent}`,
+            `  Model:    ${r.model ?? "unknown"}`,
+            `  Runtime:  ${r.runtime}`,
+            `  Status:   ${r.status}`,
+            `  Wall:     ${(r.wallMs / 1000).toFixed(1)}s`,
+            `  Cost:     ${r.cost != null ? `$${r.cost.toFixed(4)}` : "n/a"}`,
+          );
+        }
+
+        pi.sendMessage({
+          customType: PanMessageType.PANEL,
+          content: lines.join("\n"),
+          display: true,
+          details: { title: "PanCode Receipt Verify" },
+        });
+        return;
+      }
+
+      // Default: list recent receipts
+      const ids = listReceipts(receiptsDir);
+      if (ids.length === 0) {
+        pi.sendMessage({
+          customType: PanMessageType.PANEL,
+          content: "No receipts found. Receipts are generated after each dispatch completes.",
+          display: true,
+          details: { title: "PanCode Receipts" },
+        });
+        return;
+      }
+
+      const maxShow = 20;
+      const shown = ids.slice(-maxShow);
+      const lines: string[] = [`${ids.length} receipt(s) in ${receiptsDir}:`, ""];
+      for (const id of shown) {
+        lines.push(`  ${id}`);
+      }
+      if (ids.length > maxShow) {
+        lines.push(`  ... and ${ids.length - maxShow} more`);
+      }
+      lines.push("", "Usage: /receipt verify <receipt-id>");
+
+      pi.sendMessage({
+        customType: PanMessageType.PANEL,
+        content: lines.join("\n"),
+        display: true,
+        details: { title: "PanCode Receipts" },
       });
     },
   });

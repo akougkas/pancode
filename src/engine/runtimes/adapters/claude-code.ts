@@ -65,6 +65,7 @@ interface ClaudeCodeJsonResponse {
 export class ClaudeCodeRuntime extends CliRuntime {
   readonly id = "cli:claude-code";
   readonly displayName = "Claude Code";
+  override readonly telemetryTier = "gold" as const;
   readonly binaryName = "claude";
 
   buildCliArgs(config: RuntimeTaskConfig): string[] {
@@ -113,6 +114,8 @@ export class ClaudeCodeRuntime extends CliRuntime {
 
     // Turn limit for bounded execution. Prevents runaway workers.
     // Can be overridden via runtimeArgs: ["--max-turns", "50"].
+    // Claude Code has no --timeout flag. The cli-entry.ts wrapper provides a
+    // process-level kill timer as the fallback timeout mechanism.
     if (!config.runtimeArgs.includes("--max-turns")) {
       args.push("--max-turns", String(DEFAULT_MAX_TURNS));
     }
@@ -136,7 +139,14 @@ export class ClaudeCodeRuntime extends CliRuntime {
         exitCode,
         result: stdout.trim(),
         error: exitCode !== 0 ? stderr.trim() || `Claude Code exited with code ${exitCode}` : "",
-        usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, cost: 0, turns: 0 },
+        usage: {
+          inputTokens: null,
+          outputTokens: null,
+          cacheReadTokens: null,
+          cacheWriteTokens: null,
+          cost: null,
+          turns: null,
+        },
         model: null,
         runtime: this.id,
       };

@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { atomicWriteTextSync } from "../../core/config-writer";
 import type { AgentRuntime, RuntimeResult, RuntimeTaskConfig, SpawnConfig } from "./types";
 
 /** Threshold for writing system prompts to temp files instead of CLI args. */
@@ -19,7 +20,7 @@ function writePromptTempFile(prefix: string, content: string): string {
   mkdirSync(dir, { recursive: true });
   const filename = `${prefix}-${process.pid}-${Date.now()}-${tempFileCounter++}.txt`;
   const filepath = join(dir, filename);
-  writeFileSync(filepath, content, { encoding: "utf8", mode: 0o600 });
+  atomicWriteTextSync(filepath, content, { mode: 0o600 });
   return filepath;
 }
 
@@ -45,6 +46,7 @@ export class PiRuntime implements AgentRuntime {
   readonly id = "pi";
   readonly displayName = "Pi (native)";
   readonly tier = "native" as const;
+  readonly telemetryTier = "platinum" as const;
 
   getVersion(): string | null {
     return "built-in";
@@ -126,6 +128,7 @@ export class PiRuntime implements AgentRuntime {
       args,
       env: {
         ...samplingEnv,
+        PANCODE_RUN_ID: runId,
         PANCODE_PARENT_PID: String(process.pid),
         PANCODE_SAFETY: process.env.PANCODE_SAFETY ?? "auto-edit",
         PANCODE_BOARD_FILE: join(runtimeRoot, "board.json"),

@@ -1,4 +1,5 @@
 import { BusChannel, type RunFinishedEvent } from "../../core/bus-events";
+import { PanMessageType } from "../../core/message-types";
 import { sharedBus } from "../../core/shared-bus";
 import { PiEvent } from "../../engine/events";
 import { defineExtension } from "../../engine/extensions";
@@ -40,14 +41,18 @@ export const extension = defineExtension((pi) => {
 
     // Register budget admission gate with the dispatch pre-flight pipeline.
     // Scheduling depends on dispatch, so this import direction is legal.
+    // Uses estimated cost (average of past runs) for pre-estimation (test 14b).
     registerPreFlightCheck("budget", () => {
       if (!budgetTracker) return { admit: true };
-      if (budgetTracker.canAdmit()) return { admit: true };
       const state = budgetTracker.getState();
-      return {
-        admit: false,
-        reason: `Budget ceiling reached ($${state.totalCost.toFixed(2)} / $${state.ceiling.toFixed(2)})`,
-      };
+      const estimatedCost = state.runsCount > 0 ? state.totalCost / state.runsCount : 0;
+      if (!budgetTracker.canAdmit(estimatedCost)) {
+        return {
+          admit: false,
+          reason: `Budget ceiling would be exceeded (spent: $${state.totalCost.toFixed(2)}, estimated next: $${estimatedCost.toFixed(4)}, ceiling: $${state.ceiling.toFixed(2)})`,
+        };
+      }
+      return { admit: true };
     });
 
     // Subscribe to structured run-finished events from dispatch.
@@ -58,6 +63,7 @@ export const extension = defineExtension((pi) => {
       if (!budgetTracker) return;
       const event = payload as RunFinishedEvent;
       if (event.status === "done") {
+        // Pass nullable values directly; BudgetTracker skips null fields.
         budgetTracker.recordCost(event.usage.cost, event.usage.inputTokens, event.usage.outputTokens);
         publishBudgetState();
       }
@@ -69,7 +75,7 @@ export const extension = defineExtension((pi) => {
     async handler(args, _ctx) {
       if (!budgetTracker) {
         pi.sendMessage({
-          customType: "pancode-panel",
+          customType: PanMessageType.PANEL,
           content: "Budget tracker not initialized.",
           display: true,
           details: { title: "PanCode Budget" },
@@ -77,43 +83,43 @@ export const extension = defineExtension((pi) => {
         return;
       }
 
-      const subcommand = args.trim().split(/\s+/);
-
-      if (subcommand[0] === "set" && subcommand[1]) {
-        const newCeiling = Number.parseFloat(subcommand[1]);
-        if (!Number.isFinite(newCeiling) || newCeiling <= 0) {
-          pi.sendMessage({
-            customType: "pancode-panel",
-            content: "Invalid ceiling value. Use: /budget set <amount>",
-            display: true,
-            details: { title: "PanCode Budget" },
-          });
-          return;
-        }
-        budgetTracker.setCeiling(newCeiling);
-        publishBudgetState();
-        pi.sendMessage({
-          customType: "pancode-panel",
-          content: `Budget ceiling set to $${newCeiling.toFixed(2)}`,
-          display: true,
-          details: { title: "PanCode Budget" },
-        });
-        return;
-      }
-
       const state = budgetTracker.getState();
+      // Estimate cost of the next dispatch based on average cost per run.
+      const estimatedNext = state.runsCount > 0 ? state.totalCost / state.runsCount : 0;
+      const remaining = budgetTracker.remaining();
+      const perRunCap = process.env.PANCODE_PER_RUN_BUDGET;
+
       const lines = [
-        `Spent: $${state.totalCost.toFixed(4)} / $${state.ceiling.toFixed(2)}`,
-        `Remaining: $${budgetTracker.remaining().toFixed(4)}`,
-        `Runs: ${state.runsCount}`,
-        `Input tokens: ${state.totalInputTokens}`,
-        `Output tokens: ${state.totalOutputTokens}`,
+        "\u2139 Read-only view. Ask Panos to change any setting, or use keyboard shortcuts.",
         "",
-        "Use /budget set <amount> to adjust ceiling.",
+        `Ceiling:        $${state.ceiling.toFixed(2)}  (say "set budget to $20")`,
+        `Spent:          $${state.totalCost.toFixed(4)}`,
+        `Remaining:      $${remaining.toFixed(4)}`,
+        `Estimated next: $${estimatedNext.toFixed(4)}${estimatedNext > remaining ? " (would exceed remaining)" : ""}`,
+        `Runs:           ${state.runsCount}`,
+        `Input tokens:   ${state.totalInputTokens}`,
+        `Output tokens:  ${state.totalOutputTokens}`,
       ];
 
+      if (perRunCap) {
+        lines.push(`Per-run cap:    $${perRunCap}`);
+      }
+
+      const request = args.trim();
+      if (request) {
+        const amount = request.replace(/^set\s+/, "").trim();
+        const numericAmount = Number.parseFloat(amount.replace(/^\$/, ""));
+        if (Number.isFinite(numericAmount) && numericAmount > 0) {
+          lines.push("", `To apply "$${amount}", ask Panos: "set budget to $${amount}"`);
+        } else {
+          lines.push("", `Invalid budget value "${amount}". Budget must be a positive number.`);
+        }
+      }
+
+      lines.push("", `Tip: "set budget to $20"  "increase budget to $50" | alt+a:admin`);
+
       pi.sendMessage({
-        customType: "pancode-panel",
+        customType: PanMessageType.PANEL,
         content: lines.join("\n"),
         display: true,
         details: { title: "PanCode Budget" },

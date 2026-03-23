@@ -3,6 +3,7 @@ import { extension as agentsExtension, manifest as agentsManifest } from "./agen
 import { extension as dispatchExtension, manifest as dispatchManifest } from "./dispatch";
 import { extension as intelligenceExtension, manifest as intelligenceManifest } from "./intelligence";
 import { extension as observabilityExtension, manifest as observabilityManifest } from "./observability";
+import { extension as panconfigureExtension, manifest as panconfigureManifest } from "./panconfigure";
 import { extension as promptsExtension, manifest as promptsManifest } from "./prompts";
 import { extension as safetyExtension, manifest as safetyManifest } from "./safety";
 import { extension as schedulingExtension, manifest as schedulingManifest } from "./scheduling";
@@ -41,6 +42,10 @@ export const DOMAIN_REGISTRY = {
   intelligence: {
     manifest: intelligenceManifest,
     extension: intelligenceExtension,
+  },
+  panconfigure: {
+    manifest: panconfigureManifest,
+    extension: panconfigureExtension,
   },
   ui: {
     manifest: uiManifest,

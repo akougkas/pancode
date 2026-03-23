@@ -1,20 +1,22 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { atomicWriteJsonSync } from "../../core/config-writer";
+import { DEFAULT_MAX_METRICS } from "../../core/defaults";
 import { type SessionBoundary, isSessionBoundary } from "../../core/ledger-types";
 
-export const MAX_METRIC_ENTRIES = 1000;
+export const MAX_METRIC_ENTRIES = Number(process.env.PANCODE_MAX_METRICS) || DEFAULT_MAX_METRICS;
 
 export interface RunMetric {
   runId: string;
   agent: string;
   status: string;
   runtime: string; // Runtime ID: "pi", "cli:claude-code", "cli:codex", etc.
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadTokens: number;
-  cacheWriteTokens: number;
-  cost: number;
-  turns: number;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  cacheReadTokens: number | null;
+  cacheWriteTokens: number | null;
+  cost: number | null;
+  turns: number | null;
   durationMs: number;
   timestamp: string;
 }
@@ -23,9 +25,12 @@ export type MetricLedgerEntry = RunMetric | SessionBoundary;
 
 export interface SessionMetrics {
   totalRuns: number;
-  totalCost: number;
-  totalInputTokens: number;
-  totalOutputTokens: number;
+  /** Null when no run reported cost data. */
+  totalCost: number | null;
+  /** Null when no run reported input token data. */
+  totalInputTokens: number | null;
+  /** Null when no run reported output token data. */
+  totalOutputTokens: number | null;
   runs: RunMetric[];
 }
 
@@ -49,6 +54,9 @@ export class MetricsLedger {
     }
   }
 
+  // SessionBoundary markers are exempt from the entry count.
+  // Physical array size may exceed MAX_METRIC_ENTRIES by the number of session markers.
+  // This is intentional: markers are lightweight and provide session attribution.
   private trim(): void {
     const metrics = this.getMetrics();
     if (metrics.length <= MAX_METRIC_ENTRIES) return;
@@ -65,9 +73,11 @@ export class MetricsLedger {
   }
 
   persist(): void {
-    const dir = dirname(this.persistPath);
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(this.persistPath, JSON.stringify(this.entries, null, 2), "utf8");
+    try {
+      atomicWriteJsonSync(this.persistPath, this.entries);
+    } catch (err) {
+      console.error(`[pancode:metrics] Failed to persist metrics: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   record(metric: RunMetric): void {
@@ -87,14 +97,14 @@ export class MetricsLedger {
 
   getSummary(): SessionMetrics {
     const metrics = this.getMetrics();
-    let totalCost = 0;
-    let totalInputTokens = 0;
-    let totalOutputTokens = 0;
+    let totalCost: number | null = null;
+    let totalInputTokens: number | null = null;
+    let totalOutputTokens: number | null = null;
 
     for (const m of metrics) {
-      totalCost += m.cost;
-      totalInputTokens += m.inputTokens;
-      totalOutputTokens += m.outputTokens;
+      if (m.cost != null) totalCost = (totalCost ?? 0) + m.cost;
+      if (m.inputTokens != null) totalInputTokens = (totalInputTokens ?? 0) + m.inputTokens;
+      if (m.outputTokens != null) totalOutputTokens = (totalOutputTokens ?? 0) + m.outputTokens;
     }
 
     return {

@@ -6,7 +6,7 @@ import { resolvePackageRoot } from "./core/package-root";
 
 type LoaderTarget = "orchestrator" | "worker" | "cli" | "tmux-start";
 
-const CLI_SUBCOMMANDS = new Set(["up", "down", "sessions", "login", "version"]);
+const CLI_SUBCOMMANDS = new Set(["up", "down", "reset", "sessions", "login", "version"]);
 
 function resolveVersion(packageRoot: string): string {
   try {
@@ -108,8 +108,10 @@ function printUsage(): void {
   console.log(`Usage:
   pancode                     Start a new session in tmux
   pancode --preset <name>     Start with a named preset
+  pancode --fresh             Clear runtime state before starting
   pancode up [<name>]         Attach to a running session
   pancode down [<name>]       Stop a session (--all for all)
+  pancode reset               Clear runtime state (runs, metrics, sessions)
   pancode --sessions          List running sessions
   pancode login               Authenticate with providers
   pancode version             Show version
@@ -120,6 +122,7 @@ Options:
   --provider <name>           Preferred provider
   --cwd <path>                Working directory
   --safety <level>            suggest | auto-edit | full-auto
+  --fresh                     Reset runtime state before boot
   --sessions                  List all PanCode sessions
   --help, -h                  Show this help
   --version, -v               Show version

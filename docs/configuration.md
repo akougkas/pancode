@@ -20,11 +20,11 @@ the sample file.
 
 ## On-Disk Files
 
-- `~/.pancode/presets.yaml` - named boot presets
-- `~/.pancode/agents.yaml` - agent specs and examples
+- `~/.pancode/panpresets.yaml` - named boot presets
+- `~/.pancode/panagents.yaml` - agent specs and examples
 - `~/.pancode/settings.json` - user preferences
-- `~/.pancode/safety-rules.yaml` - custom safety overrides
-- `~/.pancode/providers.yaml` - provider discovery cache
+- `~/.pancode/pansafety.yaml` - custom safety overrides
+- `~/.pancode/panproviders.yaml` - provider discovery cache
 - `~/.pancode/model-cache.yaml` - model profile cache
 - `~/.pancode/runs.json` - run ledger
 - `~/.pancode/metrics.json` - observability metrics
@@ -97,7 +97,7 @@ the sample file.
 
 - `PANCODE_THEME` - active theme name. Read by `src/core/config.ts`,
   `src/core/settings-state.ts`, and `src/domains/ui/extension.ts`.
-  Default `pancode-dark`.
+  Default `dark`.
 - `PANCODE_REASONING` - reasoning preference. Read by `src/core/config.ts`,
   `src/core/settings-state.ts`, and `src/domains/ui/extension.ts`.
   Valid values: `off`, `minimal`, `low`, `medium`, `high`, `xhigh`.
@@ -140,7 +140,7 @@ the sample file.
 - `PANCODE_TOOLS` - boot tool allowlist. Read by `src/core/config.ts`.
 - `PANCODE_PHASE0_TOOLS` - legacy alias for `PANCODE_TOOLS`.
 - `PANCODE_TIMEOUT_MS` - boot timeout override. Read by `src/core/config.ts`.
-- `PANCODE_PHASE0_TIMEOUT_MS` - legacy alias for `PANCODE_TIMEOUT_MS`.
+- `PANCODE_PHASE0_TIMEOUT_MS` - removed legacy alias. Use `PANCODE_TIMEOUT_MS`.
 - `PANCODE_RUNTIME_ROOT` - runtime state directory. Written by
   `src/core/config.ts` and `src/entry/orchestrator.ts`.
 - `PANCODE_AGENT_DIR` - PanCode-managed agent storage directory. Set by
@@ -171,7 +171,7 @@ the sample file.
 
 ## Presets
 
-`~/.pancode/presets.yaml` stores named boot presets. The file is seeded once
+`~/.pancode/panpresets.yaml` stores named boot presets. The file is seeded once
 and never overwritten automatically.
 
 Current built-in presets:
@@ -187,7 +187,7 @@ Read and write helpers live in `src/core/presets.ts`.
 
 ## Agent Specs
 
-`~/.pancode/agents.yaml` defines dispatchable agents.
+`~/.pancode/panagents.yaml` defines dispatchable agents.
 
 Fields:
 
@@ -229,7 +229,7 @@ Fields and defaults:
 
 - `preferredProvider` - `null`
 - `preferredModel` - `null`
-- `theme` - `pancode-dark`
+- `theme` - `dark`
 - `reasoningPreference` - `medium`
 - `safetyMode` - `null`
 - `workerModel` - `null`
@@ -241,7 +241,7 @@ falls back to safe defaults.
 
 ## Safety Rules
 
-`~/.pancode/safety-rules.yaml` lets you extend the safety layer without editing
+`~/.pancode/pansafety.yaml` lets you extend the safety layer without editing
 source code.
 
 Supported keys:

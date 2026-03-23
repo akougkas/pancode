@@ -1,6 +1,6 @@
 {
   "name": "pancode",
-  "version": "0.2.4",
+  "version": "0.3.0",
   "description": "Composable multi-agent runtime for software engineering",
   "type": "module",
   "author": "Anthony Kougkas <akougkas@gmail.com>",
@@ -37,10 +37,13 @@
     "build": "npm run build:pi && tsup",
     "dev": "npm run build:pi && PANCODE_INSIDE_TMUX=1 node --import tsx src/loader.ts",
     "check-boundaries": "node scripts/check-boundaries.mjs",
+    "check-constitution": "tsx scripts/constitution-audit.ts",
     "check-prompts": "node scripts/check-prompts.mjs",
     "lint": "biome check src/",
     "typecheck": "npm run build:pi && node scripts/check-boundaries.mjs && node scripts/check-prompts.mjs && tsc --noEmit",
     "postinstall": "node scripts/link-workspace-packages.cjs",
+    "smoke-test": "tsx scripts/smoke-test-baseline.ts",
+    "verify-tui": "tsx src/domains/ui/tui-verify.ts",
     "prepublishOnly": "npm run build"
   },
   "files": [

@@ -31,6 +31,16 @@ class RuntimeRegistryImpl {
     return this.all().filter((r) => r.isAvailable());
   }
 
+  /** IDs of available runtimes */
+  availableIds(): string[] {
+    return this.available().map((r) => r.id);
+  }
+
+  /** Number of registered runtimes */
+  count(): number {
+    return this.runtimes.size;
+  }
+
   /** Runtimes grouped by tier */
   byTier(): Record<string, AgentRuntime[]> {
     const groups: Record<string, AgentRuntime[]> = {};

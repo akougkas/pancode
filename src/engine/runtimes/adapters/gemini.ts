@@ -66,9 +66,24 @@ function isModelStats(value: unknown): value is GeminiModelStats {
  * - Token tracking from stats object (per-model aggregation)
  * - --sandbox for containerized tool execution
  */
+/**
+ * Map PanCode tool names to Gemini CLI tool names.
+ * Gemini CLI uses PascalCase tool names with ShellTool for bash commands.
+ */
+const GEMINI_TOOL_MAP: Record<string, string> = {
+  read: "ReadFile",
+  write: "WriteFile",
+  edit: "EditFile",
+  bash: "ShellTool",
+  grep: "SearchFile",
+  find: "ListDirectory",
+  ls: "ListDirectory",
+};
+
 export class GeminiRuntime extends CliRuntime {
   readonly id = "cli:gemini";
   readonly displayName = "Gemini CLI";
+  override readonly telemetryTier = "silver" as const;
   readonly binaryName = "gemini";
 
   buildCliArgs(config: RuntimeTaskConfig): string[] {
@@ -88,15 +103,29 @@ export class GeminiRuntime extends CliRuntime {
     }
 
     if (config.readonly) {
-      // Read-only agents: allow only read-oriented tools without confirmation.
-      // ShellTool with read-only patterns avoids accidental writes.
+      // Read-only agents: restrict to read-oriented tools.
       args.push(
         "--allowed-tools",
         "ReadFile,ListDirectory,SearchFile,ShellTool(git status),ShellTool(git diff),ShellTool(git log)",
       );
+    } else if (config.tools) {
+      // Map PanCode tool names to Gemini CLI tool names from config.tools.
+      const mapped = config.tools
+        .split(",")
+        .map((t) => GEMINI_TOOL_MAP[t.trim()])
+        .filter(Boolean);
+      const deduped = [...new Set(mapped)].join(",");
+      if (deduped) {
+        args.push("--allowed-tools", deduped);
+      } else {
+        args.push("--yolo");
+      }
     } else {
       args.push("--yolo");
     }
+
+    // Gemini CLI does not support a --timeout flag. The cli-entry.ts wrapper
+    // provides a process-level kill timer as the fallback timeout mechanism.
 
     // Pass through any extra runtime args from agent spec
     args.push(...config.runtimeArgs);
@@ -125,7 +154,14 @@ export class GeminiRuntime extends CliRuntime {
         exitCode,
         result: stdout.trim(),
         error: exitCode !== 0 ? stderr.trim() || `Gemini CLI exited with code ${exitCode}` : "",
-        usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, cost: 0, turns: 0 },
+        usage: {
+          inputTokens: null,
+          outputTokens: null,
+          cacheReadTokens: null,
+          cacheWriteTokens: null,
+          cost: null,
+          turns: null,
+        },
         model: null,
         runtime: this.id,
       };
@@ -158,9 +194,9 @@ export class GeminiRuntime extends CliRuntime {
       usage: {
         inputTokens: totalInputTokens,
         outputTokens: totalOutputTokens,
-        cacheReadTokens: 0,
-        cacheWriteTokens: 0,
-        cost: 0, // Gemini CLI does not report cost
+        cacheReadTokens: null, // Gemini CLI does not report cache tokens
+        cacheWriteTokens: null,
+        cost: null, // Gemini CLI does not report cost
         turns: totalTurns,
       },
       model: detectedModel,

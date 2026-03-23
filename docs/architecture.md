@@ -33,7 +33,8 @@ The actual boot path is:
 +--------------------------------------------------+
 | Domain Layer                                     |
 | safety, session, agents, prompts, dispatch,      |
-| observability, scheduling, intelligence, ui      |
+| observability, scheduling, intelligence,         |
+| panconfigure, ui                                 |
 +--------------------------------------------------+
 | Worker Layer                                     |
 | entry.ts, cli-entry.ts, provider-bridge.ts,      |
@@ -179,7 +180,7 @@ Purpose:
 
 - Enforce autonomy mode and path safety on tool calls
 - Block dispatch admission when scope or loop conditions are violated
-- Load custom YAML safety rules from `.pancode/safety-rules.yaml`
+- Load custom YAML safety rules from `.pancode/pansafety.yaml`
 
 ### session
 
@@ -212,7 +213,7 @@ Files:
 
 Purpose:
 
-- Load `~/.pancode/agents.yaml`
+- Load `~/.pancode/panagents.yaml`
 - Register the agent spec registry
 - Discover runtimes and expose `/agents`, `/runtimes`, and `/skills`
 - Register the orchestrator-internal `shadow_explore` tool

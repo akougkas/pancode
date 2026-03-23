@@ -1,0 +1,55 @@
+family: qwen3.5
+base: Qwen/Qwen3.5-2B
+license: apache-2.0
+
+architecture:
+  total_params: 1.86B
+  active_params: 1.86B
+  type: dense
+  experts: 0
+  experts_per_token: 0
+  context_native: 131072
+
+capabilities:
+  tool_calling: true
+  reasoning: true
+  thinking_default: false
+  thinking_format: qwen
+  vision: false
+
+sampling:
+  coding:
+    temperature: 0.6
+    top_p: 0.95
+    top_k: 20
+    presence_penalty: 0.0
+  general:
+    temperature: 0.7
+    top_p: 0.8
+    top_k: 20
+    presence_penalty: 1.5
+  reasoning:
+    temperature: 1.0
+    top_p: 0.95
+    top_k: 20
+    presence_penalty: 1.5
+
+quantizations:
+  q4_k_m:
+    size_gb: 1.5
+    vram_gb: 3
+  q8_0:
+    size_gb: 2.2
+    vram_gb: 4
+  f16:
+    size_gb: 3.7
+    vram_gb: 6
+
+distributions:
+  gguf:
+    - repo: unsloth/Qwen3.5-2B-GGUF
+    - repo: lmstudio-community/Qwen3.5-2B-GGUF
+
+quirks:
+  thinking_overhead_ms: 4200
+  notes: "Optimal for scout role. 100% tool-use quality at 4.2s average latency."

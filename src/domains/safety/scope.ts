@@ -17,7 +17,7 @@ export type ActionClass =
 
 export type AutonomyMode = "suggest" | "auto-edit" | "full-auto";
 export type SafetyTier = "block" | "allow";
-// "ask" tier deferred to Phase C (requires approval broker)
+// "ask" tier removed in mode overhaul; deferred to Phase C (requires approval broker)
 
 export interface ScopeContract {
   maxLevel: ScopeLevel;

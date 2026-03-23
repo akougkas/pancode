@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import YAML from "yaml";
 
 export interface BashPattern {
   pattern: RegExp;
@@ -13,52 +14,119 @@ export interface SafetyRules {
   noDeletePaths: string[];
 }
 
+/** Candidate file names checked in order. First match wins. */
+const RULES_FILENAMES = ["pansafety.yaml", "safety-rules.yaml"];
+
+/**
+ * Parse the unified `rules:` format used by safety-rules.yaml.
+ * Each entry has { pattern, action, reason, type? }.
+ * type defaults to "path". "bash" entries become bash patterns.
+ * Path entries with action "deny" are treated as read-only path restrictions.
+ * Path entries with action "no-access" are treated as zero-access restrictions.
+ */
+function parseUnifiedRules(
+  // biome-ignore lint/suspicious/noExplicitAny: YAML doc is untyped
+  doc: any,
+  rules: SafetyRules,
+): void {
+  if (!Array.isArray(doc.rules)) return;
+  for (const entry of doc.rules) {
+    if (typeof entry?.pattern !== "string" || typeof entry?.reason !== "string") continue;
+    const ruleType: string = entry.type ?? "path";
+    const action: string = entry.action ?? "deny";
+
+    if (ruleType === "bash") {
+      try {
+        rules.bashPatterns.push({ pattern: new RegExp(entry.pattern), reason: entry.reason });
+      } catch {
+        /* skip invalid regex */
+      }
+      continue;
+    }
+
+    // Default: path rule
+    if (action === "no-access") {
+      rules.zeroAccessPaths.push(entry.pattern);
+    } else if (action === "no-delete") {
+      rules.noDeletePaths.push(entry.pattern);
+    } else {
+      // "deny" and any other action value block writes (read-only)
+      rules.readOnlyPaths.push(entry.pattern);
+    }
+  }
+}
+
+/**
+ * Parse the legacy format used by pansafety.yaml.
+ * Top-level keys: bashToolPatterns, zeroAccessPaths, readOnlyPaths, noDeletePaths.
+ */
+function parseLegacyRules(
+  // biome-ignore lint/suspicious/noExplicitAny: YAML doc is untyped
+  doc: any,
+  rules: SafetyRules,
+): void {
+  if (Array.isArray(doc.bashToolPatterns)) {
+    for (const entry of doc.bashToolPatterns) {
+      if (typeof entry?.pattern === "string" && typeof entry?.reason === "string") {
+        try {
+          rules.bashPatterns.push({ pattern: new RegExp(entry.pattern), reason: entry.reason });
+        } catch {
+          /* skip invalid regex */
+        }
+      }
+    }
+  }
+  if (Array.isArray(doc.zeroAccessPaths)) {
+    rules.zeroAccessPaths = doc.zeroAccessPaths.filter((p: unknown) => typeof p === "string");
+  }
+  if (Array.isArray(doc.readOnlyPaths)) {
+    rules.readOnlyPaths = doc.readOnlyPaths.filter((p: unknown) => typeof p === "string");
+  }
+  if (Array.isArray(doc.noDeletePaths)) {
+    rules.noDeletePaths = doc.noDeletePaths.filter((p: unknown) => typeof p === "string");
+  }
+}
+
 export function loadSafetyRules(packageRoot: string): SafetyRules {
-  const defaults: SafetyRules = {
+  const rules: SafetyRules = {
     bashPatterns: [],
     zeroAccessPaths: [],
     readOnlyPaths: [],
     noDeletePaths: [],
   };
 
-  const rulesPath = join(packageRoot, ".pancode", "safety-rules.yaml");
-  if (!existsSync(rulesPath)) return defaults;
+  // Check candidate file names in order. First existing file wins.
+  let rulesPath: string | null = null;
+  for (const filename of RULES_FILENAMES) {
+    const candidate = join(packageRoot, ".pancode", filename);
+    if (existsSync(candidate)) {
+      rulesPath = candidate;
+      break;
+    }
+  }
+  if (!rulesPath) return rules;
 
   try {
-    // Dynamic import yaml to avoid hard dependency at top level
     const yamlText = readFileSync(rulesPath, "utf8");
-    // Use simple YAML parsing (key: value arrays)
-    // For v1.0, parse manually. Full YAML parser already available via 'yaml' package.
-    const { parse } = require("yaml");
-    const doc = parse(yamlText);
-    if (!doc || typeof doc !== "object") return defaults;
+    const trimmed = yamlText.trim();
+    if (!trimmed) return rules;
+    const doc = YAML.parse(trimmed);
+    if (!doc || typeof doc !== "object") return rules;
 
-    if (Array.isArray(doc.bashToolPatterns)) {
-      for (const entry of doc.bashToolPatterns) {
-        if (typeof entry?.pattern === "string" && typeof entry?.reason === "string") {
-          try {
-            defaults.bashPatterns.push({ pattern: new RegExp(entry.pattern), reason: entry.reason });
-          } catch {
-            /* skip invalid regex */
-          }
-        }
-      }
+    // Detect format: unified `rules:` array vs legacy top-level keys
+    if (Array.isArray(doc.rules)) {
+      parseUnifiedRules(doc, rules);
+    } else {
+      parseLegacyRules(doc, rules);
     }
-
-    if (Array.isArray(doc.zeroAccessPaths)) {
-      defaults.zeroAccessPaths = doc.zeroAccessPaths.filter((p: unknown) => typeof p === "string");
-    }
-    if (Array.isArray(doc.readOnlyPaths)) {
-      defaults.readOnlyPaths = doc.readOnlyPaths.filter((p: unknown) => typeof p === "string");
-    }
-    if (Array.isArray(doc.noDeletePaths)) {
-      defaults.noDeletePaths = doc.noDeletePaths.filter((p: unknown) => typeof p === "string");
-    }
-  } catch {
-    // Rules file is best-effort. Missing or invalid file is non-fatal.
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    process.stderr.write(
+      `[pancode:safety] Failed to parse safety rules ${rulesPath}: ${message}. Using empty rule set.\n`,
+    );
   }
 
-  return defaults;
+  return rules;
 }
 
 export function matchesGlob(path: string, pattern: string): boolean {

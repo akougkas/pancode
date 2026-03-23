@@ -20,6 +20,10 @@ export const ToolName = {
   TASK_UPDATE: "task_update",
   TASK_LIST: "task_list",
 
+  // Config tools (registered by panconfigure/extension.ts)
+  PAN_READ_CONFIG: "pan_read_config",
+  PAN_APPLY_CONFIG: "pan_apply_config",
+
   // Pi SDK built-in tools (referenced by mode gating)
   READ: "read",
   BASH: "bash",

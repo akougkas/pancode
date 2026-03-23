@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import YAML from "yaml";
 import { createLlamaCppConnection } from "./engines/llamacpp";
@@ -103,7 +103,7 @@ function loadCachedProviderUrls(): Set<string> {
   const pancodeHome = process.env.PANCODE_HOME;
   if (!pancodeHome) return new Set();
 
-  const filePath = join(pancodeHome, "providers.yaml");
+  const filePath = join(pancodeHome, "panproviders.yaml");
   try {
     const content = readFileSync(filePath, "utf8");
     const parsed = YAML.parse(content) as { providers?: Array<{ baseUrl?: string }> };
@@ -171,7 +171,9 @@ export function writeProvidersYaml(results: DiscoveryResult[], pancodeHome: stri
     discoveredAt: new Date().toISOString(),
   }));
 
-  const filePath = join(pancodeHome, "providers.yaml");
+  const filePath = join(pancodeHome, "panproviders.yaml");
+  const tempPath = `${filePath}.tmp`;
   mkdirSync(dirname(filePath), { recursive: true });
-  writeFileSync(filePath, YAML.stringify({ providers }), "utf8");
+  writeFileSync(tempPath, YAML.stringify({ providers }), "utf8");
+  renameSync(tempPath, filePath);
 }

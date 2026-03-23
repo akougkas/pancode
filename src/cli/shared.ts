@@ -1,10 +1,19 @@
 import { execSync } from "node:child_process";
+import { createHash } from "node:crypto";
 
 export const EXIT_SUCCESS = 0;
 export const EXIT_FAILURE = 1;
 
 /** Base name for all PanCode tmux sessions. */
 export const PANCODE_SESSION_PREFIX = "pancode";
+
+/**
+ * Generate a short hash suffix from a directory path.
+ * Returns the first 6 hex characters of the SHA-256 digest.
+ */
+export function projectHash(cwd: string): string {
+  return createHash("sha256").update(cwd).digest("hex").slice(0, 6);
+}
 
 export function isTmuxAvailable(): boolean {
   try {
@@ -47,20 +56,28 @@ export function listPancodeSessions(): PancodeSession[] {
 }
 
 /**
- * Find the next available session name. First session is "pancode",
- * subsequent sessions are "pancode-2", "pancode-3", etc.
+ * Find the next available session name. Uses a per-project hash derived from
+ * the working directory so each project gets its own tmux session namespace.
+ *
+ * First session for a project: `pancode-<hash>`.
+ * Subsequent sessions: `pancode-<hash>-2`, `pancode-<hash>-3`, etc.
+ *
+ * When `cwd` is omitted, falls back to the legacy `pancode` / `pancode-N` scheme.
  */
-export function nextSessionName(): string {
+export function nextSessionName(cwd?: string): string {
+  const base = cwd ? `${PANCODE_SESSION_PREFIX}-${projectHash(cwd)}` : PANCODE_SESSION_PREFIX;
   const existing = listPancodeSessions();
-  if (existing.length === 0) return PANCODE_SESSION_PREFIX;
+  const matching = existing.filter((s) => s.name === base || s.name.startsWith(`${base}-`));
+
+  if (matching.length === 0) return base;
 
   const usedNumbers = new Set<number>();
-  usedNumbers.add(1); // "pancode" (no suffix) is implicitly slot 1
-  for (const s of existing) {
-    if (s.name === PANCODE_SESSION_PREFIX) {
+  usedNumbers.add(1); // The base name (no numeric suffix) is implicitly slot 1.
+  for (const s of matching) {
+    if (s.name === base) {
       usedNumbers.add(1);
     } else {
-      const suffix = s.name.slice(PANCODE_SESSION_PREFIX.length + 1);
+      const suffix = s.name.slice(base.length + 1);
       const num = Number.parseInt(suffix, 10);
       if (Number.isFinite(num)) usedNumbers.add(num);
     }
@@ -68,7 +85,7 @@ export function nextSessionName(): string {
 
   let next = 2;
   while (usedNumbers.has(next)) next++;
-  return `${PANCODE_SESSION_PREFIX}-${next}`;
+  return `${base}-${next}`;
 }
 
 /**

@@ -1,14 +1,24 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { atomicWriteJsonSync } from "../../core/config-writer";
+import { DEFAULT_MAX_RUNS } from "../../core/defaults";
 import { type SessionBoundary, isSessionBoundary } from "../../core/ledger-types";
 import type { RuntimeUsage } from "../../engine/runtimes";
 
 export { type SessionBoundary, isSessionBoundary } from "../../core/ledger-types";
 
-export const MAX_RUN_ENTRIES = 500;
+export const MAX_RUN_ENTRIES = Number(process.env.PANCODE_MAX_RUNS) || DEFAULT_MAX_RUNS;
 
-export type RunStatus = "pending" | "running" | "done" | "error" | "timeout" | "cancelled" | "interrupted";
+export type RunStatus =
+  | "pending"
+  | "running"
+  | "done"
+  | "error"
+  | "timeout"
+  | "cancelled"
+  | "interrupted"
+  | "budget_exceeded";
 
 export type RunUsage = RuntimeUsage;
 
@@ -26,6 +36,10 @@ export interface RunEnvelope {
   completedAt: string | null;
   batchId: string | null;
   cwd: string;
+  /** SHA-256 of compiled system prompt, set at dispatch time for receipt generation. */
+  promptHash?: string;
+  /** CSV tool allowlist sent to the worker, set at dispatch time for receipt generation. */
+  workerTools?: string;
 }
 
 export type LedgerEntry = RunEnvelope | SessionBoundary;
@@ -46,7 +60,14 @@ export function createRunEnvelope(
     status: "pending",
     result: "",
     error: "",
-    usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, cost: 0, turns: 0 },
+    usage: {
+      inputTokens: null,
+      outputTokens: null,
+      cacheReadTokens: null,
+      cacheWriteTokens: null,
+      cost: null,
+      turns: null,
+    },
     startedAt: new Date().toISOString(),
     completedAt: null,
     batchId: batchId ?? null,
@@ -68,12 +89,22 @@ export class RunLedger {
     if (!existsSync(this.persistPath)) return;
     try {
       const raw = readFileSync(this.persistPath, "utf8");
-      this.entries = JSON.parse(raw) as LedgerEntry[];
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) {
+        console.error("[pancode:dispatch] Corrupt run ledger (not an array). Starting fresh.");
+        this.entries = [];
+        return;
+      }
+      this.entries = parsed as LedgerEntry[];
     } catch {
+      console.error("[pancode:dispatch] Corrupt run ledger (parse failed). Starting fresh.");
       this.entries = [];
     }
   }
 
+  // SessionBoundary markers are exempt from the entry count.
+  // Physical array size may exceed MAX_RUN_ENTRIES by the number of session markers.
+  // This is intentional: markers are lightweight and provide session attribution.
   private trim(): void {
     const runs = this.getRuns();
     if (runs.length <= MAX_RUN_ENTRIES) return;
@@ -90,10 +121,8 @@ export class RunLedger {
   }
 
   persist(): void {
-    const dir = dirname(this.persistPath);
     try {
-      mkdirSync(dir, { recursive: true });
-      writeFileSync(this.persistPath, JSON.stringify(this.entries, null, 2), "utf8");
+      atomicWriteJsonSync(this.persistPath, this.entries);
     } catch (err) {
       console.error(
         `[pancode:dispatch] Failed to persist run ledger: ${err instanceof Error ? err.message : String(err)}`,
@@ -146,6 +175,9 @@ export class RunLedger {
       if (entry.status === "running" || entry.status === "pending") {
         entry.status = "interrupted";
         entry.completedAt = new Date().toISOString();
+        if (!entry.error) {
+          entry.error = "Session ended while run was in progress";
+        }
       }
     }
     this.persist();

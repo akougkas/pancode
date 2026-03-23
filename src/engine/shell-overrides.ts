@@ -110,12 +110,27 @@ export function installPanCodeShellOverrides(): void {
   }
 
   // === Models ===
+  // /modes (plural) avoids the Pi SDK prefix collision entirely: the SDK's
+  // hardcoded check for "/model" or "/model " never matches "/modes".
+  // The defensive reroute below is kept as a safety net in case future SDK
+  // changes introduce new prefix-matching behavior.
+  const MODE_NAMES = new Set(["admin", "plan", "build", "review"]);
   if (typeof prototype.handleModelCommand === "function") {
     prototype.handleModelCommand = async function handleModelCommand(
       this: ShellPatchedInteractiveMode,
       searchTerm?: string,
     ) {
-      const suffix = searchTerm?.trim() ? ` ${searchTerm.trim()}` : "";
+      // Safety net: if Pi SDK somehow routes /modes as /model with searchTerm
+      // "s" or "s <mode>", reroute to the /modes extension command.
+      const trimmed = searchTerm?.trim() ?? "";
+      if (trimmed === "s" || trimmed.startsWith("s ")) {
+        const possibleMode = trimmed.slice(1).trim().toLowerCase();
+        if (possibleMode === "" || MODE_NAMES.has(possibleMode)) {
+          await routeToShellCommand(this, `/modes ${possibleMode}`.trim());
+          return;
+        }
+      }
+      const suffix = trimmed ? ` ${trimmed}` : "";
       await routeToShellCommand(this, `/models${suffix}`);
     };
   } else {
@@ -171,11 +186,18 @@ export function installPanCodeShellOverrides(): void {
     };
   }
 
+  // === /hotkeys: route to PanCode handler that shows correct extension shortcuts ===
+  if (typeof prototype.handleHotkeysCommand === "function") {
+    prototype.handleHotkeysCommand = function handleHotkeysCommand(this: ShellPatchedInteractiveMode) {
+      void routeToShellCommand(this, "/hotkeys");
+    };
+  }
+
   // Pass-through commands: Pi's hardcoded routing calls these methods directly.
   // We let them execute their Pi behavior unchanged. PanCode owns them visually
   // through the categorized /help but does not need to modify their execution.
   // The methods below are NOT patched: handleExportCommand, handleCopyCommand,
-  // handleHotkeysCommand, showUserMessageSelector, showTreeSelector,
-  // showOAuthSelector, showSessionSelector, shutdown.
+  // showUserMessageSelector, showTreeSelector, showOAuthSelector,
+  // showSessionSelector, shutdown.
   // They retain their original Pi implementations.
 }

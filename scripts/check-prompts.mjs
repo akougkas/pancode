@@ -72,8 +72,10 @@ while ((match = fragmentPattern.exec(fragmentsSource)) !== null) {
   const textContent = textMatch ? textMatch[0] : "";
   const templateVars = [...textContent.matchAll(/\$\{(\w+)\}/g)].map((m) => m[1]);
 
+  const runtimes = parseArrayField(block, "runtimes");
+
   if (id) {
-    fragments.push({ name, id, estimatedTokens, roles, tiers, modes, category, templateVars });
+    fragments.push({ name, id, estimatedTokens, roles, tiers, modes, runtimes, category, templateVars });
   }
 }
 
@@ -105,13 +107,13 @@ for (const f of fragments) {
 
 // 2. Token budget compliance per role/tier
 const BUDGETS = {
-  orchestrator: 800,
-  worker: 500,
-  scout: 250,
+  orchestrator: 4096,
+  worker: 2048,
+  scout: 1024,
 };
 
 const ALL_TIERS = ["frontier", "mid", "small"];
-const ALL_MODES = ["capture", "plan", "build", "ask", "review"];
+const ALL_MODES = ["admin", "plan", "build", "review"];
 
 for (const [role, budget] of Object.entries(BUDGETS)) {
   for (const tier of ALL_TIERS) {
@@ -120,6 +122,8 @@ for (const [role, budget] of Object.entries(BUDGETS)) {
         if (f.roles.length > 0 && !f.roles.includes(role)) return false;
         if (f.tiers.length > 0 && !f.tiers.includes(tier)) return false;
         if (f.modes.length > 0 && !f.modes.includes(mode)) return false;
+        // Runtime-specific fragments only activate for their runtime; exclude from general check
+        if (f.runtimes && f.runtimes.length > 0) return false;
         return true;
       });
       const total = matching.reduce((sum, f) => sum + f.estimatedTokens, 0);

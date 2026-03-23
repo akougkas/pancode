@@ -1,6 +1,6 @@
 # Domains
 
-PanCode has 9 composable domains. Each domain owns its own state. Most
+PanCode has 10 composable domains. Each domain owns its own state. Most
 PanCode-specific slash commands are registered in domain extension files such
 as `src/domains/session/extension.ts` and `src/domains/ui/extension.ts`,
 but some visible slash names are Pi builtins that are hidden or rerouted in
@@ -295,6 +295,35 @@ Dependencies:
 
 - `dispatch`
 - `agents`
+
+## panconfigure
+
+Purpose: Expose configuration parameters as structured tools so the LLM can
+read and apply runtime settings programmatically. Admin-only parameters
+(dispatch timeout, max depth, concurrency) require Admin mode.
+
+Files:
+
+- `src/domains/panconfigure/config-schema.ts`
+- `src/domains/panconfigure/config-service.ts`
+- `src/domains/panconfigure/extension.ts`
+- `src/domains/panconfigure/index.ts`
+- `src/domains/panconfigure/manifest.ts`
+
+Commands registered: none
+
+Tools registered:
+
+- `pan_read_config`
+- `pan_apply_config`
+
+Pi hooks: none
+
+Bus events: none
+
+Dependencies:
+
+- `scheduling`
 
 ## ui
 

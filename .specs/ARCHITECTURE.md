@@ -3,7 +3,7 @@
 ## 1. Approach
 
 This is a clean-room rebuild. The current codebase is about 148 TypeScript
-files and ~17,200 LOC across 9 composable domains plus 6 CLI runtime adapters.
+files and ~17,200 LOC across 10 composable domains plus 6 CLI runtime adapters.
 The new codebase starts from an empty `src/` directory. No migration, no
 backwards compatibility, no import path preservation.
 
@@ -212,7 +212,7 @@ src/
     event-bus.ts                # SafeEventBus wrapper (error-isolating emitter)
     init.ts                     # Global runtime initialization
     ledger-types.ts             # Shared SessionBoundary type
-    modes.ts                    # 5 orchestrator modes with tool gating
+    modes.ts                    # 4 orchestrator modes with tool gating (admin, plan, build, review)
     package-root.ts             # Package/project root discovery
     presets.ts                  # Model preset management
     settings-state.ts           # User preferences persistence
@@ -297,6 +297,13 @@ src/
       budget.ts                 # Token-native cost accounting
       cluster.ts                # Node registration, heartbeat, capacity
       cluster-transport.ts      # HTTP transport for cluster ops
+
+    panconfigure/
+      index.ts                  # Public API barrel
+      manifest.ts               # { name: "panconfigure", dependsOn: ["scheduling"] }
+      extension.ts              # ExtensionFactory: pan_read_config, pan_apply_config tools
+      config-schema.ts          # Config parameter schema definitions
+      config-service.ts         # Config parameter registry and apply logic
 
     ui/
       index.ts                  # Public API barrel
@@ -895,7 +902,7 @@ Subprocess IPC, engine boundary, domain infrastructure, Pi SDK vendoring.
 - models/ (qwen35-a3b.yaml knowledge base)
 
 **Phase A is complete.** TUI boots, local models respond, dispatch works,
-batch dispatch works, all 9 domains load, provider discovery via native
+batch dispatch works, all 10 domains load, provider discovery via native
 SDKs, YAML-driven agents, model knowledge base matching.
 
 ### Phase B: Session Coordination and Dispatch Depth

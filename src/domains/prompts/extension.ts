@@ -1,10 +1,11 @@
 // PanPrompt engine extension.
 // Registers prompt debugging and versioning commands for development iteration.
 
+import { PanMessageType } from "../../core/message-types";
 import { defineExtension } from "../../engine/extensions";
 import { getLastOrchestratorCompilation } from "./orchestrator-compiler";
-import { getRecentWorkerCompilations } from "./worker-compiler";
 import { loadHistory, loadLatestManifest } from "./versioning";
+import { getRecentWorkerCompilations } from "./worker-compiler";
 
 function panel(
   pi: { sendMessage: (msg: { customType: string; content: string; display: boolean; details?: unknown }) => void },
@@ -12,7 +13,7 @@ function panel(
   content: string,
 ): void {
   pi.sendMessage({
-    customType: "pancode-panel",
+    customType: PanMessageType.PANEL,
     content,
     display: true,
     details: { title },

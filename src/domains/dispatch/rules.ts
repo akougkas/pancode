@@ -1,3 +1,5 @@
+import { DEFAULT_AGENT } from "../../core/agent-names";
+
 export interface DispatchContext {
   task: string;
   agent: string;
@@ -25,7 +27,7 @@ export const DEFAULT_DISPATCH_RULES: DispatchRule[] = [
   {
     name: "agent-fallback",
     match: (ctx) => {
-      return { action: "dispatch", agent: ctx.agent || "dev", task: ctx.task };
+      return { action: "dispatch", agent: ctx.agent || DEFAULT_AGENT, task: ctx.task };
     },
   },
 ];
@@ -35,5 +37,5 @@ export function evaluateRules(rules: DispatchRule[], ctx: DispatchContext): Disp
     const result = rule.match(ctx);
     if (result) return result;
   }
-  return { action: "dispatch", agent: ctx.agent || "dev", task: ctx.task };
+  return { action: "dispatch", agent: ctx.agent || DEFAULT_AGENT, task: ctx.task };
 }

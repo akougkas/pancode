@@ -50,6 +50,7 @@ import type { RuntimeResult, RuntimeTaskConfig, SpawnConfig } from "../types";
 export class OpencodeRuntime extends CliRuntime {
   readonly id = "cli:opencode";
   readonly displayName = "opencode";
+  override readonly telemetryTier = "gold" as const;
   readonly binaryName = "opencode";
 
   /**
@@ -82,6 +83,9 @@ export class OpencodeRuntime extends CliRuntime {
     if (config.model) {
       args.push("--model", config.model);
     }
+
+    // opencode run does not support a --timeout flag. The cli-entry.ts wrapper
+    // provides a process-level kill timer as the fallback timeout mechanism.
 
     // Filter out --agent from runtimeArgs since we already handled it
     const filteredArgs = filterHandledArgs(config.runtimeArgs, ["--agent"]);
@@ -136,7 +140,7 @@ export class OpencodeRuntime extends CliRuntime {
     let totalCacheWrite = 0;
     let totalCost = 0;
     let turns = 0;
-    const model: string | null = null;
+    let model: string | null = null;
     let sessionId: string | null = null;
     let lastError = "";
 
@@ -157,6 +161,12 @@ export class OpencodeRuntime extends CliRuntime {
         sessionId = event.sessionID;
       }
 
+      // Extract model from top-level event metadata when available.
+      // opencode includes the model name in event metadata for some event types.
+      if (!model && typeof event.model === "string" && event.model) {
+        model = event.model;
+      }
+
       switch (event.type) {
         case "text":
           if (event.part?.text) {
@@ -167,6 +177,10 @@ export class OpencodeRuntime extends CliRuntime {
         case "step_finish":
           if (event.part) {
             turns++;
+            // Extract model from step_finish metadata if not already captured.
+            if (!model && typeof event.part.model === "string" && event.part.model) {
+              model = event.part.model;
+            }
             const tokens = event.part.tokens;
             if (tokens) {
               totalInputTokens += tokens.input ?? 0;
@@ -224,12 +238,14 @@ interface OpencodeEvent {
   type: string;
   timestamp?: number;
   sessionID?: string;
+  model?: string;
   error?: string;
   part?: {
     type?: string;
     text?: string;
     reason?: string;
     cost?: number;
+    model?: string;
     tool?: string;
     tokens?: {
       total?: number;

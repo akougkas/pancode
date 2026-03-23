@@ -4,12 +4,14 @@
  * Pure functions that take state and return rendered string arrays.
  * No Pi SDK imports. No event subscriptions. Just rendering.
  *
- * Theme coloring is applied through the BoardColorizer interface,
+ * Theme coloring is applied through the TuiColorizer interface,
  * which the widget constructs from Pi theme APIs and passes in.
  * This keeps the renderer free of engine dependencies.
  */
 
 import { truncateToWidth, visibleWidth } from "../../engine/tui";
+import type { TuiColorizer } from "./dashboard-theme";
+import { PLAIN_COLORIZER } from "./dashboard-theme";
 import { formatCost, formatDuration, formatTokenCount, padRight, truncate } from "./widget-utils";
 
 // ---------------------------------------------------------------------------
@@ -18,18 +20,19 @@ import { formatCost, formatDuration, formatTokenCount, padRight, truncate } from
 
 export interface DispatchCardData {
   agent: string;
-  status: "pending" | "running" | "done" | "error" | "cancelled" | "timeout" | "interrupted";
+  status: "pending" | "running" | "done" | "error" | "cancelled" | "timeout" | "interrupted" | "budget_exceeded";
   elapsedMs: number;
   model: string | null;
   taskPreview: string;
   resultPreview?: string; // First meaningful line of worker result (for completed runs)
   runId: string;
   batchId: string | null;
-  cost?: number;
-  inputTokens?: number;
-  outputTokens?: number;
-  turns?: number;
+  cost?: number | null;
+  inputTokens?: number | null;
+  outputTokens?: number | null;
+  turns?: number | null;
   runtime?: string; // Runtime ID for badge display (omit or "pi" for no badge)
+  healthState?: "healthy" | "stale" | "dead" | "recovered" | null; // Heartbeat health classification
 }
 
 export interface AgentStat {
@@ -44,40 +47,19 @@ export interface DispatchBoardState {
   active: DispatchCardData[];
   recent: DispatchCardData[]; // last 5 completed
   totalRuns: number;
-  totalCost: number;
+  totalCost: number | null;
   budgetCeiling: number | null;
-  totalInputTokens: number;
-  totalOutputTokens: number;
-  totalCacheReadTokens?: number;
-  totalCacheWriteTokens?: number;
+  totalInputTokens: number | null;
+  totalOutputTokens: number | null;
+  totalCacheReadTokens?: number | null;
+  totalCacheWriteTokens?: number | null;
   agentStats?: AgentStat[];
 }
 
-// ---------------------------------------------------------------------------
-// Board colorizer (theme abstraction)
-// ---------------------------------------------------------------------------
+/** @deprecated Use TuiColorizer instead. Alias retained for migration. */
+export type BoardColorizer = TuiColorizer;
 
-export interface BoardColorizer {
-  accent(text: string): string;
-  bold(text: string): string;
-  muted(text: string): string;
-  dim(text: string): string;
-  success(text: string): string;
-  error(text: string): string;
-  warning(text: string): string;
-}
-
-const PLAIN: BoardColorizer = {
-  accent: (t) => t,
-  bold: (t) => t,
-  muted: (t) => t,
-  dim: (t) => t,
-  success: (t) => t,
-  error: (t) => t,
-  warning: (t) => t,
-};
-
-function colorizeStatusIcon(icon: string, status: string, c: BoardColorizer): string {
+function colorizeStatusIcon(icon: string, status: string, c: TuiColorizer): string {
   switch (status) {
     case "running":
       return c.accent(icon);
@@ -104,6 +86,7 @@ const STATUS_ICONS: Record<string, string> = {
   cancelled: "\u2298",
   interrupted: "\u2298",
   timeout: "\u2298",
+  budget_exceeded: "\u2298",
 };
 
 const MIN_CARD_WIDTH = 24;
@@ -120,7 +103,7 @@ const INDENT = "  ";
  *
  *   ╭─ Dispatch ─────────────────────────────────╮
  */
-function renderTopBorder(title: string, width: number, c: BoardColorizer): string {
+function renderTopBorder(title: string, width: number, c: TuiColorizer): string {
   const usable = Math.max(0, width - INDENT.length);
   if (usable < 6) return `${INDENT}${c.dim("\u256D")}`;
   // Title text with surrounding dashes: ╭─ Title ─...─╮
@@ -134,7 +117,7 @@ function renderTopBorder(title: string, width: number, c: BoardColorizer): strin
  *
  *   ╰───────────────────────────── 11 runs ──────╯
  */
-function renderBottomBorder(summary: string, width: number, c: BoardColorizer): string {
+function renderBottomBorder(summary: string, width: number, c: TuiColorizer): string {
   const usable = Math.max(0, width - INDENT.length);
   if (usable < 6) return `${INDENT}${c.dim("\u2570")}`;
   if (!summary) {
@@ -152,7 +135,7 @@ function renderBottomBorder(summary: string, width: number, c: BoardColorizer): 
  *
  *   ─────────────────────────────────────────────
  */
-function renderSeparator(width: number, c: BoardColorizer): string {
+function renderSeparator(width: number, c: TuiColorizer): string {
   const usable = Math.max(0, width - INDENT.length - 2);
   return `${INDENT} ${c.dim("\u2500".repeat(usable))}`;
 }
@@ -189,20 +172,42 @@ function calculateGridColumns(cardCount: number, terminalWidth: number): number 
  * └─────────────────────┘
  * ```
  */
-export function renderDispatchCard(card: DispatchCardData, cardWidth: number, c: BoardColorizer = PLAIN): string[] {
+export function renderDispatchCard(
+  card: DispatchCardData,
+  cardWidth: number,
+  c: TuiColorizer = PLAIN_COLORIZER,
+): string[] {
   const inner = Math.max(1, cardWidth - 4);
 
   const statusIcon = STATUS_ICONS[card.status] ?? "\u25CB";
   const elapsed = formatDuration(card.elapsedMs);
-  const statusText = card.status;
+  // Append health indicator for non-healthy running workers.
+  const healthSuffix =
+    card.healthState === "stale"
+      ? " [stale]"
+      : card.healthState === "dead"
+        ? " [dead]"
+        : card.healthState === "recovered"
+          ? " [recovered]"
+          : "";
+  const statusText = `${card.status}${healthSuffix}`;
   const plainPrefix = `${statusIcon} ${statusText}`;
   const gap = Math.max(1, inner - plainPrefix.length - elapsed.length);
   // Pad the full plain line to inner width, then rebuild with colors.
   const plainStatusLine = padRight(`${plainPrefix}${" ".repeat(gap)}${elapsed}`, inner);
   // Compute any trailing padding from padRight (if line was shorter than inner).
   const trailingPad = plainStatusLine.length - `${plainPrefix}${" ".repeat(gap)}${elapsed}`.length;
+  // Use warning color for stale/dead health states.
+  const coloredHealthSuffix =
+    card.healthState === "stale"
+      ? c.warning(" [stale]")
+      : card.healthState === "dead"
+        ? c.error(" [dead]")
+        : card.healthState === "recovered"
+          ? c.success(" [recovered]")
+          : "";
   const statusLine =
-    `${colorizeStatusIcon(statusIcon, card.status, c)} ${c.muted(statusText)}` +
+    `${colorizeStatusIcon(statusIcon, card.status, c)} ${c.muted(card.status)}${coloredHealthSuffix}` +
     `${" ".repeat(gap)}${c.dim(elapsed)}${" ".repeat(Math.max(0, trailingPad))}`;
 
   // Pad plain text first, then apply color to the padded result.
@@ -230,16 +235,17 @@ export function renderDispatchCard(card: DispatchCardData, cardWidth: number, c:
     taskLine = padRight(truncate(card.taskPreview, inner), inner);
   }
 
-  // Card borders use dim for structural elements.
+  // Card borders use dim for structural elements. Rounded corners match
+  // the board and editor border style for visual consistency.
   const hBar = c.dim("\u2500".repeat(cardWidth - 2));
 
   return [
-    c.dim("\u250C") + hBar + c.dim("\u2510"),
+    c.dim("\u256D") + hBar + c.dim("\u256E"),
     c.dim("\u2502 ") + agentLine + c.dim(" \u2502"),
     c.dim("\u2502 ") + statusLine + c.dim(" \u2502"),
     c.dim("\u2502 ") + modelLine + c.dim(" \u2502"),
     c.dim("\u2502 ") + taskLine + c.dim(" \u2502"),
-    c.dim("\u2514") + hBar + c.dim("\u2518"),
+    c.dim("\u2570") + hBar + c.dim("\u256F"),
   ];
 }
 
@@ -247,7 +253,7 @@ export function renderDispatchCard(card: DispatchCardData, cardWidth: number, c:
  * Render a grid of cards arranged in rows.
  * Fills incomplete rows with empty space (not blank cards).
  */
-function renderCardGrid(cards: DispatchCardData[], width: number, c: BoardColorizer = PLAIN): string[] {
+function renderCardGrid(cards: DispatchCardData[], width: number, c: TuiColorizer = PLAIN_COLORIZER): string[] {
   if (cards.length === 0) return [];
 
   const usable = Math.max(MIN_CARD_WIDTH, width - INDENT.length);
@@ -279,14 +285,19 @@ function renderCardGrid(cards: DispatchCardData[], width: number, c: BoardColori
  *
  *   ✓ scout   Found 8 test files      $0.02   3.2s
  */
-function renderRecentRun(card: DispatchCardData, width: number, c: BoardColorizer = PLAIN): string {
+function renderRecentRun(card: DispatchCardData, width: number, c: TuiColorizer = PLAIN_COLORIZER): string {
   const icon = STATUS_ICONS[card.status] ?? "\u2298";
   const coloredIcon = colorizeStatusIcon(icon, card.status, c);
   const agent = c.accent(padRight(card.agent, 8));
   const elapsed = c.dim(formatDuration(card.elapsedMs).padStart(6));
-  const costStr = card.cost && card.cost > 0 ? c.muted(formatCost(card.cost).padStart(8)) : "";
-  const hasCost = card.cost !== undefined && card.cost > 0;
-  const fixedWidth = 20 + (hasCost ? 9 : 0);
+  // Null cost renders as dash; zero cost renders as $0.00; positive cost renders normally.
+  const hasCostData = card.cost !== undefined;
+  const costStr = hasCostData
+    ? card.cost != null
+      ? c.muted(formatCost(card.cost).padStart(8))
+      : c.dim("\u2014".padStart(8))
+    : "";
+  const fixedWidth = 20 + (hasCostData ? 9 : 0);
   const maxTask = Math.max(10, width - fixedWidth);
 
   // Prefer result summary over dispatch prompt. Fall back to task for errored runs
@@ -300,7 +311,7 @@ function renderRecentRun(card: DispatchCardData, width: number, c: BoardColorize
     displayText = c.dim(padRight(truncate(card.taskPreview, maxTask), maxTask));
   }
 
-  return hasCost
+  return hasCostData
     ? `${INDENT}${coloredIcon} ${agent} ${displayText} ${costStr} ${elapsed}`
     : `${INDENT}${coloredIcon} ${agent} ${displayText} ${elapsed}`;
 }
@@ -315,7 +326,7 @@ function renderRecentRun(card: DispatchCardData, width: number, c: BoardColorize
  *
  *   scout  7 runs  100%  avg 12.8s    dev  4 runs  100%  avg 1m12s
  */
-function renderAgentStatsCompact(stats: AgentStat[], width: number, c: BoardColorizer = PLAIN): string[] {
+function renderAgentStatsCompact(stats: AgentStat[], width: number, c: TuiColorizer = PLAIN_COLORIZER): string[] {
   const entries: string[] = [];
 
   for (const stat of stats) {
@@ -346,11 +357,15 @@ function renderAgentStatsCompact(stats: AgentStat[], width: number, c: BoardColo
  * Render the in-board footer section (budget, runs, tokens).
  * Suppresses zero-cost budget to handle local models gracefully.
  */
-export function renderDispatchFooter(state: DispatchBoardState, _width: number, c: BoardColorizer = PLAIN): string[] {
+export function renderDispatchFooter(
+  state: DispatchBoardState,
+  _width: number,
+  c: TuiColorizer = PLAIN_COLORIZER,
+): string[] {
   const parts: string[] = [];
 
-  // Budget: only show when cost is nonzero (API models)
-  if (state.totalCost > 0) {
+  // Budget: show when cost data exists. Null renders as dash.
+  if (state.totalCost != null && state.totalCost > 0) {
     const budget =
       state.budgetCeiling !== null
         ? `$${state.totalCost.toFixed(2)} / $${state.budgetCeiling.toFixed(2)}`
@@ -360,16 +375,18 @@ export function renderDispatchFooter(state: DispatchBoardState, _width: number, 
 
   parts.push(`${c.muted("Runs:")} ${c.dim(String(state.totalRuns))}`);
 
-  const hasTokens = state.totalInputTokens > 0 || state.totalOutputTokens > 0;
-  if (hasTokens) {
-    parts.push(
-      `${c.muted("Tokens:")} ${c.dim(`${formatTokenCount(state.totalInputTokens)} in / ${formatTokenCount(state.totalOutputTokens)} out`)}`,
-    );
+  // Tokens: show actual counts when available, dash when null.
+  const inTok = state.totalInputTokens;
+  const outTok = state.totalOutputTokens;
+  if (inTok != null || outTok != null) {
+    const inStr = inTok != null ? formatTokenCount(inTok) : "\u2014";
+    const outStr = outTok != null ? formatTokenCount(outTok) : "\u2014";
+    parts.push(`${c.muted("Tokens:")} ${c.dim(`${inStr} in / ${outStr} out`)}`);
   }
 
   // Cache hit ratio: cacheRead / (cacheRead + input) when both are nonzero.
   const cacheRead = state.totalCacheReadTokens ?? 0;
-  const cacheInput = state.totalInputTokens;
+  const cacheInput = state.totalInputTokens ?? 0;
   if (cacheRead > 0 && cacheInput > 0) {
     parts.push(`${c.muted("Cache:")} ${c.dim(`${Math.round((cacheRead / (cacheRead + cacheInput)) * 100)}%`)}`);
   }
@@ -423,16 +440,17 @@ export function renderDispatchFooterLine(
 function buildBottomSummary(state: DispatchBoardState): string {
   const parts: string[] = [];
   if (state.totalRuns > 0) parts.push(`${state.totalRuns} runs`);
-  if (state.totalCost > 0) {
+  if (state.totalCost != null && state.totalCost > 0) {
     parts.push(
       state.budgetCeiling !== null
         ? `${formatCost(state.totalCost)} / ${formatCost(state.budgetCeiling)}`
         : formatCost(state.totalCost),
     );
   }
-  const hasTokens = state.totalInputTokens > 0 || state.totalOutputTokens > 0;
-  if (hasTokens) {
-    parts.push(`${formatTokenCount(state.totalInputTokens + state.totalOutputTokens)} tok`);
+  const inTok = state.totalInputTokens ?? 0;
+  const outTok = state.totalOutputTokens ?? 0;
+  if (inTok > 0 || outTok > 0) {
+    parts.push(`${formatTokenCount(inTok + outTok)} tok`);
   }
   return parts.join("  ");
 }
@@ -457,10 +475,14 @@ function buildBottomSummary(state: DispatchBoardState): string {
  *
  * ╰─────────────────────── 11 runs  $0.03 ───────╯
  */
-export function renderDispatchBoard(state: DispatchBoardState, width: number, c: BoardColorizer = PLAIN): string[] {
+export function renderDispatchBoard(
+  state: DispatchBoardState,
+  width: number,
+  c: TuiColorizer = PLAIN_COLORIZER,
+): string[] {
   const lines: string[] = [];
 
-  lines.push(renderTopBorder("Dispatch", width, c));
+  lines.push(renderTopBorder("DISPATCH", width, c));
 
   if (state.active.length > 0) {
     lines.push("");

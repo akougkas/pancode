@@ -1,5 +1,6 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { atomicWriteJsonSync } from "../../core/config-writer";
 
 export interface BudgetState {
   totalCost: number;
@@ -37,15 +38,13 @@ export class BudgetTracker {
   }
 
   persist(): void {
-    const dir = dirname(this.persistPath);
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(this.persistPath, JSON.stringify(this.state, null, 2), "utf8");
+    atomicWriteJsonSync(this.persistPath, this.state);
   }
 
-  recordCost(cost: number, inputTokens: number, outputTokens: number): void {
-    this.state.totalCost += cost;
-    this.state.totalInputTokens += inputTokens;
-    this.state.totalOutputTokens += outputTokens;
+  recordCost(cost: number | null, inputTokens: number | null, outputTokens: number | null): void {
+    if (cost != null) this.state.totalCost += cost;
+    if (inputTokens != null) this.state.totalInputTokens += inputTokens;
+    if (outputTokens != null) this.state.totalOutputTokens += outputTokens;
     this.state.runsCount += 1;
     this.persist();
   }

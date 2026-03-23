@@ -35,46 +35,62 @@ export const PANCODE_SHELL_COMMANDS: readonly PanCodeShellCommand[] = [
   // DISPATCH
   { name: "runs", args: "[count]", description: "Show dispatch run history", category: "dispatch" },
   { name: "batches", description: "Show batch dispatch history", category: "dispatch" },
-  { name: "stoprun", args: "<run-id>", description: "Stop a running dispatch (coming soon)", category: "dispatch" },
-  { name: "cost", description: "Show per-run cost breakdown (coming soon)", category: "dispatch" },
-  { name: "dispatch-insights", description: "Dispatch rule evaluation log (coming soon)", category: "dispatch" },
+  { name: "stoprun", args: "<run-id>", description: "Stop a running dispatch", category: "dispatch" },
+  { name: "cost", description: "Show per-run cost breakdown", category: "dispatch" },
+  { name: "dispatch-insights", description: "Dispatch rule evaluation log", category: "dispatch" },
 
   // AGENTS
   { name: "agents", description: "List registered PanCode agent specs", category: "agents" },
   { name: "runtimes", description: "List agent runtimes with availability status", category: "agents" },
-  { name: "skills", description: "List agent skills (coming soon)", category: "agents" },
+  { name: "skills", description: "List agent skills", category: "agents" },
 
   // OBSERVE
-  { name: "audit", description: "Structured audit trail (coming soon)", category: "observe" },
-  { name: "doctor", description: "Run diagnostic health checks (coming soon)", category: "observe" },
+  { name: "audit", description: "Structured audit trail", category: "observe" },
+  { name: "doctor", description: "Run diagnostic health checks", category: "observe" },
   { name: "metrics", args: "[count]", description: "Show dispatch metrics", category: "observe" },
+  {
+    name: "receipt",
+    args: "[verify <id>]",
+    description: "List or verify reproducibility receipts",
+    category: "observe",
+  },
+  { name: "perf", description: "Show boot phase timing breakdown", category: "observe" },
 
   // SCHEDULE
-  { name: "budget", args: "[set <amount>]", description: "Show or set dispatch budget", category: "schedule" },
+  { name: "budget", description: "Show dispatch budget status", category: "schedule" },
 
   // DISPLAY
   { name: "dashboard", description: "Open the PanCode dashboard", category: "display" },
   { name: "status", description: "Show the PanCode session summary", category: "display" },
   {
     name: "models",
-    args: "[provider | provider/model-id | all]",
-    description: "Show model inventory or switch models",
+    args: "[provider | all]",
+    description: "Show model inventory and active engines",
     category: "display",
   },
-  { name: "settings", args: "[subcommand]", description: "Show or change PanCode configuration", category: "display" },
-  { name: "theme", args: "[name|list]", description: "Inspect or change the active theme", category: "display" },
+  { name: "settings", description: "Show PanCode configuration", category: "display" },
+  { name: "theme", args: "[list]", description: "Show current theme and available themes", category: "display" },
   {
-    name: "mode",
-    args: "[capture|plan|build|ask|review]",
-    description: "Switch orchestrator behavior mode",
+    name: "modes",
+    description: "Show orchestrator behavior modes",
     category: "display",
   },
-  { name: "reasoning", args: "[off|on]", description: "Inspect or change reasoning preference", category: "display" },
+  { name: "reasoning", description: "Show reasoning preference and model capability", category: "display" },
+  {
+    name: "safety",
+    description: "Show current safety level",
+    category: "display",
+  },
   { name: "help", description: "Show PanCode commands", category: "display" },
   { name: "exit", description: "Exit PanCode", category: "display" },
 
   // UTILITY
-  { name: "export", args: "[html|json]", description: "Export session to file", category: "utility" },
+  {
+    name: "export",
+    args: "[path.html|path.jsonl]",
+    description: "Export session to file (Pi SDK passthrough, defaults to HTML)",
+    category: "utility",
+  },
   { name: "copy", description: "Copy last agent message to clipboard", category: "utility" },
   { name: "login", description: "Login with OAuth provider", category: "utility" },
   { name: "logout", description: "Logout from OAuth provider", category: "utility" },
