@@ -701,6 +701,10 @@ export function createCommandHandlers(state: UiCommandState, cb: UiCommandCallba
     const termWidth = process.stdout.columns ?? 120;
     const termHeight = process.stdout.rows ?? 40;
     const lines = renderDashboard(dashState, termWidth, termHeight, PLAIN_COLORIZER);
+    // Strip trailing blank lines from fitToHeight padding (only useful in live view).
+    while (lines.length > 0 && lines[lines.length - 1].trim() === "") {
+      lines.pop();
+    }
 
     sendPanel(cb.emitPanel, `${PANCODE_PRODUCT_NAME} Dashboard`, lines);
   };

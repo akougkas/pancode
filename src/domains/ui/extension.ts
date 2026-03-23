@@ -25,7 +25,6 @@ import { sharedBus } from "../../core/shared-bus";
 import { PANCODE_PRODUCT_NAME } from "../../core/shell-metadata";
 import {
   type PanCodeReasoningPreference,
-  cycleReasoningLevel,
   parseReasoningPreference,
   resolveThinkingLevelForPreference,
 } from "../../core/thinking";
@@ -75,7 +74,6 @@ import {
   resetViewRouter,
   scheduleAutoTransition,
   setView,
-  toggleView,
 } from "./view-router";
 import { extractResultSummary } from "./widget-utils";
 import {
@@ -798,37 +796,10 @@ export const extension = defineExtension((pi) => {
     },
   });
 
-  // ctrl+t: cycle reasoning level (off, low, medium, high, xhigh).
-  // For toggle-only models (Qwen via local engines), cycles between off and medium.
-  pi.registerShortcut("ctrl+t", {
-    description: "Cycle reasoning level (off, low, medium, high, xhigh)",
-    handler: async (ctx) => {
-      const next = cycleReasoningLevel(state.currentReasoningPreference, ctx.model);
-      applyReasoningLevel(next, ctx.model, (message, level) => ctx.ui.notify(message, level));
-      ctx.ui.setStatus("thinking", `Reasoning: ${next}`);
-      ctx.ui.notify(`Reasoning: ${next}`, "info");
-      syncEditorDisplay();
-    },
-  });
-
-  // ctrl+d: toggle between editor and dashboard views.
-  pi.registerShortcut("ctrl+d", {
-    description: "Toggle between editor and dashboard views",
-    handler: async (ctx) => {
-      const next = toggleView("editor", "dashboard");
-      ctx.ui.notify(`View: ${next}`, "info");
-    },
-  });
-
-  // ctrl+o: toggle dispatch board overlay.
-  // When currently in dispatch, returns to editor. Otherwise switches to dispatch.
-  pi.registerShortcut("ctrl+o", {
-    description: "Toggle dispatch board overlay",
-    handler: async (ctx) => {
-      const next = toggleView("editor", "dispatch");
-      ctx.ui.notify(`View: ${next}`, "info");
-    },
-  });
+  // NOTE: ctrl+d (app.exit), ctrl+o (app.tools.expand), and ctrl+t (app.thinking.toggle)
+  // are Pi SDK reserved keybindings with restrictOverride=true. Extensions cannot override
+  // them. Dashboard, dispatch board, and reasoning toggles are available via slash commands:
+  //   /dashboard, /status, /reasoning
 
   // === Orchestrator identity and mode behavior via PanPrompt engine ===
   // Compiles the orchestrator system prompt from typed fragments based on

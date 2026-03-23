@@ -279,22 +279,13 @@ function renderContextBar(data: FooterData, width: number, c: TuiColorizer): str
 // ---------------------------------------------------------------------------
 
 /**
- * Render contextual keyboard shortcut hints based on the active view.
- * Shows relevant view-switch shortcuts so the user knows how to navigate.
+ * Render keyboard shortcut hints for the footer.
+ * Lists the working hotkeys and key slash commands for quick reference.
  */
-function renderShortcutHints(view: ViewName | undefined, width: number, c: TuiColorizer): string {
+function renderShortcutHints(_view: ViewName | undefined, width: number, c: TuiColorizer): string {
   const hints: string[] = [];
 
-  if (view === "dashboard") {
-    hints.push("ctrl+d:editor", "ctrl+o:dispatch");
-  } else if (view === "dispatch") {
-    hints.push("ctrl+d:dashboard", "ctrl+o:editor");
-  } else {
-    // editor (default)
-    hints.push("ctrl+d:dashboard", "ctrl+o:dispatch");
-  }
-
-  hints.push("ctrl+y:safety", "ctrl+t:reasoning");
+  hints.push("ctrl+y:safety", "shift+tab:mode", "/dashboard", "/reasoning");
 
   const formatted = hints.map((h) => c.dim(h)).join(c.dim("  \u2502  "));
   return truncateToWidth(`  ${formatted}`, width);
