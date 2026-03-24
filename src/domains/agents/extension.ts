@@ -17,6 +17,7 @@ import { workerPool } from "./worker-pool";
 
 /** Runtime ID to suggested agent name mapping for auto-suggest. */
 const RUNTIME_AGENT_SUGGESTIONS: Record<string, { name: string; description: string }> = {
+  "sdk:claude-code": { name: "claude-sdk-agent", description: "Claude Code SDK for streaming agentic tasks" },
   "cli:claude-code": { name: "claude-reviewer", description: "Claude Code for code review" },
   "cli:codex": { name: "codex-dev", description: "Codex for development tasks" },
   "cli:gemini": { name: "gemini-reviewer", description: "Gemini CLI for code review" },
