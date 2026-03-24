@@ -1,4 +1,5 @@
 import { ClaudeCodeRuntime } from "./adapters/claude-code";
+import { ClaudeSdkRuntime } from "./adapters/claude-sdk";
 import { ClineRuntime } from "./adapters/cline";
 import { CodexRuntime } from "./adapters/codex";
 import { CopilotCliRuntime } from "./adapters/copilot-cli";
@@ -16,6 +17,9 @@ const CLI_RUNTIMES = [
   new ClineRuntime(),
   new CopilotCliRuntime(),
 ];
+
+/** SDK runtimes that execute in-process via programmatic APIs. */
+const SDK_RUNTIMES = [new ClaudeSdkRuntime()];
 
 /**
  * Register the Pi runtime (always available) and discover CLI runtimes.
@@ -39,6 +43,17 @@ export function discoverAndRegisterRuntimes(): {
 
   // Register all CLI runtimes (even unavailable ones, for /runtimes display)
   for (const runtime of CLI_RUNTIMES) {
+    runtimeRegistry.register(runtime);
+    registered.push(runtime.id);
+    if (runtime.isAvailable()) {
+      available.push(runtime.id);
+    } else {
+      unavailable.push(runtime.id);
+    }
+  }
+
+  // Register SDK runtimes (in-process execution via programmatic APIs)
+  for (const runtime of SDK_RUNTIMES) {
     runtimeRegistry.register(runtime);
     registered.push(runtime.id);
     if (runtime.isAvailable()) {
