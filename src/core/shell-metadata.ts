@@ -37,7 +37,6 @@ export const PANCODE_SHELL_COMMANDS: readonly PanCodeShellCommand[] = [
   { name: "batches", description: "Show batch dispatch history", category: "dispatch" },
   { name: "stoprun", args: "<run-id>", description: "Stop a running dispatch", category: "dispatch" },
   { name: "cost", description: "Show per-run cost breakdown", category: "dispatch" },
-  { name: "dispatch-insights", description: "Dispatch rule evaluation log", category: "dispatch" },
 
   // AGENTS
   { name: "agents", description: "List registered PanCode agent specs", category: "agents" },
@@ -83,6 +82,7 @@ export const PANCODE_SHELL_COMMANDS: readonly PanCodeShellCommand[] = [
   },
   { name: "help", description: "Show PanCode commands", category: "display" },
   { name: "exit", description: "Exit PanCode", category: "display" },
+  { name: "quit", description: "Exit PanCode (Pi built-in)", category: "display" },
 
   // UTILITY
   {
