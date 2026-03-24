@@ -130,6 +130,7 @@ export class ClineRuntime extends CliRuntime {
     let turns = 0;
     let lastError = "";
     let model: string | null = null;
+    let taskId: string | null = null;
 
     for (const line of lines) {
       const trimmed = line.trim();
@@ -140,6 +141,11 @@ export class ClineRuntime extends CliRuntime {
         event = JSON.parse(trimmed) as ClineEvent;
       } catch {
         continue;
+      }
+
+      // Capture task ID for session continuity on follow-up dispatches.
+      if (event.type === "task_started" && event.taskId && !taskId) {
+        taskId = event.taskId;
       }
 
       if (event.type === "say") {
@@ -183,6 +189,7 @@ export class ClineRuntime extends CliRuntime {
       },
       model,
       runtime: this.id,
+      sessionMeta: taskId ? { taskId } : undefined,
     };
   }
 }

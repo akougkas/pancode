@@ -27,6 +27,7 @@ import { resolveWorkerRouting } from "./routing";
 import { DEFAULT_DISPATCH_RULES, type DispatchRule, evaluateRules } from "./rules";
 import { RunLedger, createRunEnvelope } from "./state";
 import { initTaskStore, taskCheck, taskList, taskUpdate, taskWrite } from "./task-tools";
+import { clearSessionStore, getContinuationArgs, storeSessionMeta } from "./session-continuity";
 import { liveWorkerProcesses, spawnWorker, stopAllWorkers, workerProcessByRunId } from "./worker-spawn";
 
 function textResult(text: string): AgentToolResult<unknown> {
@@ -210,11 +211,12 @@ export const extension = defineExtension((pi) => {
     ledger.addSessionMarker({ type: "session_start", timestamp: new Date().toISOString(), sessionId });
     registerSafetyPreFlightChecks(registerPreFlightCheck);
 
-    // Listen for session reset events (/new command). Clear task store.
+    // Listen for session reset events (/new command). Clear task store and session memory.
     sharedBus.on(BusChannel.SESSION_RESET, () => {
       initTaskStore(runtimeRoot);
+      clearSessionStore();
       if (process.env.PANCODE_VERBOSE) {
-        console.error("[pancode:dispatch] Task store reset for new session.");
+        console.error("[pancode:dispatch] Task store and session memory reset for new session.");
       }
     });
 
@@ -414,6 +416,11 @@ export const extension = defineExtension((pi) => {
         workerPool.recordDispatchStart(routing.workerId);
       }
 
+      // Session continuity: inject continuation args from previous dispatches.
+      const continuationArgs = getContinuationArgs(dispatchAction.agent, routing.runtime, routing.runtimeArgs);
+      const effectiveRuntimeArgs =
+        continuationArgs.length > 0 ? [...routing.runtimeArgs, ...continuationArgs] : routing.runtimeArgs;
+
       let workerResult: Awaited<ReturnType<typeof spawnWorker>>;
       try {
         workerResult = await spawnWorker({
@@ -427,7 +434,7 @@ export const extension = defineExtension((pi) => {
           signal: signal ?? undefined,
           runId: run.id,
           runtime: routing.runtime,
-          runtimeArgs: routing.runtimeArgs,
+          runtimeArgs: effectiveRuntimeArgs,
           readonly: routing.readonly,
         });
       } finally {
@@ -460,6 +467,11 @@ export const extension = defineExtension((pi) => {
       run.model = workerResult.model ?? run.model;
       run.completedAt = new Date().toISOString();
       ledger?.update(run.id, run);
+
+      // Store session metadata for continuity on follow-up dispatches.
+      if (workerResult.sessionMeta) {
+        storeSessionMeta(dispatchAction.agent, routing.runtime, workerResult.sessionMeta);
+      }
 
       // Record outcome for provider health tracking and backoff.
       recordDispatchOutcome(run.model, workerResult.exitCode, workerResult.error);
@@ -650,6 +662,10 @@ export const extension = defineExtension((pi) => {
           },
           batchProfile,
         );
+        const batchContinuationArgs = getContinuationArgs(agentName, routing.runtime, routing.runtimeArgs);
+        const batchEffectiveArgs =
+          batchContinuationArgs.length > 0 ? [...routing.runtimeArgs, ...batchContinuationArgs] : routing.runtimeArgs;
+
         return {
           task,
           tools: routing.tools,
@@ -660,12 +676,19 @@ export const extension = defineExtension((pi) => {
           sampling: routing.sampling,
           runId: runs[i].id,
           runtime: routing.runtime,
-          runtimeArgs: routing.runtimeArgs,
+          runtimeArgs: batchEffectiveArgs,
           readonly: routing.readonly,
         };
       });
 
       const results = await runParallel(parallelTasks, concurrency, signal ?? undefined);
+
+      // Store session metadata from batch results for follow-up dispatches.
+      for (const r of results) {
+        if (r.result.sessionMeta) {
+          storeSessionMeta(agentName, routing.runtime, r.result.sessionMeta);
+        }
+      }
 
       const summaryLines: string[] = [`Batch ${batch.id}: ${tasks.length} tasks`, ""];
       let totalCost = 0;
@@ -854,6 +877,12 @@ export const extension = defineExtension((pi) => {
             chainProfile,
           );
 
+          const chainContinuationArgs = getContinuationArgs(agent, routing.runtime, routing.runtimeArgs);
+          const chainEffectiveArgs =
+            chainContinuationArgs.length > 0
+              ? [...routing.runtimeArgs, ...chainContinuationArgs]
+              : routing.runtimeArgs;
+
           const result = await spawnWorker({
             task,
             tools: routing.tools,
@@ -865,9 +894,14 @@ export const extension = defineExtension((pi) => {
             signal: signal ?? undefined,
             runId: run.id,
             runtime: routing.runtime,
-            runtimeArgs: routing.runtimeArgs,
+            runtimeArgs: chainEffectiveArgs,
             readonly: routing.readonly,
           });
+
+          // Store session metadata for chain step continuity.
+          if (result.sessionMeta) {
+            storeSessionMeta(agent, routing.runtime, result.sessionMeta);
+          }
 
           run.status = classifyRunStatus(result);
           run.result = result.result;

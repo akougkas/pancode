@@ -1,3 +1,4 @@
+import { execSync } from "node:child_process";
 import { CliRuntime } from "../cli-base";
 import type { RuntimeResult, RuntimeTaskConfig, SpawnConfig } from "../types";
 
@@ -53,6 +54,46 @@ export class OpencodeRuntime extends CliRuntime {
   override readonly telemetryTier = "gold" as const;
   readonly binaryName = "opencode";
 
+  private _daemonUrl: string | null | undefined = undefined; // undefined = not probed yet
+  private _daemonProbeTs = 0;
+  private static readonly DAEMON_PROBE_TTL_MS = 5 * 60 * 1000;
+
+  /**
+   * Detect whether an opencode serve daemon is running and reachable.
+   *
+   * Resolution order:
+   * 1. PANCODE_OPENCODE_ATTACH env var (zero-cost, deterministic override).
+   *    Accepts a URL, "true" (defaults to localhost:4096), or "false" (opt-out).
+   * 2. Cached probe result (5-minute TTL).
+   * 3. One-time synchronous port probe via node net module (500ms timeout).
+   */
+  private detectDaemon(): string | null {
+    const envAttach = process.env.PANCODE_OPENCODE_ATTACH;
+    if (envAttach === "false" || envAttach === "0") return null;
+    if (envAttach && envAttach !== "true" && envAttach !== "1") return envAttach;
+    if (envAttach === "true" || envAttach === "1") return "http://localhost:4096";
+
+    const now = Date.now();
+    if (this._daemonUrl !== undefined && now - this._daemonProbeTs < OpencodeRuntime.DAEMON_PROBE_TTL_MS) {
+      return this._daemonUrl;
+    }
+
+    const url = "http://localhost:4096";
+    try {
+      execSync(
+        `${process.execPath} -e "const s=require('net').createConnection(4096,'127.0.0.1');s.on('connect',()=>{s.destroy();process.exit(0)});s.on('error',()=>process.exit(1))"`,
+        { timeout: 600, stdio: "ignore" },
+      );
+      this._daemonUrl = url;
+      this._daemonProbeTs = now;
+      return url;
+    } catch {
+      this._daemonUrl = null;
+      this._daemonProbeTs = now;
+      return null;
+    }
+  }
+
   /**
    * Map PanCode readonly flag to the best opencode agent.
    * explore: fast read-only codebase exploration (grep, glob, read, list)
@@ -82,6 +123,13 @@ export class OpencodeRuntime extends CliRuntime {
     // Model passthrough. opencode uses provider/model format natively.
     if (config.model) {
       args.push("--model", config.model);
+    }
+
+    // Daemon attach: if opencode serve is running, attach for warm startup.
+    // Eliminates cold-start latency by reusing the hot Node environment.
+    const daemonUrl = this.detectDaemon();
+    if (daemonUrl && !config.runtimeArgs.includes("--attach")) {
+      args.push("--attach", daemonUrl);
     }
 
     // opencode run does not support a --timeout flag. The cli-entry.ts wrapper
@@ -226,6 +274,7 @@ export class OpencodeRuntime extends CliRuntime {
       },
       model,
       runtime: this.id,
+      sessionMeta: sessionId ? { sessionId } : undefined,
     };
   }
 }

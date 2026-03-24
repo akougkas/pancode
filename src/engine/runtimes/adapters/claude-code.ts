@@ -75,7 +75,7 @@ interface ClaudeCodeJsonResponse {
  * - System prompt via --append-system-prompt (preserves built-in capabilities)
  * - Model selection via --model (aliases or full model names)
  * - Turn limits via --max-turns for bounded execution
- * - Session continuity via --resume (not used in dispatch, each task is fresh)
+ * - Session continuity via --resume (auto-injected by session-continuity store)
  * - Full usage tracking: input/output tokens, cache tokens, cost, turns
  */
 export class ClaudeCodeRuntime extends CliRuntime {
@@ -206,6 +206,7 @@ export class ClaudeCodeRuntime extends CliRuntime {
       },
       model,
       runtime: this.id,
+      sessionMeta: parsed.session_id ? { sessionId: parsed.session_id } : undefined,
     };
   }
 
