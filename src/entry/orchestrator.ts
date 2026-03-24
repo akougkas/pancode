@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 import { resetRuntimeState } from "../cli/reset";
@@ -256,6 +256,32 @@ function reapOrphanRuns(runtimeRoot: string): void {
 }
 
 export async function runOrchestratorEntry(): Promise<void> {
+  // Top-level crash handlers: log the actual error and write to crash.log
+  // before exiting. Prevents silent restarts under context pressure or API errors.
+  const crashLogPath = join(process.env.PANCODE_HOME ?? "", "crash.log");
+
+  process.on("uncaughtException", (err) => {
+    const msg = `[pancode:crash] Uncaught exception: ${err.message}\n${err.stack}`;
+    process.stderr.write(`${msg}\n`);
+    try {
+      appendFileSync(crashLogPath, `\n[${new Date().toISOString()}] ${msg}\n`);
+    } catch {
+      /* ignore */
+    }
+    process.exit(1);
+  });
+
+  process.on("unhandledRejection", (reason) => {
+    const msg = `[pancode:crash] Unhandled rejection: ${reason instanceof Error ? reason.stack ?? reason.message : String(reason)}`;
+    process.stderr.write(`${msg}\n`);
+    try {
+      appendFileSync(crashLogPath, `\n[${new Date().toISOString()}] ${msg}\n`);
+    } catch {
+      /* ignore */
+    }
+    process.exit(1);
+  });
+
   const args = parseArgs(process.argv.slice(2));
   if (args.help) {
     printUsage();
@@ -445,6 +471,19 @@ export async function runOrchestratorEntry(): Promise<void> {
       console.warn("[pancode:orchestrator] No models resolved at boot. Starting in degraded mode.");
     }
   }
+  // Defensive context window fallback: if the resolved model has no context window
+  // (0 or missing), apply a conservative default so the Pi SDK's internal context
+  // management does not operate blindly. This prevents crashes under context pressure
+  // when the SDK cannot track usage against a known limit.
+  const DEFAULT_API_CONTEXT_WINDOW = 128_000;
+  if (model && (!model.contextWindow || model.contextWindow <= 0)) {
+    console.warn(
+      `[pancode:orchestrator] Model "${model.id}" has contextWindow=${model.contextWindow}. ` +
+        `Applying default of ${DEFAULT_API_CONTEXT_WINDOW}.`,
+    );
+    (model as { contextWindow: number }).contextWindow = DEFAULT_API_CONTEXT_WINDOW;
+  }
+
   const effectiveThinkingLevel = resolveThinkingLevelForPreference(model ?? null, config.reasoningPreference);
   process.env.PANCODE_EFFECTIVE_THINKING = effectiveThinkingLevel;
   p5.end();

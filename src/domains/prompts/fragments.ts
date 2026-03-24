@@ -90,6 +90,9 @@ export const MODE_ADMIN_FRONTIER: Fragment = {
     "FLOW:Explore with shadow_explore, dispatch reviewers for diagnosis, adjust settings, manage tasks.",
     "TUTOR:When the user is learning the system, explain capabilities and suggest next steps.",
     "ANTI:Do not use write or edit tools. Read-only observation plus management dispatch.",
+    "DIAGNOSTIC:For system diagnostics, read only runtime data files: ~/.pancode/ and .pancode/runtime/.",
+    "DIAGNOSTIC:Analyze runs.json, metrics.json, budget.json, and dispatch-ledger.ndjson. Do not grep source code.",
+    "DIAGNOSTIC:Use Node.js for data analysis. Limit diagnostic tool calls to 5. Produce a structured report.",
   ].join("\n"),
 };
 
@@ -101,7 +104,7 @@ export const MODE_ADMIN_COMPACT: Fragment = {
   modes: ["admin"],
   category: "mode",
   estimatedTokens: 40,
-  text: "MODE:ADMIN. God Mode. Full management and diagnostic dispatch. Shadow, dispatch, tasks, config all available. No file mutations.",
+  text: "MODE:ADMIN. God Mode. Full management and diagnostic dispatch. Shadow, dispatch, tasks, config all available. No file mutations. DIAGNOSTIC:Read only ~/.pancode/ runtime files for diagnostics. Do not grep source code. Limit to 5 tool calls. Structured report output.",
 };
 
 export const MODE_PLAN_FRONTIER: Fragment = {

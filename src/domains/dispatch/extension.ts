@@ -599,6 +599,16 @@ export const extension = defineExtension((pi) => {
         );
       }
 
+      // Warn when multiple workers target the same provider, since parallel
+      // requests to a single-slot GPU endpoint serialize and inflate latency.
+      if (tasks.length > 1 && routing.model) {
+        const provider = routing.model.split("/")[0] ?? "unknown";
+        sharedBus.emit(BusChannel.WARNING, {
+          source: "dispatch",
+          message: `${tasks.length} workers targeting ${provider}. Parallel GPU contention may increase response times.`,
+        });
+      }
+
       const batch = batchTracker.create(tasks.length);
       const runs = tasks.map((task) => {
         const run = createRunEnvelope(task, agentName, ctx.cwd, batch.id, routing.runtime);
