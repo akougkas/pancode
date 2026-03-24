@@ -229,6 +229,18 @@ function describeReasoningCapability(
   }
 }
 
+/** Providers whose models are accessed via cloud APIs rather than local engines. */
+const CLOUD_PROVIDERS = new Set(["anthropic"]);
+
+function isCloudModel(model: Model<Api>): boolean {
+  return CLOUD_PROVIDERS.has(model.provider);
+}
+
+function runtimeSourceTag(model: Model<Api>): string {
+  if (model.provider === "anthropic") return "[Claude Code]";
+  return "";
+}
+
 function getRegisteredModels(ctx: ExtensionContext): {
   all: Array<Model<Api>>;
   available: Array<Model<Api>>;
@@ -310,18 +322,27 @@ function formatActiveModelLines(currentRef: string, profiles: MergedModelProfile
 /**
  * One-line summary of all available chat models across all authenticated providers.
  * Always shown in the default /models view so the user knows what else exists.
+ * Separates local engine models from cloud provider models in the count.
  */
 function formatAvailableSummary(registryAvailable: ReadonlyArray<Model<Api>>): string {
   const chatModels = registryAvailable.filter((m) => isChatModel(m.id));
   if (chatModels.length === 0) return "";
 
+  const localModels = chatModels.filter((m) => !isCloudModel(m));
+  const cloudModels = chatModels.filter((m) => isCloudModel(m));
   const providerSet = new Set(chatModels.map((m) => m.provider));
   const providerLabel = providerSet.size === 1 ? "1 provider" : `${providerSet.size} providers`;
-  return `Available: ${chatModels.length} models across ${providerLabel}. Use /models all to browse.`;
+
+  const parts = [`${chatModels.length} models across ${providerLabel}`];
+  if (localModels.length > 0 && cloudModels.length > 0) {
+    parts.push(`(${localModels.length} local, ${cloudModels.length} cloud)`);
+  }
+  return `Available: ${parts.join(" ")}. Use /models all to browse.`;
 }
 
 /**
  * Format a filtered list for a single provider.
+ * Includes a runtime source tag for cloud provider models.
  */
 function formatProviderModelLines(
   currentRef: string,
@@ -331,7 +352,8 @@ function formatProviderModelLines(
 ): string[] {
   const chatModels = models.filter((m) => isChatModel(m.id));
   const sorted = [...chatModels].sort((a, b) => a.id.localeCompare(b.id));
-  const lines: string[] = [`${providerName} (${sorted.length} models):`];
+  const tag = CLOUD_PROVIDERS.has(providerName) ? " (cloud, via Claude Code CLI)" : "";
+  const lines: string[] = [`${providerName}${tag} (${sorted.length} models):`];
 
   for (const model of sorted) {
     const ref = modelRef(model);
@@ -346,6 +368,7 @@ function formatProviderModelLines(
 
 /**
  * Format all available models grouped by provider (for /models all).
+ * Includes a runtime source tag for cloud models to distinguish access method.
  */
 function formatAllAvailableLines(
   currentRef: string,
@@ -367,13 +390,16 @@ function formatAllAvailableLines(
     if (model.provider !== activeProvider) {
       activeProvider = model.provider;
       if (lines.length > 0) lines.push("");
-      lines.push(model.provider);
+      const tag = isCloudModel(model) ? "  (cloud)" : "";
+      lines.push(`${model.provider}${tag}`);
     }
 
     const ref = modelRef(model);
     const marker = ref === currentRef ? "*" : "-";
     const caps = formatRegistryModelCapabilities(model, profiles);
-    lines.push(`  ${marker} ${model.id}${caps}`);
+    const source = runtimeSourceTag(model);
+    const sourceSuffix = source ? `  ${source}` : "";
+    lines.push(`  ${marker} ${model.id}${caps}${sourceSuffix}`);
   }
 
   lines.push("", `Ask Panos: "use <model-name>" to switch models.`);
@@ -438,6 +464,27 @@ export function createCommandHandlers(state: UiCommandState, cb: UiCommandCallba
         { rows: [kv("Current:", `${currentRef}  ${inlineHint("use qwen model")}`)] },
         { heading: "Active (loaded on connected engines):", rows: activeLines.map((line) => text(line)) },
       ];
+
+      // Cloud models section: show models from cloud providers (e.g. Anthropic via Claude Code CLI)
+      const cloudModels = registry.available.filter((m) => isCloudModel(m) && isChatModel(m.id));
+      if (cloudModels.length > 0) {
+        const cloudLines = cloudModels.map((m) => {
+          const ref = modelRef(m);
+          const isCurrent = ref === currentRef;
+          const marker = isCurrent ? "*" : "-";
+          const caps: string[] = [];
+          if (m.reasoning) caps.push("reasoning");
+          const ctxLabel = formatContextWindow(m.contextWindow ?? null);
+          if (ctxLabel) caps.push(ctxLabel);
+          const capsStr = caps.length > 0 ? `  (${caps.join(", ")})` : "";
+          return `  ${marker} ${ref}${capsStr}`;
+        });
+        sections.push({
+          heading: "Cloud (via Claude Code CLI):",
+          rows: cloudLines.map((line) => text(line)),
+        });
+      }
+
       if (availableSummary) {
         sections.push({ rows: [text(availableSummary)] });
       }

@@ -1,5 +1,6 @@
 import { BusChannel, type WarningEvent } from "../../core/bus-events";
 import { sharedBus } from "../../core/shared-bus";
+import { runtimeRegistry } from "../../engine/runtimes/registry";
 import { agentRegistry } from "../agents";
 import { workerPool } from "../agents/worker-pool";
 import { classifyModelTier, deriveProviderHint } from "../prompts/tiering";
@@ -18,6 +19,10 @@ export interface WorkerRouting {
 
 function getWorkerModel(): string | null {
   return process.env.PANCODE_WORKER_MODEL?.trim() || null;
+}
+
+function getWorkerRuntime(): string {
+  return process.env.PANCODE_WORKER_RUNTIME?.trim() || "pi";
 }
 
 function resolveModelSampling(model: string | null, presetName: string | undefined): SamplingPreset | null {
@@ -39,17 +44,57 @@ function resolveModelSampling(model: string | null, presetName: string | undefin
   return sampling;
 }
 
+/**
+ * Infer the runtime from the model's provider prefix.
+ * Anthropic models (prefix "anthropic/") must use cli:claude-code since they cannot be served
+ * by the Pi native runtime or local engines.
+ */
+function inferRuntimeFromModel(model: string | null): string | null {
+  if (!model) return null;
+
+  const slashIdx = model.indexOf("/");
+  if (slashIdx === -1) return null;
+
+  const provider = model.slice(0, slashIdx);
+
+  // Map known cloud providers to their CLI runtimes
+  const providerToRuntime: Record<string, string> = {
+    anthropic: "cli:claude-code",
+  };
+
+  return providerToRuntime[provider] ?? null;
+}
+
+/**
+ * Resolve the runtime for a worker dispatch.
+ *
+ * Resolution order:
+ * 1. Explicit spec runtime (if not the default "pi")
+ * 2. Configured worker runtime from settings/env (PANCODE_WORKER_RUNTIME)
+ * 3. Inferred from model provider prefix
+ * 4. Default "pi"
+ */
+function resolveRuntime(model: string | null, specRuntime: string): string {
+  if (specRuntime !== "pi") return specRuntime;
+
+  const configuredRuntime = getWorkerRuntime();
+  if (configuredRuntime !== "pi") return configuredRuntime;
+
+  return inferRuntimeFromModel(model) ?? "pi";
+}
+
 export function resolveWorkerRouting(agentName: string): WorkerRouting {
   const spec = agentRegistry.get(agentName);
   const workerModel = getWorkerModel();
 
   if (!spec) {
+    const fallbackRuntime = resolveRuntime(workerModel, "pi");
     return {
       model: workerModel,
       tools: "read,bash,grep,find,ls,write,edit",
       systemPrompt: "",
       sampling: null,
-      runtime: "pi",
+      runtime: fallbackRuntime,
       runtimeArgs: [],
       readonly: false,
       workerId: null,
@@ -106,12 +151,23 @@ export function resolveWorkerRouting(agentName: string): WorkerRouting {
     );
   }
 
+  const resolvedRuntime = resolveRuntime(model, spec.runtime);
+
+  // Verify the inferred runtime is actually available before using it.
+  if (resolvedRuntime !== "pi" && resolvedRuntime !== spec.runtime) {
+    if (!runtimeRegistry.has(resolvedRuntime)) {
+      const message = `Inferred runtime "${resolvedRuntime}" for model ${model} is not available. Falling back to "${spec.runtime}".`;
+      console.error(`[pancode:routing] ${message}`);
+      sharedBus.emit(BusChannel.WARNING, { source: "dispatch", message } satisfies WarningEvent);
+    }
+  }
+
   return {
     model,
     tools: spec.tools,
     systemPrompt: spec.systemPrompt,
     sampling,
-    runtime: spec.runtime,
+    runtime: runtimeRegistry.has(resolvedRuntime) ? resolvedRuntime : spec.runtime,
     runtimeArgs: spec.runtimeArgs,
     readonly: spec.readonly,
     workerId,

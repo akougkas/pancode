@@ -1,3 +1,4 @@
+export { detectAnthropicAuth, registerAnthropicModels, getAnthropicModelCatalog } from "./anthropic-catalog";
 export { registerApiProvidersOnRegistry } from "./api-providers";
 export {
   discoverEngines,

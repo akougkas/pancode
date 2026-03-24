@@ -24,6 +24,7 @@ import {
   loadRegistryMetadata,
   matchAllModels,
   readModelCacheYaml,
+  registerAnthropicModels,
   registerApiProvidersOnRegistry,
   registerDiscoveredModels,
   resolveConfiguredModel,
@@ -381,6 +382,15 @@ export async function runOrchestratorEntry(): Promise<void> {
     setModelProfileCache(mergedProfiles);
     registerDiscoveredModels(modelRegistry, mergedProfiles);
     p3.end();
+  }
+
+  // === Phase 3b: Anthropic catalog (Claude CLI auth detection) ===
+  const anthropicResult = registerAnthropicModels(modelRegistry);
+  if (anthropicResult.auth) {
+    console.error(
+      `[pancode:providers] Anthropic: ${anthropicResult.registered.length} models registered ` +
+        `(${anthropicResult.auth.subscriptionType ?? "unknown"} via ${anthropicResult.auth.authMethod ?? "unknown"})`,
+    );
   }
 
   // === Phase 4: Agent config ===

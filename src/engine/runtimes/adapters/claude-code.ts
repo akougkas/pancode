@@ -11,32 +11,48 @@ const DEFAULT_MAX_TURNS = 30;
 /**
  * Structured JSON response from Claude Code (--output-format json).
  *
- * Example:
- * ```json
- * {
- *   "result": "Done. Created 3 files.",
- *   "session_id": "abc123",
- *   "cost_usd": 0.03,
- *   "usage": { "input_tokens": 1200, "output_tokens": 400 },
- *   "model": "claude-sonnet-4-20250514",
- *   "num_turns": 2
- * }
- * ```
+ * Supports two formats:
+ * 1. Legacy (pre-v2.x): single JSON object with cost_usd and snake_case usage fields.
+ * 2. v2.x: JSON array of event objects; the "result" event contains total_cost_usd,
+ *    snake_case usage fields, and a camelCase modelUsage map keyed by model name.
  */
 interface ClaudeCodeJsonResponse {
+  // Common fields (present in both formats)
   result?: string;
   session_id?: string;
+  num_turns?: number;
+  error?: string;
+  is_error?: boolean;
+
+  // Legacy fields (pre-v2.x)
   cost_usd?: number;
+  model?: string;
   usage?: {
     input_tokens?: number;
     output_tokens?: number;
     cache_read_tokens?: number;
     cache_write_tokens?: number;
+    // v2.x usage fields (same level, different names)
+    cache_creation_input_tokens?: number;
+    cache_read_input_tokens?: number;
   };
-  model?: string;
-  num_turns?: number;
-  error?: string;
-  is_error?: boolean;
+
+  // v2.x event fields
+  type?: string;
+  subtype?: string;
+  total_cost_usd?: number;
+  modelUsage?: Record<
+    string,
+    {
+      inputTokens?: number;
+      outputTokens?: number;
+      cacheReadInputTokens?: number;
+      cacheCreationInputTokens?: number;
+      costUSD?: number;
+      contextWindow?: number;
+      maxOutputTokens?: number;
+    }
+  >;
 }
 
 // ---------------------------------------------------------------------------
@@ -156,19 +172,39 @@ export class ClaudeCodeRuntime extends CliRuntime {
     const hasError = exitCode !== 0 || parsed.is_error === true;
     const errorMsg = hasError ? (parsed.error ?? (stderr.trim() || `Claude Code exited with code ${exitCode}`)) : "";
 
+    // Extract model: prefer modelUsage keys (v2.x), fall back to top-level model field.
+    let model = parsed.model ?? null;
+    if (!model && parsed.modelUsage) {
+      const modelKeys = Object.keys(parsed.modelUsage);
+      if (modelKeys.length > 0) {
+        // Strip the context window suffix like "[1m]" from "claude-opus-4-6[1m]"
+        model = modelKeys[0].replace(/\[.*\]$/, "");
+      }
+    }
+
+    // Extract usage: merge v2.x and legacy field names.
+    // v2.x provides both snake_case in usage{} and camelCase in modelUsage{}.
+    const usage = parsed.usage;
+    const modelUsageEntry = parsed.modelUsage ? Object.values(parsed.modelUsage)[0] : null;
+
     return {
       exitCode,
       result: typeof parsed.result === "string" ? parsed.result : stdout.trim(),
       error: errorMsg,
       usage: {
-        inputTokens: parsed.usage?.input_tokens ?? 0,
-        outputTokens: parsed.usage?.output_tokens ?? 0,
-        cacheReadTokens: parsed.usage?.cache_read_tokens ?? 0,
-        cacheWriteTokens: parsed.usage?.cache_write_tokens ?? 0,
-        cost: parsed.cost_usd ?? 0,
+        inputTokens: usage?.input_tokens ?? modelUsageEntry?.inputTokens ?? 0,
+        outputTokens: usage?.output_tokens ?? modelUsageEntry?.outputTokens ?? 0,
+        cacheReadTokens:
+          usage?.cache_read_input_tokens ?? usage?.cache_read_tokens ?? modelUsageEntry?.cacheReadInputTokens ?? 0,
+        cacheWriteTokens:
+          usage?.cache_creation_input_tokens ??
+          usage?.cache_write_tokens ??
+          modelUsageEntry?.cacheCreationInputTokens ??
+          0,
+        cost: parsed.total_cost_usd ?? parsed.cost_usd ?? modelUsageEntry?.costUSD ?? 0,
         turns: parsed.num_turns ?? 0,
       },
-      model: parsed.model ?? null,
+      model,
       runtime: this.id,
     };
   }
@@ -176,38 +212,56 @@ export class ClaudeCodeRuntime extends CliRuntime {
   /**
    * Extract the JSON response from stdout.
    *
-   * Handles three common cases:
-   * 1. Clean JSON (entire stdout is one JSON object)
-   * 2. JSON preceded by subprocess wrapper noise (log lines before the JSON)
-   * 3. JSON followed by trailing output (newlines, extra text after closing brace)
+   * Handles four output formats:
+   * 1. JSON array (v2.x): parse the array, find the element with type "result"
+   * 2. Single JSON object (legacy): parse as a single object
+   * 3. NDJSON: split by newlines, parse each line, find the result event
+   * 4. Brace-bounded extraction: isolate JSON from subprocess wrapper noise
    */
   private extractJson(stdout: string): ClaudeCodeJsonResponse | null {
     const trimmed = stdout.trim();
     if (!trimmed) return null;
 
-    // Fast path: entire output is a JSON object
+    // Case 1: JSON array (v2.x format)
+    if (trimmed[0] === "[") {
+      try {
+        const events = JSON.parse(trimmed) as ClaudeCodeJsonResponse[];
+        const resultEvent = events.findLast((e) => e.type === "result");
+        return resultEvent ?? events[events.length - 1] ?? null;
+      } catch {
+        // Fall through to other cases
+      }
+    }
+
+    // Case 2: Single JSON object (legacy format)
     if (trimmed[0] === "{") {
       try {
         return JSON.parse(trimmed) as ClaudeCodeJsonResponse;
       } catch {
-        // May have trailing text after the JSON; try brace matching below.
+        // Fall through
       }
     }
 
-    // Slow path: find the first { and last } to isolate the JSON object.
-    // This handles subprocess wrapper noise (log lines, warnings) before or
-    // after the actual JSON payload.
+    // Case 3: NDJSON (multiple JSON objects separated by newlines)
+    const lines = trimmed.split("\n");
+    let lastResult: ClaudeCodeJsonResponse | null = null;
+    for (const line of lines) {
+      const cleaned = line.trim();
+      if (!cleaned || cleaned[0] !== "{") continue;
+      try {
+        const parsed = JSON.parse(cleaned) as ClaudeCodeJsonResponse;
+        if (parsed.type === "result" || parsed.result !== undefined) {
+          lastResult = parsed;
+        }
+      } catch {
+        // Parse failure on this line; skip it
+      }
+    }
+    if (lastResult) return lastResult;
+
+    // Case 4: Brace-bounded extraction (original fallback for subprocess noise)
     const start = trimmed.indexOf("{");
     if (start === -1) return null;
-
-    // Try parsing from first { to end of string
-    try {
-      return JSON.parse(trimmed.slice(start)) as ClaudeCodeJsonResponse;
-    } catch {
-      // Fall through to brace-bounded attempt
-    }
-
-    // Try parsing from first { to last }
     const end = trimmed.lastIndexOf("}");
     if (end > start) {
       try {
@@ -216,7 +270,6 @@ export class ClaudeCodeRuntime extends CliRuntime {
         return null;
       }
     }
-
     return null;
   }
 }

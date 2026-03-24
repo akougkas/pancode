@@ -103,10 +103,17 @@ export function spawnWorker(options: SpawnOptions): Promise<WorkerResult> {
   const envTimeout = Number.parseInt(process.env.PANCODE_WORKER_TIMEOUT_MS ?? "", 10);
   const resolvedTimeout = options.timeoutMs ?? (Number.isFinite(envTimeout) ? envTimeout : DEFAULT_TIMEOUT_MS);
 
+  // Strip "provider/" prefix for CLI runtimes.
+  // Claude Code expects bare model names or aliases, not compound "provider/model" format.
+  let resolvedModel = options.model;
+  if (runtimeId.startsWith("cli:") && resolvedModel?.includes("/")) {
+    resolvedModel = resolvedModel.slice(resolvedModel.indexOf("/") + 1);
+  }
+
   const taskConfig: RuntimeTaskConfig = {
     task: options.task,
     tools: options.tools,
-    model: options.model,
+    model: resolvedModel,
     systemPrompt: options.systemPrompt,
     cwd: options.cwd,
     agentName: options.agentName ?? "worker",
