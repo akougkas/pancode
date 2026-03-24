@@ -95,15 +95,25 @@ export function getToolsetForMode(mode: OrchestratorMode): string[] {
   const dispatch = [ToolName.DISPATCH_AGENT, ToolName.BATCH_DISPATCH, ToolName.DISPATCH_CHAIN];
   const config = [ToolName.PAN_READ_CONFIG, ToolName.PAN_APPLY_CONFIG];
 
+  // Read-only config access (view settings without mutation capability).
+  const configReadOnly = [ToolName.PAN_READ_CONFIG];
+
   switch (mode) {
     case "admin":
+      // NOTE: Admin disables file mutations at the orchestrator level, but
+      // dispatched workers run as separate processes with their own safety
+      // level. A worker spawned from admin mode may still have edit/write
+      // access if the worker's safety permits it. This is an accepted
+      // trade-off: admin controls orchestrator behavior, not worker behavior.
       return [...readonly, ...shadow, ...tasks, ...dispatch, ...config];
     case "plan":
       return [...readonly, ...shadow, ...tasks, ...config];
     case "build":
       return [...mutable, ...shadow, ...tasks, ...dispatch, ...config];
     case "review":
-      return [...readonly, ...shadow, ...dispatch, ...config];
+      // Review mode is read-only. Config mutations (pan_apply_config) are
+      // excluded to prevent reviewers from changing runtime configuration.
+      return [...readonly, ...shadow, ...dispatch, ...configReadOnly];
   }
 }
 

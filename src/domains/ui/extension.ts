@@ -353,6 +353,11 @@ export const extension = defineExtension((pi) => {
           break;
         }
         default:
+          // Keys intentionally not handled by the UI domain:
+          //   runtime.intelligence, models.*, budget.*, dispatch.*, preset.*
+          // These are consumed by their respective domains (scheduling,
+          // dispatch, panconfigure). If a new runtime.* key is added to
+          // config-schema.ts, add a case here to update the TUI display.
           break;
       }
       syncEditorDisplay();
