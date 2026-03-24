@@ -1,24 +1,67 @@
 ---
-// Landing page sections for pancode.dev
+// PanCode landing page — pancode.dev
+// Design: dark terminal aesthetic, PAN brand, no Pi SDK branding
 ---
 
-<!-- Terminal Hero -->
-<section class="terminal-hero">
-  <div class="terminal-window">
-    <div class="terminal-chrome">
-      <span class="terminal-dot red"></span>
-      <span class="terminal-dot yellow"></span>
-      <span class="terminal-dot green"></span>
-      <span class="terminal-title">pancode</span>
+<!-- Experimental Banner -->
+<div class="exp-banner">
+  <div class="exp-banner-inner">
+    <span class="exp-pill">EXPERIMENTAL PREVIEW</span>
+    <span class="exp-banner-text">
+      pancode-exp is an early release. APIs, commands, and features may change.
+    </span>
+  </div>
+</div>
+
+<!-- Hero -->
+<section class="hero-section">
+  <div class="hero-content">
+    <div class="hero-badge-row">
+      <span class="hero-version">pancode-exp</span>
+      <span class="hero-separator">|</span>
+      <span class="hero-license">Apache 2.0</span>
+      <span class="hero-separator">|</span>
+      <span class="hero-status">Open Source</span>
     </div>
-    <div class="terminal-body">
-      <pre><code><span class="prompt">$</span> pancode --preset local
+    <h1 class="hero-headline">
+      One Runtime.<br/>
+      <span class="hero-accent">Every Agent.</span>
+    </h1>
+    <p class="hero-subtitle">
+      PanCode orchestrates coding agents the way Kubernetes orchestrates containers.
+      Discover, compose, dispatch, and observe heterogeneous agent fleets from one terminal.
+    </p>
+    <div class="hero-ctas">
+      <a href="/getting-started/installation/" class="cta-primary">
+        <span>Get Started</span>
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M3 8h10M9 4l4 4-4 4"/>
+        </svg>
+      </a>
+      <a href="https://github.com/akougkas/pancode" class="cta-secondary" target="_blank" rel="noopener">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
+        </svg>
+        <span>View on GitHub</span>
+      </a>
+    </div>
+  </div>
+  <div class="hero-terminal">
+    <div class="terminal-window">
+      <div class="terminal-chrome">
+        <span class="terminal-dot red"></span>
+        <span class="terminal-dot yellow"></span>
+        <span class="terminal-dot green"></span>
+        <span class="terminal-title">pancode</span>
+      </div>
+      <div class="terminal-body">
+        <pre><code><span class="prompt">$</span> pancode --preset local
 <span class="dim">discovering agents...</span>
 <span class="success">&#10003;</span> claude-code     <span class="badge cli">CLI</span>    <span class="dim">anthropic/claude-sonnet</span>
 <span class="success">&#10003;</span> codex           <span class="badge cli">CLI</span>    <span class="dim">openai/codex-mini</span>
 <span class="success">&#10003;</span> gemini-cli      <span class="badge cli">CLI</span>    <span class="dim">google/gemini-2.5-pro</span>
 <span class="success">&#10003;</span> opencode        <span class="badge cli">CLI</span>    <span class="dim">anthropic/claude-sonnet</span>
-<span class="success">&#10003;</span> pi-native       <span class="badge native">SDK</span>    <span class="dim">local/llama-3.3-70b</span>
+<span class="success">&#10003;</span> native-agent    <span class="badge native">SDK</span>    <span class="dim">local/llama-3.3-70b</span>
 
 <span class="dim">loading domains...</span>
 <span class="accent">safety</span> <span class="accent">session</span> <span class="accent">agents</span> <span class="accent">prompts</span> <span class="accent">dispatch</span>
@@ -26,118 +69,129 @@
 
 <span class="success">PANCODE v0.3.0 READY</span>  <span class="dim">5 agents | 3 providers | build mode</span>
 <span class="prompt mode-build">[build]</span> <span class="cursor">_</span></code></pre>
+      </div>
     </div>
   </div>
 </section>
 
-<!-- Pan Taxonomy -->
-<section class="taxonomy">
-  <h2 class="section-title">Six Dimensions of Universality</h2>
-  <p class="section-subtitle">
-    Pan (all) + Code. Every axis of the multi-agent stack, unified under one runtime.
-  </p>
+<!-- Pan Taxonomy Grid -->
+<section class="taxonomy" id="taxonomy">
+  <div class="section-header">
+    <span class="section-label">THE PAN TAXONOMY</span>
+    <h2 class="section-title">Six Dimensions of Universality</h2>
+    <p class="section-subtitle">
+      Pan (all) + Code. Every axis of the multi-agent stack, unified under one runtime.
+    </p>
+  </div>
   <div class="taxonomy-grid">
-    <div class="taxonomy-card">
+    <div class="taxonomy-card" data-accent="green">
       <div class="taxonomy-icon">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-          <path d="M2 20h20M5 20V8l7-5 7 5v12"/>
-          <path d="M9 20v-6h6v6"/>
+        <svg width="28" height="28" viewBox="0 0 28 28" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="14" width="8" height="10" rx="1"/>
+          <rect x="17" y="14" width="8" height="10" rx="1"/>
+          <rect x="10" y="4" width="8" height="10" rx="1"/>
+          <path d="M11 14v-0M17 14v-0"/>
+          <path d="M7 14V12a7 7 0 0114 0v2"/>
         </svg>
       </div>
       <h3>Pan-provider</h3>
-      <p>Any LLM provider. Local engines, cloud APIs, or mixed fleets. No vendor lock-in.</p>
+      <p>Any LLM provider. Local engines, cloud APIs, or mixed fleets across 16+ backends. Zero vendor lock-in.</p>
     </div>
-    <div class="taxonomy-card">
+    <div class="taxonomy-card" data-accent="blue">
       <div class="taxonomy-icon">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-          <circle cx="12" cy="12" r="3"/>
-          <path d="M12 2v4m0 12v4M2 12h4m12 0h4"/>
-          <path d="M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83"/>
+        <svg width="28" height="28" viewBox="0 0 28 28" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="14" cy="14" r="4"/>
+          <path d="M14 2v5m0 14v5M2 14h5m14 0h5"/>
+          <circle cx="14" cy="14" r="10" stroke-dasharray="3 3" opacity="0.4"/>
         </svg>
       </div>
       <h3>Pan-model</h3>
-      <p>Any model, correctly routed by capability and cost. From local 7B to cloud frontier.</p>
+      <p>Any model, correctly routed by capability and cost tier. From local 7B quantized to cloud frontier.</p>
     </div>
-    <div class="taxonomy-card">
+    <div class="taxonomy-card" data-accent="purple">
       <div class="taxonomy-icon">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-          <rect x="2" y="6" width="20" height="12" rx="2"/>
-          <path d="M6 10h.01M10 10h.01M14 10h.01"/>
-          <path d="M6 14h12"/>
+        <svg width="28" height="28" viewBox="0 0 28 28" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="2" y="7" width="24" height="14" rx="2"/>
+          <path d="M6 12l3 3-3 3"/>
+          <path d="M12 18h8"/>
         </svg>
       </div>
       <h3>Pan-runtime</h3>
-      <p>Native SDK, CLI headless, or programmatic SDK. Every integration depth supported.</p>
+      <p>Native SDK, CLI headless, or programmatic SDK. Three integration tiers, one worker contract.</p>
     </div>
-    <div class="taxonomy-card">
+    <div class="taxonomy-card" data-accent="orange">
       <div class="taxonomy-icon">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-          <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/>
-          <circle cx="9" cy="7" r="4"/>
-          <path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/>
+        <svg width="28" height="28" viewBox="0 0 28 28" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="10" cy="9" r="4"/>
+          <circle cx="20" cy="9" r="4"/>
+          <path d="M4 25v-2a5 5 0 015-5h2"/>
+          <path d="M14 25v-2a5 5 0 015-5h2"/>
+          <circle cx="14" cy="19" r="2" fill="currentColor" opacity="0.3"/>
         </svg>
       </div>
       <h3>Pan-agent</h3>
       <p>Any coding agent on your machine becomes a managed PanCode worker. Auto-discovered at boot.</p>
     </div>
-    <div class="taxonomy-card">
+    <div class="taxonomy-card" data-accent="red">
       <div class="taxonomy-icon">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+        <svg width="28" height="28" viewBox="0 0 28 28" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14 26s10-5 10-12.5V6.5l-10-3.5-10 3.5v7C4 21 14 26 14 26z"/>
+          <path d="M10 14l3 3 5-5"/>
         </svg>
       </div>
       <h3>Pan-safety</h3>
-      <p>Unified safety model across all runtimes. Scope contracts and privilege non-escalation.</p>
+      <p>Unified safety model across all runtimes. Scope contracts enforce privilege non-escalation.</p>
     </div>
-    <div class="taxonomy-card">
+    <div class="taxonomy-card" data-accent="cyan">
       <div class="taxonomy-icon">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-          <circle cx="12" cy="12" r="3"/>
+        <svg width="28" height="28" viewBox="0 0 28 28" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="14" cy="14" r="3"/>
+          <path d="M2 14s5-9 12-9 12 9 12 9-5 9-12 9-12-9-12-9z"/>
+          <path d="M14 5v-2M14 25v-2M5 14H3m22 0h-2"/>
         </svg>
       </div>
       <h3>Pan-observe</h3>
-      <p>Unified observability. Cost, tokens, turns, and status across every agent and provider.</p>
+      <p>Unified observability. Cost, tokens, turns, and status across every agent and provider in real time.</p>
     </div>
   </div>
 </section>
 
 <!-- Three-Tier Runtime -->
-<section class="runtime-tiers">
-  <h2 class="section-title">Three-Tier Runtime Model</h2>
-  <p class="section-subtitle">
-    Every agent, regardless of backend, produces a worker with identical dispatch, safety, and observability guarantees.
-  </p>
+<section class="runtime-tiers" id="runtimes">
+  <div class="section-header">
+    <span class="section-label">RUNTIME MODEL</span>
+    <h2 class="section-title">Three-Tier Integration</h2>
+    <p class="section-subtitle">
+      Every agent produces a worker with identical dispatch, safety, and observability guarantees.
+      The integration tier determines how deeply PanCode controls the agent.
+    </p>
+  </div>
   <div class="tiers-container">
-    <div class="tier">
+    <div class="tier tier-native">
       <div class="tier-badge native">NATIVE</div>
-      <h3>Pi SDK</h3>
-      <p>Full control over tools, model, prompt, safety, and events.</p>
+      <h3>Native SDK</h3>
+      <p>Full control over tools, model selection, prompt, safety hooks, and event streams.</p>
       <div class="tier-depth">
         <div class="depth-bar" style="width: 100%"></div>
       </div>
       <span class="depth-label">Full integration</span>
     </div>
     <div class="tier-connector">
-      <svg width="40" height="24" viewBox="0 0 40 24">
-        <path d="M0 12h40" stroke="var(--pan-dim)" stroke-width="1" stroke-dasharray="4 4"/>
-      </svg>
+      <div class="connector-line"></div>
     </div>
-    <div class="tier">
+    <div class="tier tier-sdk">
       <div class="tier-badge sdk">SDK</div>
       <h3>Agent SDKs</h3>
-      <p>Claude Agent SDK, OpenAI Agents SDK, Mastra. Structured I/O.</p>
+      <p>Claude Agent SDK, OpenAI Agents SDK, Mastra. Structured inputs and outputs.</p>
       <div class="tier-depth">
         <div class="depth-bar" style="width: 66%"></div>
       </div>
       <span class="depth-label">Deep integration</span>
     </div>
     <div class="tier-connector">
-      <svg width="40" height="24" viewBox="0 0 40 24">
-        <path d="M0 12h40" stroke="var(--pan-dim)" stroke-width="1" stroke-dasharray="4 4"/>
-      </svg>
+      <div class="connector-line"></div>
     </div>
-    <div class="tier">
+    <div class="tier tier-cli">
       <div class="tier-badge cli-tier">CLI</div>
       <h3>Headless CLI</h3>
       <p>Claude Code, Codex, Gemini CLI, OpenCode, Cline, Copilot. Subprocess control.</p>
@@ -147,11 +201,17 @@
       <span class="depth-label">Task-level integration</span>
     </div>
   </div>
+  <p class="tiers-note">
+    Adding a new agent requires implementing one TypeScript adapter. Discovery at boot scans PATH for known binaries.
+  </p>
 </section>
 
-<!-- Feature Grid -->
-<section class="features">
-  <h2 class="section-title">Built for Multi-Agent Orchestration</h2>
+<!-- Feature Highlights -->
+<section class="features" id="features">
+  <div class="section-header">
+    <span class="section-label">BY THE NUMBERS</span>
+    <h2 class="section-title">Built for Multi-Agent Orchestration</h2>
+  </div>
   <div class="feature-grid">
     <div class="feature-card">
       <span class="feature-number">7</span>
@@ -161,7 +221,7 @@
     <div class="feature-card">
       <span class="feature-number">7</span>
       <span class="feature-label">Runtime Adapters</span>
-      <p>Pi SDK native plus Claude Code, Codex, Gemini CLI, OpenCode, Cline, and Copilot CLI.</p>
+      <p>Native SDK plus Claude Code, Codex, Gemini CLI, OpenCode, Cline, and Copilot CLI.</p>
     </div>
     <div class="feature-card">
       <span class="feature-number">10</span>
@@ -179,47 +239,82 @@
       <p>Local engines and cloud APIs. Anthropic, OpenAI, Google, Ollama, LM Studio, and more.</p>
     </div>
     <div class="feature-card">
-      <span class="feature-number">&infin;</span>
+      <div class="feature-icon-local">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <rect x="2" y="2" width="20" height="20" rx="3"/>
+          <path d="M8 12l3 3 5-5"/>
+        </svg>
+      </div>
       <span class="feature-label">Local First</span>
       <p>Your machine, your models, your data. No cloud dependency required. Terminal native.</p>
     </div>
   </div>
 </section>
 
-<!-- Architecture -->
-<section class="architecture">
-  <h2 class="section-title">Five-Layer Architecture</h2>
+<!-- Architecture Overview -->
+<section class="architecture" id="architecture">
+  <div class="section-header">
+    <span class="section-label">SYSTEM DESIGN</span>
+    <h2 class="section-title">Five-Layer Architecture</h2>
+    <p class="section-subtitle">
+      Clean separation of concerns from process entry through isolated subprocess workers.
+    </p>
+  </div>
   <div class="arch-diagram">
-    <div class="arch-layer cli-layer">
+    <div class="arch-layer arch-cli">
+      <div class="arch-layer-indicator"></div>
       <span class="layer-name">CLI</span>
       <span class="layer-desc">Process entry, tmux bootstrap, session management</span>
     </div>
-    <div class="arch-arrow">&darr;</div>
-    <div class="arch-layer entry-layer">
+    <div class="arch-arrow">
+      <svg width="24" height="20" viewBox="0 0 24 20">
+        <path d="M12 0v16M6 10l6 6 6-6" stroke="var(--pan-dim)" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    <div class="arch-layer arch-entry">
+      <div class="arch-layer-indicator"></div>
       <span class="layer-name">ENTRY</span>
       <span class="layer-desc">Config resolution, presets, domain ordering</span>
     </div>
-    <div class="arch-arrow">&darr;</div>
-    <div class="arch-layer core-layer">
+    <div class="arch-arrow">
+      <svg width="24" height="20" viewBox="0 0 24 20">
+        <path d="M12 0v16M6 10l6 6 6-6" stroke="var(--pan-dim)" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    <div class="arch-layer arch-core">
+      <div class="arch-layer-indicator"></div>
       <span class="layer-name">CORE</span>
-      <span class="layer-desc">Event bus, defaults, config, shutdown plumbing</span>
+      <span class="layer-desc">Event bus, defaults, configuration, shutdown plumbing</span>
     </div>
-    <div class="arch-arrow">&darr;</div>
-    <div class="arch-layer domain-layer">
+    <div class="arch-arrow">
+      <svg width="24" height="20" viewBox="0 0 24 20">
+        <path d="M12 0v16M6 10l6 6 6-6" stroke="var(--pan-dim)" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    <div class="arch-layer arch-domains">
+      <div class="arch-layer-indicator"></div>
       <span class="layer-name">DOMAINS</span>
-      <span class="layer-desc">10 composable domains with manifest-driven loading</span>
+      <span class="layer-desc">10 composable domains with manifest-driven topological loading</span>
     </div>
-    <div class="arch-arrow">&darr;</div>
-    <div class="arch-layer engine-layer">
+    <div class="arch-arrow">
+      <svg width="24" height="20" viewBox="0 0 24 20">
+        <path d="M12 0v16M6 10l6 6 6-6" stroke="var(--pan-accent)" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    <div class="arch-layer arch-engine">
+      <div class="arch-layer-indicator"></div>
       <span class="layer-name">ENGINE</span>
-      <span class="layer-desc">Sole SDK import boundary. Runtimes, adapters, workers</span>
+      <span class="layer-desc">Sole SDK import boundary. Runtimes, adapters, subprocess workers</span>
     </div>
   </div>
 </section>
 
 <!-- Quick Start -->
-<section class="quickstart">
-  <h2 class="section-title">Get Running in 60 Seconds</h2>
+<section class="quickstart" id="quickstart">
+  <div class="section-header">
+    <span class="section-label">GET STARTED</span>
+    <h2 class="section-title">Running in 60 Seconds</h2>
+  </div>
   <div class="quickstart-terminal">
     <div class="terminal-chrome">
       <span class="terminal-dot red"></span>
@@ -228,62 +323,67 @@
       <span class="terminal-title">terminal</span>
     </div>
     <div class="terminal-body">
-      <pre><code><span class="comment"># Install globally</span>
-<span class="prompt">$</span> npm install -g pancode
-
-<span class="comment"># Start with local models</span>
-<span class="prompt">$</span> pancode --preset local
-
-<span class="comment"># Or clone for development</span>
+      <pre><code><span class="comment"># Clone and install</span>
 <span class="prompt">$</span> git clone https://github.com/akougkas/pancode.git
 <span class="prompt">$</span> cd pancode && npm install && npm link
-<span class="prompt">$</span> pancode</code></pre>
+
+<span class="comment"># Start with local preset</span>
+<span class="prompt">$</span> pancode --preset local
+
+<span class="comment"># Or start with cloud providers</span>
+<span class="prompt">$</span> pancode --preset cloud
+
+<span class="comment"># Dispatch a task to the best available agent</span>
+<span class="prompt">[build]</span> /dispatch scout "Analyze the authentication module"</code></pre>
     </div>
   </div>
 </section>
 
 <!-- Comparison -->
-<section class="comparison">
-  <h2 class="section-title">Single Agent vs. Orchestrated Fleet</h2>
+<section class="comparison" id="comparison">
+  <div class="section-header">
+    <span class="section-label">WHY PANCODE</span>
+    <h2 class="section-title">Single Agent vs. Orchestrated Fleet</h2>
+  </div>
   <div class="comparison-table-wrapper">
     <table class="comparison-table">
       <thead>
         <tr>
           <th>Capability</th>
           <th>Single Agent</th>
-          <th>PanCode</th>
+          <th class="pan-col">PanCode</th>
         </tr>
       </thead>
       <tbody>
         <tr>
-          <td>Provider flexibility</td>
-          <td>One provider per tool</td>
-          <td>16+ providers, any combination</td>
+          <td class="cap-label">Provider flexibility</td>
+          <td class="cap-single">One provider per tool</td>
+          <td class="cap-pan">16+ providers, any combination</td>
         </tr>
         <tr>
-          <td>Agent coordination</td>
-          <td>Manual switching</td>
-          <td>Dispatch pipeline with receipts</td>
+          <td class="cap-label">Agent coordination</td>
+          <td class="cap-single">Manual switching</td>
+          <td class="cap-pan">Dispatch pipeline with receipts</td>
         </tr>
         <tr>
-          <td>Safety model</td>
-          <td>Per-tool permissions</td>
-          <td>Unified scope contracts across all agents</td>
+          <td class="cap-label">Safety model</td>
+          <td class="cap-single">Per-tool permissions</td>
+          <td class="cap-pan">Unified scope contracts across all agents</td>
         </tr>
         <tr>
-          <td>Observability</td>
-          <td>Per-tool logs</td>
-          <td>Centralized cost, token, and status tracking</td>
+          <td class="cap-label">Observability</td>
+          <td class="cap-single">Per-tool logs</td>
+          <td class="cap-pan">Centralized cost, token, and status tracking</td>
         </tr>
         <tr>
-          <td>Runtime diversity</td>
-          <td>One runtime</td>
-          <td>Native SDK + CLI + programmatic SDK tiers</td>
+          <td class="cap-label">Runtime diversity</td>
+          <td class="cap-single">One runtime</td>
+          <td class="cap-pan">Native + SDK + CLI tiers</td>
         </tr>
         <tr>
-          <td>Configuration</td>
-          <td>Config files or flags</td>
-          <td>Conversational configuration through natural language</td>
+          <td class="cap-label">Configuration</td>
+          <td class="cap-single">Config files or flags</td>
+          <td class="cap-pan">Conversational configuration via natural language</td>
         </tr>
       </tbody>
     </table>
@@ -293,17 +393,22 @@
 <!-- Footer -->
 <footer class="landing-footer">
   <div class="footer-content">
-    <div class="footer-brand">
-      <span class="footer-logo">PanCode</span>
-      <span class="footer-tagline">Composable multi-agent runtime</span>
+    <div class="footer-top">
+      <div class="footer-brand">
+        <span class="footer-logo">PanCode</span>
+        <span class="footer-exp-tag">pancode-exp</span>
+      </div>
+      <div class="footer-links">
+        <a href="/getting-started/installation/">Docs</a>
+        <a href="https://github.com/akougkas/pancode" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://github.com/akougkas/pancode/blob/main/LICENSE" target="_blank" rel="noopener">Apache 2.0</a>
+      </div>
     </div>
-    <div class="footer-links">
-      <a href="https://github.com/akougkas/pancode">GitHub</a>
-      <a href="/docs/getting-started/">Documentation</a>
-      <a href="https://github.com/akougkas/pancode/blob/main/LICENSE">Apache 2.0</a>
-    </div>
-    <div class="footer-credit">
-      Built by <a href="https://github.com/akougkas">Anthony Kougkas</a>
+    <div class="footer-bottom">
+      <span class="footer-release">pancode-exp &middot; Experimental Preview Release</span>
+      <span class="footer-credit">
+        Built by <a href="https://github.com/akougkas" target="_blank" rel="noopener">Anthony Kougkas</a>
+      </span>
     </div>
   </div>
 </footer>

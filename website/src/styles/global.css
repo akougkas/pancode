@@ -1,36 +1,44 @@
 @import "tailwindcss";
 
-/* ============================================================
+/* ================================================================
    PanCode Design Tokens
-   ============================================================ */
+   Derived from .specs/PAN-DESIGN-TOKENS.md
+   ================================================================ */
 
 :root {
   --pan-bg: #0a0a0f;
-  --pan-bg-raised: #12121a;
-  --pan-bg-surface: #1a1a25;
-  --pan-border: #2a2a3a;
+  --pan-bg-raised: #111118;
+  --pan-bg-surface: #18181f;
+  --pan-bg-hover: #1e1e28;
+  --pan-border: #232333;
+  --pan-border-hover: #333348;
   --pan-border-accent: #16c858;
   --pan-text: #e4e4ed;
   --pan-text-muted: #8888a0;
   --pan-dim: #555570;
   --pan-accent: #16c858;
   --pan-accent-dim: #0a9e3f;
+  --pan-accent-glow: rgba(22, 200, 88, 0.15);
   --pan-success: #16c858;
   --pan-error: #dc5663;
   --pan-warning: #fdac53;
   --pan-blue: #3b82f6;
   --pan-purple: #7f45e0;
+  --pan-cyan: #22d3ee;
+  --pan-orange: #fdac53;
   --pan-build: #16c858;
   --pan-plan: #7f45e0;
   --pan-review: #dc5663;
   --pan-ask: #fdac53;
   --pan-font-mono: "JetBrains Mono", "Fira Code", "SF Mono", "Cascadia Code", ui-monospace, monospace;
   --pan-font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --pan-radius: 8px;
+  --pan-radius-lg: 12px;
 }
 
-/* ============================================================
+/* ================================================================
    Starlight Dark Theme Overrides
-   ============================================================ */
+   ================================================================ */
 
 :root {
   --sl-color-accent-low: #0a2e15;
@@ -40,9 +48,9 @@
   --sl-color-gray-1: #c4c4d4;
   --sl-color-gray-2: #8888a0;
   --sl-color-gray-3: #555570;
-  --sl-color-gray-4: #2a2a3a;
-  --sl-color-gray-5: #1a1a25;
-  --sl-color-gray-6: #12121a;
+  --sl-color-gray-4: #232333;
+  --sl-color-gray-5: #18181f;
+  --sl-color-gray-6: #111118;
   --sl-color-black: #0a0a0f;
   --sl-font: var(--pan-font-sans);
   --sl-font-system-mono: var(--pan-font-mono);
@@ -54,24 +62,206 @@
   --sl-color-accent-high: #063d19;
 }
 
-/* ============================================================
-   Landing Page: Terminal Hero
-   ============================================================ */
+/* ================================================================
+   Global Font Import
+   ================================================================ */
 
-.terminal-hero {
-  max-width: 720px;
-  margin: 0 auto 4rem;
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
+}
+
+/* ================================================================
+   Experimental Preview Banner
+   ================================================================ */
+
+.exp-banner {
+  background: linear-gradient(90deg, rgba(253, 172, 83, 0.08) 0%, rgba(253, 172, 83, 0.04) 100%);
+  border-bottom: 1px solid rgba(253, 172, 83, 0.15);
+  padding: 0.5rem 1rem;
+}
+
+.exp-banner-inner {
+  max-width: 1080px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.exp-pill {
+  display: inline-block;
+  font-family: var(--pan-font-mono);
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 2px 10px;
+  border-radius: 100px;
+  background: rgba(253, 172, 83, 0.12);
+  color: var(--pan-warning);
+  border: 1px solid rgba(253, 172, 83, 0.25);
+  white-space: nowrap;
+}
+
+.exp-banner-text {
+  font-size: 0.8rem;
+  color: var(--pan-text-muted);
+  line-height: 1.4;
+}
+
+/* ================================================================
+   Hero Section
+   ================================================================ */
+
+.hero-section {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem 4rem;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3rem;
+  align-items: center;
+}
+
+@media (max-width: 900px) {
+  .hero-section {
+    grid-template-columns: 1fr;
+    gap: 2rem;
+    padding: 1.5rem 1rem 3rem;
+  }
+}
+
+.hero-content {
+  display: flex;
+  flex-direction: column;
+}
+
+.hero-badge-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.hero-version {
+  font-family: var(--pan-font-mono);
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--pan-warning);
+  background: rgba(253, 172, 83, 0.1);
+  border: 1px solid rgba(253, 172, 83, 0.2);
+  padding: 2px 8px;
+  border-radius: 4px;
+  letter-spacing: 0.05em;
+}
+
+.hero-separator {
+  color: var(--pan-dim);
+  font-size: 0.7rem;
+}
+
+.hero-license,
+.hero-status {
+  font-family: var(--pan-font-mono);
+  font-size: 0.7rem;
+  color: var(--pan-dim);
+  letter-spacing: 0.03em;
+}
+
+.hero-headline {
+  font-family: var(--pan-font-sans);
+  font-size: clamp(2rem, 5vw, 3.25rem);
+  font-weight: 800;
+  color: var(--pan-text);
+  line-height: 1.1;
+  letter-spacing: -0.03em;
+  margin: 0 0 1.25rem;
+}
+
+.hero-accent {
+  color: var(--pan-accent);
+}
+
+.hero-subtitle {
+  font-size: 1.05rem;
+  color: var(--pan-text-muted);
+  line-height: 1.65;
+  margin: 0 0 2rem;
+  max-width: 480px;
+}
+
+.hero-ctas {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.cta-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--pan-font-sans);
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--pan-bg);
+  background: var(--pan-accent);
+  padding: 0.65rem 1.5rem;
+  border-radius: 6px;
+  text-decoration: none;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.cta-primary:hover {
+  background: #1dd964;
+  box-shadow: 0 0 20px var(--pan-accent-glow);
+}
+
+.cta-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--pan-font-sans);
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--pan-text);
+  background: var(--pan-bg-raised);
+  border: 1px solid var(--pan-border);
+  padding: 0.65rem 1.5rem;
+  border-radius: 6px;
+  text-decoration: none;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.cta-secondary:hover {
+  border-color: var(--pan-border-hover);
+  background: var(--pan-bg-hover);
+}
+
+/* ================================================================
+   Terminal Window (shared by hero and quickstart)
+   ================================================================ */
+
+.hero-terminal {
+  display: flex;
+  align-items: center;
 }
 
 .terminal-window {
+  width: 100%;
   background: var(--pan-bg-raised);
   border: 1px solid var(--pan-border);
-  border-radius: 8px;
+  border-radius: var(--pan-radius-lg);
   overflow: hidden;
   box-shadow:
-    0 0 0 1px rgba(22, 200, 88, 0.05),
-    0 8px 40px rgba(0, 0, 0, 0.5),
-    0 2px 8px rgba(0, 0, 0, 0.3);
+    0 0 0 1px rgba(22, 200, 88, 0.04),
+    0 16px 48px rgba(0, 0, 0, 0.45),
+    0 4px 12px rgba(0, 0, 0, 0.25);
 }
 
 .terminal-chrome {
@@ -96,13 +286,13 @@
 .terminal-title {
   margin-left: 8px;
   font-family: var(--pan-font-mono);
-  font-size: 0.75rem;
-  color: var(--pan-text-muted);
+  font-size: 0.72rem;
+  color: var(--pan-dim);
   letter-spacing: 0.05em;
 }
 
 .terminal-body {
-  padding: 20px 24px;
+  padding: 16px 20px;
   overflow-x: auto;
 }
 
@@ -115,8 +305,8 @@
 
 .terminal-body code {
   font-family: var(--pan-font-mono);
-  font-size: 0.8rem;
-  line-height: 1.7;
+  font-size: 0.78rem;
+  line-height: 1.75;
   color: var(--pan-text);
   background: transparent !important;
 }
@@ -140,26 +330,27 @@
 
 .terminal-body .comment {
   color: var(--pan-dim);
+  font-style: italic;
 }
 
 .terminal-body .badge {
   display: inline-block;
-  font-size: 0.65rem;
-  padding: 0 4px;
+  font-size: 0.6rem;
+  padding: 0 5px;
   border-radius: 3px;
-  font-weight: 600;
-  letter-spacing: 0.05em;
+  font-weight: 700;
+  letter-spacing: 0.06em;
   vertical-align: middle;
 }
 
 .terminal-body .badge.cli {
   color: var(--pan-blue);
-  border: 1px solid var(--pan-blue);
+  border: 1px solid rgba(59, 130, 246, 0.4);
 }
 
 .terminal-body .badge.native {
   color: var(--pan-accent);
-  border: 1px solid var(--pan-accent);
+  border: 1px solid rgba(22, 200, 88, 0.4);
 }
 
 .terminal-body .mode-build {
@@ -176,43 +367,59 @@
   50% { opacity: 0; }
 }
 
-/* ============================================================
-   Section Titles
-   ============================================================ */
+/* ================================================================
+   Section Headers
+   ================================================================ */
+
+.section-header {
+  text-align: center;
+  margin-bottom: 2.5rem;
+}
+
+.section-label {
+  display: inline-block;
+  font-family: var(--pan-font-mono);
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--pan-accent);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin-bottom: 0.75rem;
+}
 
 .section-title {
   font-family: var(--pan-font-sans);
-  font-size: 1.75rem;
+  font-size: clamp(1.5rem, 3vw, 2rem);
   font-weight: 700;
   color: var(--pan-text);
   text-align: center;
-  margin-bottom: 0.75rem;
+  margin: 0 0 0.75rem;
   letter-spacing: -0.02em;
 }
 
 .section-subtitle {
-  font-size: 1rem;
+  font-size: 0.95rem;
   color: var(--pan-text-muted);
   text-align: center;
   max-width: 600px;
-  margin: 0 auto 2.5rem;
+  margin: 0 auto;
   line-height: 1.6;
 }
 
-/* ============================================================
+/* ================================================================
    Pan Taxonomy Grid
-   ============================================================ */
+   ================================================================ */
 
 .taxonomy {
-  margin: 5rem auto;
-  max-width: 960px;
-  padding: 0 1rem;
+  margin: 0 auto;
+  max-width: 1080px;
+  padding: 5rem 1.5rem;
 }
 
 .taxonomy-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 1.25rem;
+  gap: 1rem;
 }
 
 @media (max-width: 768px) {
@@ -230,49 +437,81 @@
 .taxonomy-card {
   background: var(--pan-bg-raised);
   border: 1px solid var(--pan-border);
-  border-radius: 8px;
+  border-radius: var(--pan-radius);
   padding: 1.5rem;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+  position: relative;
+  overflow: hidden;
 }
 
+.taxonomy-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--pan-accent);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.taxonomy-card[data-accent="blue"]::before { background: var(--pan-blue); }
+.taxonomy-card[data-accent="purple"]::before { background: var(--pan-purple); }
+.taxonomy-card[data-accent="orange"]::before { background: var(--pan-orange); }
+.taxonomy-card[data-accent="red"]::before { background: var(--pan-error); }
+.taxonomy-card[data-accent="cyan"]::before { background: var(--pan-cyan); }
+
 .taxonomy-card:hover {
-  border-color: var(--pan-accent-dim);
-  box-shadow: 0 0 20px rgba(22, 200, 88, 0.05);
+  border-color: var(--pan-border-hover);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+}
+
+.taxonomy-card:hover::before {
+  opacity: 1;
 }
 
 .taxonomy-icon {
   color: var(--pan-accent);
-  margin-bottom: 0.75rem;
+  margin-bottom: 1rem;
+  opacity: 0.9;
 }
+
+.taxonomy-card[data-accent="blue"] .taxonomy-icon { color: var(--pan-blue); }
+.taxonomy-card[data-accent="purple"] .taxonomy-icon { color: var(--pan-purple); }
+.taxonomy-card[data-accent="orange"] .taxonomy-icon { color: var(--pan-orange); }
+.taxonomy-card[data-accent="red"] .taxonomy-icon { color: var(--pan-error); }
+.taxonomy-card[data-accent="cyan"] .taxonomy-icon { color: var(--pan-cyan); }
 
 .taxonomy-card h3 {
   font-family: var(--pan-font-mono);
-  font-size: 0.95rem;
+  font-size: 0.9rem;
   font-weight: 600;
   color: var(--pan-text);
   margin: 0 0 0.5rem;
 }
 
 .taxonomy-card p {
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   color: var(--pan-text-muted);
-  line-height: 1.5;
+  line-height: 1.55;
   margin: 0;
 }
 
-/* ============================================================
+/* ================================================================
    Three-Tier Runtime
-   ============================================================ */
+   ================================================================ */
 
 .runtime-tiers {
-  margin: 5rem auto;
-  max-width: 960px;
-  padding: 0 1rem;
+  margin: 0 auto;
+  max-width: 1080px;
+  padding: 5rem 1.5rem;
 }
 
 .tiers-container {
   display: flex;
-  align-items: center;
+  align-items: stretch;
   justify-content: center;
   gap: 0;
 }
@@ -280,54 +519,65 @@
 @media (max-width: 768px) {
   .tiers-container {
     flex-direction: column;
-    gap: 1rem;
+    align-items: center;
+    gap: 0;
   }
   .tier-connector {
-    transform: rotate(90deg);
+    height: 32px;
+    width: 2px;
+  }
+  .connector-line {
+    width: 2px !important;
+    height: 100% !important;
   }
 }
 
 .tier {
   flex: 1;
-  max-width: 260px;
+  max-width: 280px;
   background: var(--pan-bg-raised);
   border: 1px solid var(--pan-border);
-  border-radius: 8px;
+  border-radius: var(--pan-radius);
   padding: 1.5rem;
   text-align: center;
+  transition: border-color 0.2s ease;
+}
+
+.tier:hover {
+  border-color: var(--pan-border-hover);
 }
 
 .tier-badge {
   display: inline-block;
   font-family: var(--pan-font-mono);
-  font-size: 0.7rem;
+  font-size: 0.68rem;
   font-weight: 700;
   letter-spacing: 0.1em;
-  padding: 2px 8px;
+  padding: 3px 10px;
   border-radius: 4px;
   margin-bottom: 0.75rem;
 }
 
 .tier-badge.native {
   color: var(--pan-accent);
-  background: rgba(22, 200, 88, 0.1);
-  border: 1px solid rgba(22, 200, 88, 0.3);
+  background: rgba(22, 200, 88, 0.08);
+  border: 1px solid rgba(22, 200, 88, 0.2);
 }
 
 .tier-badge.sdk {
   color: var(--pan-purple);
-  background: rgba(127, 69, 224, 0.1);
-  border: 1px solid rgba(127, 69, 224, 0.3);
+  background: rgba(127, 69, 224, 0.08);
+  border: 1px solid rgba(127, 69, 224, 0.2);
 }
 
 .tier-badge.cli-tier {
   color: var(--pan-blue);
-  background: rgba(59, 130, 246, 0.1);
-  border: 1px solid rgba(59, 130, 246, 0.3);
+  background: rgba(59, 130, 246, 0.08);
+  border: 1px solid rgba(59, 130, 246, 0.2);
 }
 
 .tier h3 {
-  font-size: 1rem;
+  font-size: 0.95rem;
   font-weight: 600;
   color: var(--pan-text);
   margin: 0 0 0.5rem;
@@ -341,49 +591,73 @@
 }
 
 .tier-depth {
-  height: 4px;
+  height: 3px;
   background: var(--pan-bg-surface);
   border-radius: 2px;
   overflow: hidden;
   margin-bottom: 0.5rem;
 }
 
+.tier-native .depth-bar { background: var(--pan-accent); }
+.tier-sdk .depth-bar { background: var(--pan-purple); }
+.tier-cli .depth-bar { background: var(--pan-blue); }
+
 .depth-bar {
   height: 100%;
   background: var(--pan-accent);
   border-radius: 2px;
-  transition: width 0.3s ease;
 }
 
 .depth-label {
   font-family: var(--pan-font-mono);
-  font-size: 0.65rem;
+  font-size: 0.62rem;
   color: var(--pan-dim);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.06em;
 }
 
 .tier-connector {
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  padding: 0 4px;
+  justify-content: center;
+  width: 32px;
 }
 
-/* ============================================================
+.connector-line {
+  width: 100%;
+  height: 1px;
+  background: var(--pan-border);
+  background: repeating-linear-gradient(
+    90deg,
+    var(--pan-dim) 0px,
+    var(--pan-dim) 4px,
+    transparent 4px,
+    transparent 8px
+  );
+}
+
+.tiers-note {
+  text-align: center;
+  font-size: 0.82rem;
+  color: var(--pan-dim);
+  margin-top: 1.5rem;
+}
+
+/* ================================================================
    Feature Grid
-   ============================================================ */
+   ================================================================ */
 
 .features {
-  margin: 5rem auto;
-  max-width: 960px;
-  padding: 0 1rem;
+  margin: 0 auto;
+  max-width: 1080px;
+  padding: 5rem 1.5rem;
 }
 
 .feature-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 1.25rem;
+  gap: 1rem;
 }
 
 @media (max-width: 768px) {
@@ -401,51 +675,57 @@
 .feature-card {
   background: var(--pan-bg-raised);
   border: 1px solid var(--pan-border);
-  border-radius: 8px;
+  border-radius: var(--pan-radius);
   padding: 1.5rem;
-  transition: border-color 0.2s ease;
+  transition: border-color 0.2s ease, transform 0.2s ease;
 }
 
 .feature-card:hover {
-  border-color: var(--pan-border-accent);
+  border-color: var(--pan-accent-dim);
+  transform: translateY(-1px);
 }
 
 .feature-number {
   display: block;
   font-family: var(--pan-font-mono);
-  font-size: 2rem;
-  font-weight: 700;
+  font-size: 2.25rem;
+  font-weight: 800;
   color: var(--pan-accent);
   line-height: 1;
+  margin-bottom: 0.25rem;
+}
+
+.feature-icon-local {
+  color: var(--pan-accent);
   margin-bottom: 0.25rem;
 }
 
 .feature-label {
   display: block;
   font-family: var(--pan-font-mono);
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   font-weight: 600;
   color: var(--pan-text);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.06em;
   margin-bottom: 0.75rem;
 }
 
 .feature-card p {
   font-size: 0.8rem;
   color: var(--pan-text-muted);
-  line-height: 1.5;
+  line-height: 1.55;
   margin: 0;
 }
 
-/* ============================================================
+/* ================================================================
    Architecture Diagram
-   ============================================================ */
+   ================================================================ */
 
 .architecture {
-  margin: 5rem auto;
-  max-width: 640px;
-  padding: 0 1rem;
+  margin: 0 auto;
+  max-width: 680px;
+  padding: 5rem 1.5rem;
 }
 
 .arch-diagram {
@@ -460,15 +740,44 @@
   display: flex;
   align-items: center;
   gap: 1rem;
-  padding: 1rem 1.25rem;
+  padding: 0.875rem 1.25rem;
   background: var(--pan-bg-raised);
   border: 1px solid var(--pan-border);
   border-radius: 6px;
+  position: relative;
+  transition: border-color 0.2s ease;
+}
+
+.arch-layer:hover {
+  border-color: var(--pan-border-hover);
+}
+
+.arch-layer-indicator {
+  width: 3px;
+  height: 60%;
+  min-height: 16px;
+  border-radius: 2px;
+  background: var(--pan-dim);
+  position: absolute;
+  left: -1px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.arch-cli .arch-layer-indicator { background: var(--pan-dim); }
+.arch-entry .arch-layer-indicator { background: var(--pan-blue); }
+.arch-core .arch-layer-indicator { background: var(--pan-purple); }
+.arch-domains .arch-layer-indicator { background: var(--pan-warning); }
+.arch-engine .arch-layer-indicator { background: var(--pan-accent); }
+
+.arch-engine {
+  border-color: rgba(22, 200, 88, 0.2);
+  box-shadow: 0 0 16px rgba(22, 200, 88, 0.06);
 }
 
 .layer-name {
   font-family: var(--pan-font-mono);
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   font-weight: 700;
   color: var(--pan-accent);
   text-transform: uppercase;
@@ -476,57 +785,61 @@
   min-width: 80px;
 }
 
+.arch-cli .layer-name { color: var(--pan-text-muted); }
+.arch-entry .layer-name { color: var(--pan-blue); }
+.arch-core .layer-name { color: var(--pan-purple); }
+.arch-domains .layer-name { color: var(--pan-warning); }
+
 .layer-desc {
   font-size: 0.8rem;
   color: var(--pan-text-muted);
 }
 
 .arch-arrow {
-  color: var(--pan-dim);
-  font-size: 1rem;
-  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   padding: 2px 0;
+  line-height: 1;
 }
 
-.engine-layer {
-  border-color: var(--pan-accent-dim);
-  box-shadow: 0 0 12px rgba(22, 200, 88, 0.08);
-}
-
-/* ============================================================
+/* ================================================================
    Quick Start
-   ============================================================ */
+   ================================================================ */
 
 .quickstart {
-  margin: 5rem auto;
-  max-width: 640px;
-  padding: 0 1rem;
+  margin: 0 auto;
+  max-width: 680px;
+  padding: 5rem 1.5rem;
 }
 
 .quickstart-terminal {
   background: var(--pan-bg-raised);
   border: 1px solid var(--pan-border);
-  border-radius: 8px;
+  border-radius: var(--pan-radius-lg);
   overflow: hidden;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
 }
 
 .quickstart-terminal .terminal-body code {
-  font-size: 0.8rem;
+  font-size: 0.78rem;
 }
 
-/* ============================================================
+/* ================================================================
    Comparison Table
-   ============================================================ */
+   ================================================================ */
 
 .comparison {
-  margin: 5rem auto;
-  max-width: 720px;
-  padding: 0 1rem;
+  margin: 0 auto;
+  max-width: 780px;
+  padding: 5rem 1.5rem;
 }
 
 .comparison-table-wrapper {
   overflow-x: auto;
+  border: 1px solid var(--pan-border);
+  border-radius: var(--pan-radius);
+  background: var(--pan-bg-raised);
 }
 
 .comparison-table {
@@ -537,53 +850,74 @@
 
 .comparison-table th {
   font-family: var(--pan-font-mono);
-  font-size: 0.75rem;
+  font-size: 0.7rem;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--pan-text-muted);
+  letter-spacing: 0.06em;
+  color: var(--pan-dim);
   text-align: left;
-  padding: 0.75rem 1rem;
+  padding: 0.875rem 1.25rem;
   border-bottom: 1px solid var(--pan-border);
+  background: var(--pan-bg-surface);
 }
 
-.comparison-table td {
-  padding: 0.75rem 1rem;
-  border-bottom: 1px solid var(--pan-border);
-  color: var(--pan-text);
-}
-
-.comparison-table tr td:first-child {
-  font-weight: 500;
-  color: var(--pan-text-muted);
-}
-
-.comparison-table tr td:last-child {
+.comparison-table th.pan-col {
   color: var(--pan-accent);
 }
 
-.comparison-table tbody tr:hover {
-  background: var(--pan-bg-raised);
+.comparison-table td {
+  padding: 0.75rem 1.25rem;
+  border-bottom: 1px solid var(--pan-border);
 }
 
-/* ============================================================
+.comparison-table tr:last-child td {
+  border-bottom: none;
+}
+
+.cap-label {
+  font-weight: 500;
+  color: var(--pan-text);
+}
+
+.cap-single {
+  color: var(--pan-text-muted);
+}
+
+.cap-pan {
+  color: var(--pan-accent);
+  font-weight: 500;
+}
+
+.comparison-table tbody tr {
+  transition: background 0.1s ease;
+}
+
+.comparison-table tbody tr:hover {
+  background: var(--pan-bg-hover);
+}
+
+/* ================================================================
    Landing Footer
-   ============================================================ */
+   ================================================================ */
 
 .landing-footer {
-  margin-top: 5rem;
-  padding: 2.5rem 1rem;
+  margin-top: 2rem;
+  padding: 2rem 1.5rem;
   border-top: 1px solid var(--pan-border);
 }
 
 .footer-content {
-  max-width: 960px;
+  max-width: 1080px;
   margin: 0 auto;
+}
+
+.footer-top {
   display: flex;
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 1rem;
+  margin-bottom: 1.5rem;
 }
 
 .footer-brand {
@@ -599,9 +933,16 @@
   color: var(--pan-accent);
 }
 
-.footer-tagline {
-  font-size: 0.8rem;
-  color: var(--pan-dim);
+.footer-exp-tag {
+  font-family: var(--pan-font-mono);
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: var(--pan-warning);
+  background: rgba(253, 172, 83, 0.08);
+  border: 1px solid rgba(253, 172, 83, 0.15);
+  padding: 1px 6px;
+  border-radius: 3px;
+  letter-spacing: 0.04em;
 }
 
 .footer-links {
@@ -620,6 +961,23 @@
   color: var(--pan-accent);
 }
 
+.footer-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--pan-border);
+}
+
+.footer-release {
+  font-family: var(--pan-font-mono);
+  font-size: 0.72rem;
+  color: var(--pan-dim);
+  letter-spacing: 0.03em;
+}
+
 .footer-credit {
   font-size: 0.75rem;
   color: var(--pan-dim);
@@ -635,22 +993,34 @@
 }
 
 @media (max-width: 640px) {
-  .footer-content {
+  .footer-top,
+  .footer-bottom {
     flex-direction: column;
     text-align: center;
   }
 }
 
-/* ============================================================
-   Starlight splash page override: hide default hero title
-   since we render our own content below
-   ============================================================ */
+/* ================================================================
+   Starlight Splash Page Overrides
+   ================================================================ */
 
+/* Hide default Starlight hero entirely since we build our own in Landing.astro */
 [data-page-type="splash"] .hero {
-  padding-bottom: 1rem;
+  display: none !important;
 }
 
-/* Fix Starlight code blocks inheriting landing terminal styles */
+/* Remove extra padding from splash main content */
+[data-page-type="splash"] .content-panel {
+  padding-top: 0;
+}
+
+/* Fix Starlight code blocks not inheriting landing terminal styles */
 .sl-markdown-content pre {
   background: var(--sl-color-gray-6) !important;
+}
+
+/* Starlight docs page banner for caution callouts (experimental preview) */
+.sl-markdown-content .starlight-aside--caution {
+  border-color: rgba(253, 172, 83, 0.25);
+  background: rgba(253, 172, 83, 0.04);
 }
