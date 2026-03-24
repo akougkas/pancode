@@ -370,7 +370,7 @@ agents dispatch safety prompts session observability scheduling configure ui
       <ol class="architecture-stack">
         {
           layers.map((layer, index) => (
-            <li class="architecture-layer" style={`--layer-offset: ${index * 1.15}rem;`}>
+            <li class="architecture-layer">
               <span class="architecture-layer__index">{String(index + 1).padStart(2, "0")}</span>
               <div>
                 <h3>{layer.name}</h3>
