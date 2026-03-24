@@ -73,6 +73,8 @@ export interface RuntimeResult {
   usage: RuntimeUsage; // Token counts (zeros for runtimes that don't report)
   model: string | null; // Model used (null if unknown)
   runtime: string; // Which runtime produced this result
+  /** Session metadata for continuity across dispatches (taskId, sessionId). */
+  sessionMeta?: { taskId?: string; sessionId?: string };
 }
 
 /**
@@ -103,4 +105,64 @@ export interface AgentRuntime {
 
   /** Parse stdout + result file into a RuntimeResult */
   parseResult(stdout: string, stderr: string, exitCode: number, resultFile: string | null): RuntimeResult;
+}
+
+// ---------------------------------------------------------------------------
+// SDK runtime extensions
+// ---------------------------------------------------------------------------
+
+/**
+ * Progress event emitted by SDK runtimes during in-process execution.
+ * Maps to WorkerProgressEvent on the bus via the dispatcher.
+ */
+export interface SdkProgressEvent {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  cost: number;
+  turns: number;
+  currentTool: string | null;
+  currentToolArgs: string | null;
+  recentTools: string[];
+  toolCount: number;
+  textDelta?: string;
+}
+
+/**
+ * Subagent progress event from the SDK's agentProgressSummaries feature.
+ * Emitted when a subagent periodically reports its status.
+ */
+export interface SdkTaskProgressEvent {
+  taskId: string;
+  description: string;
+  summary: string;
+  usage: { total_tokens: number; tool_uses: number; duration_ms: number };
+  lastToolName: string | null;
+}
+
+/**
+ * Callbacks for SDK runtime in-process execution. The dispatcher provides
+ * these so SDK runtimes can report progress and request tool approvals.
+ */
+export interface SdkExecutionCallbacks {
+  onProgress?: (progress: SdkProgressEvent) => void;
+  onTaskProgress?: (progress: SdkTaskProgressEvent) => void;
+  onToolApproval?: (toolName: string, input: Record<string, unknown>) => Promise<boolean>;
+  signal?: AbortSignal;
+}
+
+/**
+ * An SDK runtime executes tasks in-process through a programmatic API
+ * instead of spawning subprocesses. Provides streaming, tool interception,
+ * and session management. The dispatcher detects this interface via
+ * isSdkRuntime() and routes to executeTask() instead of subprocess spawn.
+ */
+export interface SdkAgentRuntime extends AgentRuntime {
+  executeTask(config: RuntimeTaskConfig, callbacks?: SdkExecutionCallbacks): Promise<RuntimeResult>;
+}
+
+/** Type guard: true when the runtime supports in-process SDK execution. */
+export function isSdkRuntime(runtime: AgentRuntime): runtime is SdkAgentRuntime {
+  return runtime.tier === "sdk" && "executeTask" in runtime;
 }
