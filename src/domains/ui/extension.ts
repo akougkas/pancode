@@ -296,10 +296,13 @@ export const extension = defineExtension((pi) => {
           // restore previous values on Admin exit. Ensures chat-based mode changes
           // ("enter admin mode") trigger the same expansion as the Alt+A shortcut.
           if (newMode === "admin" && previousMode !== "admin") {
+            adminPreviousMode = previousMode;
             adminPreviousSafety = (process.env.PANCODE_SAFETY ?? DEFAULT_SAFETY) as SafetyLevel;
             adminPreviousReasoning = state.currentReasoningPreference;
+            // Set full-auto in the runtime env but do NOT persist to disk.
+            // If PanCode crashes during admin mode, the next boot will use the
+            // previously persisted (safe) value instead of full-auto.
             process.env.PANCODE_SAFETY = "full-auto";
-            persistSettings({ safetyMode: "full-auto" }, (m, l) => ctx.ui.notify(m, l));
             applyReasoningLevel("xhigh", ctx.model, (m, l) => ctx.ui.notify(m, l));
             emitPanel(
               [
@@ -313,12 +316,16 @@ export const extension = defineExtension((pi) => {
           } else if (previousMode === "admin" && newMode !== "admin") {
             if (adminPreviousSafety !== null) {
               process.env.PANCODE_SAFETY = adminPreviousSafety;
+              // Persist the restored safety on admin exit. This is the only
+              // admin-related safety persistence, ensuring a crash during admin
+              // never leaves full-auto on disk.
               persistSettings({ safetyMode: adminPreviousSafety }, (m, l) => ctx.ui.notify(m, l));
             }
             if (adminPreviousReasoning !== null) {
               applyReasoningLevel(adminPreviousReasoning, ctx.model, (m, l) => ctx.ui.notify(m, l));
             }
             emitPanel(`[GOD MODE] Admin deactivated. Restored to ${modeDef.name} mode.`, "God Mode");
+            adminPreviousMode = null;
             adminPreviousSafety = null;
             adminPreviousReasoning = null;
           }
@@ -938,8 +945,10 @@ export const extension = defineExtension((pi) => {
         setCurrentMode("admin");
         pi.setActiveTools(getToolsetForMode("admin"));
         const adminDef = getModeDefinition("admin");
+        // Set full-auto in the runtime env but do NOT persist to disk.
+        // If PanCode crashes during admin mode, the next boot will use the
+        // previously persisted (safe) value instead of full-auto.
         process.env.PANCODE_SAFETY = "full-auto";
-        persistSettings({ safetyMode: "full-auto" }, (m, l) => ctx.ui.notify(m, l));
         applyReasoningLevel("xhigh", ctx.model, (m, l) => ctx.ui.notify(m, l));
         ctx.ui.setStatus("mode", `[${adminDef.name}]`);
         emitPanel(
