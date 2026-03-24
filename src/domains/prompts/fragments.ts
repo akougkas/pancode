@@ -355,6 +355,24 @@ export const TOOL_SHADOW_COMPACT: Fragment = {
 };
 
 // =============================================================================
+// TOOL ENVIRONMENT
+// =============================================================================
+
+export const TOOL_LANGUAGE_PREFERENCE: Fragment = {
+  id: "tools.language-preference",
+  version: 1,
+  roles: [],
+  tiers: [],
+  modes: [],
+  category: "tool-guidance",
+  estimatedTokens: 15,
+  text: [
+    "TOOLS:For data analysis and scripting, use Node.js (node) not Python.",
+    "TOOLS:The runtime environment always has Node.js available. Python may not be installed.",
+  ].join("\n"),
+};
+
+// =============================================================================
 // ORCHESTRATOR OUTPUT CONTRACT
 // =============================================================================
 
@@ -811,6 +829,8 @@ export const ALL_FRAGMENTS: readonly Fragment[] = [
   // Orchestrator tool guidance
   TOOL_SHADOW_FRONTIER,
   TOOL_SHADOW_COMPACT,
+  // Tool environment
+  TOOL_LANGUAGE_PREFERENCE,
   // Orchestrator output
   OUTPUT_GUIDANCE_FRONTIER,
   OUTPUT_GUIDANCE_COMPACT,

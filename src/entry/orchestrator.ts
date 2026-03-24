@@ -420,11 +420,30 @@ export async function runOrchestratorEntry(): Promise<void> {
       preferredProvider: config.preferredProvider,
       preferredModel: config.preferredModel,
     });
-  } catch {
-    bootFallbackMessage =
-      "No models are available. Start a local engine (LM Studio :1234, Ollama :11434, " +
-      "llama-server :8080) or set ANTHROPIC_API_KEY / OPENAI_API_KEY and restart PanCode.";
-    console.warn("[pancode:orchestrator] No models resolved at boot. Starting in degraded mode.");
+  } catch (primaryErr) {
+    // The configured model failed to resolve. Before entering degraded mode,
+    // check if the registry has any available models at all (e.g. API fallbacks).
+    const anyAvailable = modelRegistry.getAvailable();
+    if (anyAvailable.length > 0) {
+      try {
+        model = resolveConfiguredModel(modelRegistry, {});
+        const ref = `${model.provider}/${model.id}`;
+        bootFallbackMessage =
+          `Configured model unavailable. Using API fallback: ${ref}. ` +
+          "Run /models to see all available models.";
+        console.warn(`[pancode:orchestrator] No local models; using API fallback: ${ref}`);
+      } catch {
+        // Broader resolution also failed (e.g. auth issue). Fall through to degraded mode.
+        model = undefined;
+      }
+    }
+
+    if (!model) {
+      bootFallbackMessage =
+        "No models are available. Start a local engine (LM Studio :1234, Ollama :11434, " +
+        "llama-server :8080) or set ANTHROPIC_API_KEY / OPENAI_API_KEY and restart PanCode.";
+      console.warn("[pancode:orchestrator] No models resolved at boot. Starting in degraded mode.");
+    }
   }
   const effectiveThinkingLevel = resolveThinkingLevelForPreference(model ?? null, config.reasoningPreference);
   process.env.PANCODE_EFFECTIVE_THINKING = effectiveThinkingLevel;

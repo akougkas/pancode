@@ -154,6 +154,13 @@ export function registerShadowExplore(
       const totalToolCalls = results.reduce((sum, r) => sum + r.toolCalls, 0);
       const errors = results.filter((r) => r.error);
 
+      // Per-scout diagnostic logging for debugging silent failures.
+      for (const r of results) {
+        const status = r.error ? `error: ${r.error}` : `${r.toolCalls} tool calls`;
+        console.error(
+          `[pancode:shadow] Scout "${r.query.slice(0, 60)}" completed in ${(r.durationMs / 1000).toFixed(1)}s (${status})`,
+        );
+      }
       console.error(
         `[pancode:shadow] ${results.length} scouts completed in ${(wallMs / 1000).toFixed(1)}s ` +
           `(${totalToolCalls} tool calls, depth=${depthLabel}, return=${budgetLabel}` +

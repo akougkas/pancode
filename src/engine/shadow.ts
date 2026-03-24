@@ -207,18 +207,35 @@ async function runSingleScout(query: string, options: ScoutRunOptions): Promise<
       options.signal?.removeEventListener("abort", abortHandler);
     }
 
+    const durationMs = Date.now() - startTime;
+    const response = textParts.join("\n\n");
+
+    // Warn when a scout returns suspiciously fast with no tool calls.
+    // This typically indicates the model could not be reached, auth failed,
+    // or the prompt was incompatible with the provider.
+    if (durationMs < 1000 && toolCalls === 0 && response.length === 0) {
+      console.error(
+        `[pancode:shadow] Scout completed in ${durationMs}ms with 0 tool calls and empty response. ` +
+          `Model: ${modelInfo}. This usually means the model request failed silently.`,
+      );
+    }
+
     return {
       query,
-      response: textParts.join("\n\n"),
+      response,
       toolCalls,
-      durationMs: Date.now() - startTime,
+      durationMs,
     };
   } catch (err) {
+    const durationMs = Date.now() - startTime;
+    console.error(
+      `[pancode:shadow] Scout error after ${durationMs}ms: ${err instanceof Error ? err.message : String(err)}`,
+    );
     return {
       query,
       response: "",
       toolCalls: 0,
-      durationMs: Date.now() - startTime,
+      durationMs,
       error: err instanceof Error ? err.message : String(err),
     };
   }

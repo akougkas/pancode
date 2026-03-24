@@ -7,9 +7,9 @@
  * WORKER_HEALTH_CHANGED bus events on state transitions.
  *
  * Health states:
- *   healthy   - Heartbeat received within 2 intervals
- *   stale     - No heartbeat for 3 intervals (warn in dispatch board)
- *   dead      - No heartbeat for 5 intervals OR process exited (cleanup)
+ *   healthy   - Heartbeat received within recent intervals
+ *   stale     - No heartbeat for 6 intervals (warn in dispatch board)
+ *   dead      - No heartbeat for 12 intervals OR process exited (cleanup)
  *   recovered - Heartbeat received after being stale (clears warning)
  */
 
@@ -35,14 +35,23 @@ export class WorkerHealthMonitor {
     this.intervalMs = heartbeatIntervalMs ?? DEFAULT_HEARTBEAT_INTERVAL_MS;
   }
 
-  /** Stale threshold: no heartbeat for 3 intervals. */
+  /**
+   * Stale threshold: no heartbeat for 6 intervals.
+   * Local GPU inference under contention (multiple workers sharing a single
+   * llama-server) can produce 60+ second gaps between heartbeats. The previous
+   * 3-interval threshold caused false stale classifications during batch dispatch.
+   */
   private get staleThresholdMs(): number {
-    return this.intervalMs * 3;
+    return this.intervalMs * 6;
   }
 
-  /** Dead threshold: no heartbeat for 5 intervals. */
+  /**
+   * Dead threshold: no heartbeat for 12 intervals.
+   * Must be substantially larger than stale to avoid premature dead classification
+   * when local models are contended. A worker waiting in queue for GPU time is not dead.
+   */
   private get deadThresholdMs(): number {
-    return this.intervalMs * 5;
+    return this.intervalMs * 12;
   }
 
   /**
