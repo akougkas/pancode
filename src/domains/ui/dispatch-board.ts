@@ -13,6 +13,7 @@ import { truncateToWidth, visibleWidth } from "../../engine/tui";
 import type { TuiColorizer } from "./dashboard-theme";
 import { PLAIN_COLORIZER } from "./dashboard-theme";
 import { formatCost, formatDuration, formatTokenCount, padRight, truncate } from "./widget-utils";
+import { getCardWidget } from "./widgets/card-registry";
 
 // ---------------------------------------------------------------------------
 // Interfaces
@@ -252,6 +253,7 @@ export function renderDispatchCard(
 /**
  * Render a grid of cards arranged in rows.
  * Fills incomplete rows with empty space (not blank cards).
+ * Handles mixed card heights within a row by padding shorter cards.
  */
 function renderCardGrid(cards: DispatchCardData[], width: number, c: TuiColorizer = PLAIN_COLORIZER): string[] {
   if (cards.length === 0) return [];
@@ -260,13 +262,20 @@ function renderCardGrid(cards: DispatchCardData[], width: number, c: TuiColorize
   const cols = calculateGridColumns(cards.length, usable);
   const cardWidth = Math.max(MIN_CARD_WIDTH, Math.floor((usable - (cols - 1) * CARD_GAP) / cols));
 
-  const rendered = cards.map((card) => renderDispatchCard(card, cardWidth, c));
+  const rendered = cards.map((card) => {
+    const widget = getCardWidget(card.runtime);
+    return widget.render(card, cardWidth, c);
+  });
   const lines: string[] = [];
 
   for (let rowStart = 0; rowStart < rendered.length; rowStart += cols) {
     const rowCards = rendered.slice(rowStart, rowStart + cols);
-    for (let line = 0; line < CARD_HEIGHT; line++) {
-      const parts = rowCards.map((card) => card[line]);
+    const rowHeight = Math.max(...rowCards.map((rc) => rc.length));
+    for (let line = 0; line < rowHeight; line++) {
+      const parts = rowCards.map((card) => {
+        if (line < card.length) return card[line];
+        return " ".repeat(cardWidth);
+      });
       lines.push(`${INDENT}${parts.join(" ".repeat(CARD_GAP))}`);
     }
   }

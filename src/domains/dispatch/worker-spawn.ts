@@ -2,7 +2,15 @@ import { type ChildProcess, spawn } from "node:child_process";
 import { BusChannel, type WorkerProgressEvent } from "../../core/bus-events";
 import { sharedBus } from "../../core/shared-bus";
 import { runtimeRegistry } from "../../engine/runtimes/registry";
-import type { AgentRuntime, RuntimeSamplingConfig, RuntimeTaskConfig, RuntimeUsage } from "../../engine/runtimes/types";
+import { sdkLimiter } from "../../engine/runtimes/sdk-concurrency";
+import type {
+  AgentRuntime,
+  RuntimeSamplingConfig,
+  RuntimeTaskConfig,
+  RuntimeUsage,
+  SdkAgentRuntime,
+} from "../../engine/runtimes/types";
+import { isSdkRuntime } from "../../engine/runtimes/types";
 import { healthMonitor } from "./health";
 
 export interface WorkerResult {
@@ -11,6 +19,8 @@ export interface WorkerResult {
   error: string;
   usage: RuntimeUsage;
   model: string | null;
+  /** Session metadata from the runtime for continuity across dispatches. */
+  sessionMeta?: { taskId?: string; sessionId?: string };
   /** Set when the worker was killed because it exceeded its timeout. */
   timedOut?: boolean;
   /** Set when the worker was killed because it exceeded its per-run budget. */
@@ -22,7 +32,21 @@ export const liveWorkerProcesses = new Set<ChildProcess>();
 /** Map runId to its subprocess for targeted cancellation via /stoprun. */
 export const workerProcessByRunId = new Map<string, ChildProcess>();
 
+/** Active SDK abort controllers for in-process execution cancellation. */
+const liveSdkAborts = new Set<AbortController>();
+
+/** Map runId to SDK abort controller for targeted cancellation via /stoprun. */
+export const sdkAbortByRunId = new Map<string, AbortController>();
+
 export async function stopAllWorkers(): Promise<void> {
+  // Abort SDK runs first (instant, no grace period needed).
+  for (const controller of liveSdkAborts) {
+    controller.abort();
+  }
+  liveSdkAborts.clear();
+  sdkAbortByRunId.clear();
+
+  // Then kill subprocess workers.
   const active = Array.from(liveWorkerProcesses);
   if (active.length === 0) return;
 
@@ -103,10 +127,10 @@ export function spawnWorker(options: SpawnOptions): Promise<WorkerResult> {
   const envTimeout = Number.parseInt(process.env.PANCODE_WORKER_TIMEOUT_MS ?? "", 10);
   const resolvedTimeout = options.timeoutMs ?? (Number.isFinite(envTimeout) ? envTimeout : DEFAULT_TIMEOUT_MS);
 
-  // Strip "provider/" prefix for CLI runtimes.
-  // Claude Code expects bare model names or aliases, not compound "provider/model" format.
+  // Strip "provider/" prefix for non-native runtimes.
+  // CLI and SDK runtimes expect bare model names or aliases, not compound "provider/model" format.
   let resolvedModel = options.model;
-  if (runtimeId.startsWith("cli:") && resolvedModel?.includes("/")) {
+  if ((runtimeId.startsWith("cli:") || runtimeId.startsWith("sdk:")) && resolvedModel?.includes("/")) {
     resolvedModel = resolvedModel.slice(resolvedModel.indexOf("/") + 1);
   }
 
@@ -123,6 +147,13 @@ export function spawnWorker(options: SpawnOptions): Promise<WorkerResult> {
     sampling: options.sampling ?? null,
     runId: options.runId,
   };
+
+  // SDK runtimes execute in-process via their async API instead of spawning
+  // a subprocess. Route to the SDK path when the runtime supports it.
+  if (isSdkRuntime(runtime)) {
+    return spawnWorkerSdkPath(runtime, taskConfig, options, resolvedTimeout);
+  }
+
   const spawnConfig = runtime.buildSpawnConfig(taskConfig);
 
   return new Promise<WorkerResult>((resolve) => {
@@ -579,6 +610,7 @@ function spawnWorkerCliPath(
       error: runtimeResult.error,
       usage: runtimeResult.usage,
       model: runtimeResult.model,
+      sessionMeta: runtimeResult.sessionMeta,
     };
 
     // Mark timeout and budget-exceeded kill reasons on the result.
@@ -616,4 +648,156 @@ function spawnWorkerCliPath(
       model: null,
     });
   });
+}
+
+// ---------------------------------------------------------------------------
+// SDK runtime spawn path: in-process execution with streaming progress
+// ---------------------------------------------------------------------------
+
+/**
+ * SDK runtimes execute tasks in-process through their async API.
+ * The SDK internally manages subprocess isolation (e.g., Claude Code spawns
+ * its own child process). PanCode gains streaming events, tool interception,
+ * and authoritative usage tracking without stdout/stderr parsing.
+ *
+ * Execution is gated by the SDK concurrency limiter to prevent event loop
+ * saturation from too many concurrent in-process SDK workers.
+ */
+async function spawnWorkerSdkPath(
+  runtime: SdkAgentRuntime,
+  taskConfig: RuntimeTaskConfig,
+  options: SpawnOptions,
+  resolvedTimeout: number,
+): Promise<WorkerResult> {
+  const abortController = new AbortController();
+
+  // External signal forwarding (wire up before queueing so cancellation
+  // works even while waiting for a concurrency slot).
+  if (options.signal) {
+    if (options.signal.aborted) {
+      abortController.abort();
+    } else {
+      options.signal.addEventListener("abort", () => abortController.abort(), { once: true });
+    }
+  }
+
+  // Gate execution through the concurrency limiter.
+  return sdkLimiter.execute(
+    () => executeSdkWorker(runtime, taskConfig, options, resolvedTimeout, abortController),
+    abortController.signal,
+  );
+}
+
+/**
+ * Core SDK worker execution, called within a concurrency limiter slot.
+ */
+async function executeSdkWorker(
+  runtime: SdkAgentRuntime,
+  taskConfig: RuntimeTaskConfig,
+  options: SpawnOptions,
+  resolvedTimeout: number,
+  abortController: AbortController,
+): Promise<WorkerResult> {
+  const killState = { timedOut: false, budgetExceeded: false };
+
+  // Track for cancellation via stopAllWorkers() and /stoprun.
+  liveSdkAborts.add(abortController);
+  if (options.runId) {
+    sdkAbortByRunId.set(options.runId, abortController);
+  }
+
+  // Per-run budget cap from env var.
+  const perRunBudgetEnv = Number.parseFloat(process.env.PANCODE_PER_RUN_BUDGET ?? "");
+  const perRunBudget = Number.isFinite(perRunBudgetEnv) && perRunBudgetEnv > 0 ? perRunBudgetEnv : null;
+
+  // Timeout enforcement via AbortController.
+  let timeoutTimer: NodeJS.Timeout | null = null;
+  if (resolvedTimeout > 0) {
+    timeoutTimer = setTimeout(() => {
+      killState.timedOut = true;
+      abortController.abort();
+    }, resolvedTimeout);
+    timeoutTimer.unref();
+  }
+
+  // Progress throttle state (50ms minimum interval between bus events).
+  let lastProgressEmit = 0;
+
+  try {
+    const runtimeResult = await runtime.executeTask(taskConfig, {
+      signal: abortController.signal,
+      onProgress: (progress) => {
+        // Budget enforcement from streaming cost data.
+        if (perRunBudget !== null && progress.cost > perRunBudget && !killState.budgetExceeded) {
+          killState.budgetExceeded = true;
+          abortController.abort();
+        }
+
+        // Throttled bus event emission.
+        if (options.runId) {
+          const now = Date.now();
+          if (now - lastProgressEmit >= 50 || progress.currentTool !== null) {
+            lastProgressEmit = now;
+            const busEvent: WorkerProgressEvent = {
+              runId: options.runId,
+              inputTokens: progress.inputTokens,
+              outputTokens: progress.outputTokens,
+              turns: progress.turns,
+              currentTool: progress.currentTool,
+              currentToolArgs: progress.currentToolArgs,
+              recentTools: progress.recentTools,
+              toolCount: progress.toolCount,
+              // SDK extensions: populated from SdkProgressEvent
+              cacheReadTokens: progress.cacheReadTokens,
+              cacheWriteTokens: progress.cacheWriteTokens,
+              cost: progress.cost,
+              streamActive: true,
+            };
+            sharedBus.emit(BusChannel.WORKER_PROGRESS, busEvent);
+          }
+        }
+      },
+    });
+
+    const result: WorkerResult = {
+      exitCode: runtimeResult.exitCode,
+      result: runtimeResult.result,
+      error: runtimeResult.error,
+      usage: runtimeResult.usage,
+      model: runtimeResult.model,
+      sessionMeta: runtimeResult.sessionMeta,
+    };
+
+    if (killState.timedOut) {
+      result.timedOut = true;
+      result.exitCode = 1;
+      if (!result.error) result.error = "Worker killed: timeout exceeded";
+    }
+    if (killState.budgetExceeded) {
+      result.budgetExceeded = true;
+      result.exitCode = 1;
+      if (!result.error) result.error = "Worker killed: per-run budget exceeded";
+    }
+    if (result.exitCode === 0 && !result.error && !result.result.trim()) {
+      result.exitCode = 1;
+      result.error = "Worker produced empty result";
+    }
+
+    return result;
+  } catch (err: unknown) {
+    return {
+      exitCode: 1,
+      result: "",
+      error: err instanceof Error ? err.message : String(err),
+      usage: emptyUsage(),
+      model: null,
+    };
+  } finally {
+    if (timeoutTimer) clearTimeout(timeoutTimer);
+    liveSdkAborts.delete(abortController);
+    if (options.runId) {
+      sdkAbortByRunId.delete(options.runId);
+      healthMonitor.recordProcessExit(options.runId);
+    }
+  }
 }

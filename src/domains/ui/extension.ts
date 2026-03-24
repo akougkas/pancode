@@ -78,6 +78,9 @@ import {
   setView,
 } from "./view-router";
 import { extractResultSummary } from "./widget-utils";
+import { registerCardWidget } from "./widgets/card-registry";
+import { ClaudeSdkCardWidget } from "./widgets/claude-sdk-card";
+import type { ClaudeSdkCardData } from "./widgets/claude-sdk-card";
 import {
   getLiveWorkers,
   resetAll as resetLiveWorkers,
@@ -463,20 +466,39 @@ export const extension = defineExtension((pi) => {
         const liveWorkers = getLiveWorkers();
         if (liveWorkers.length === 0 && allRuns.length === 0) return [];
 
-        const active: DispatchCardData[] = liveWorkers.map((w) => ({
-          agent: w.agent,
-          status: w.status,
-          elapsedMs: Date.now() - w.startedAt,
-          model: w.model,
-          taskPreview: w.task,
-          runId: w.runId,
-          batchId: null,
-          inputTokens: w.inputTokens > 0 ? w.inputTokens : undefined,
-          outputTokens: w.outputTokens > 0 ? w.outputTokens : undefined,
-          turns: w.turns > 0 ? w.turns : undefined,
-          runtime: w.runtime,
-          healthState: w.healthState,
-        }));
+        const active: DispatchCardData[] = liveWorkers.map((w) => {
+          const base: DispatchCardData = {
+            agent: w.agent,
+            status: w.status,
+            elapsedMs: Date.now() - w.startedAt,
+            model: w.model,
+            taskPreview: w.task,
+            runId: w.runId,
+            batchId: null,
+            inputTokens: w.inputTokens > 0 ? w.inputTokens : undefined,
+            outputTokens: w.outputTokens > 0 ? w.outputTokens : undefined,
+            turns: w.turns > 0 ? w.turns : undefined,
+            runtime: w.runtime,
+            healthState: w.healthState,
+          };
+          // Enrich SDK workers with extended card data for the Claude SDK card widget.
+          if (w.runtime?.startsWith("sdk:")) {
+            const sdkCard: ClaudeSdkCardData = {
+              ...base,
+              cacheReadTokens: w.cacheReadTokens > 0 ? w.cacheReadTokens : null,
+              cacheWriteTokens: w.cacheWriteTokens > 0 ? w.cacheWriteTokens : null,
+              cost: w.cost > 0 ? w.cost : null,
+              thinkingActive: w.thinkingActive,
+              streamActive: w.streamActive,
+              currentTool: w.currentTool,
+              currentToolArgs: w.currentToolArgs,
+              recentTools: w.recentTools,
+              toolCount: w.toolCount,
+            };
+            return sdkCard;
+          }
+          return base;
+        });
 
         const recent: DispatchCardData[] = allRuns
           .filter((r) => r.status !== "running" && r.status !== "pending")
@@ -699,6 +721,16 @@ export const extension = defineExtension((pi) => {
         event.currentToolArgs,
         event.recentTools,
         event.toolCount,
+        // Forward SDK-specific fields when present.
+        event.cacheReadTokens !== undefined
+          ? {
+              cacheReadTokens: event.cacheReadTokens,
+              cacheWriteTokens: event.cacheWriteTokens,
+              cost: event.cost,
+              thinkingActive: event.thinkingActive,
+              streamActive: event.streamActive,
+            }
+          : undefined,
       );
       if (shouldLogProgress(event.runId)) {
         const tool = event.currentTool ? ` tool:${event.currentTool}` : "";
@@ -767,6 +799,8 @@ export const extension = defineExtension((pi) => {
     sharedBus.on(BusChannel.RUNTIMES_DISCOVERED, () => {
       dashManager.markStale("infrastructure");
       logNow("Runtimes discovered", "info");
+      // Register runtime-specific card widgets after runtimes are available.
+      registerCardWidget("sdk:claude-code", new ClaudeSdkCardWidget());
     });
 
     sharedBus.on(BusChannel.PROMPT_COMPILED, (payload) => {

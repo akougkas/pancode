@@ -71,6 +71,19 @@ export interface WorkerProgressEvent {
   recentTools: string[];
   /** Total tool calls observed so far. */
   toolCount: number;
+  // SDK extensions (optional, only set by SDK runtimes)
+  /** Cache read tokens reported by SDK runtimes. */
+  cacheReadTokens?: number;
+  /** Cache write tokens reported by SDK runtimes. */
+  cacheWriteTokens?: number;
+  /** Accumulated cost reported by SDK runtimes. */
+  cost?: number;
+  /** Whether the model is actively using extended thinking. */
+  thinkingActive?: boolean;
+  /** Whether the SDK stream is actively producing events. */
+  streamActive?: boolean;
+  /** Incremental text output from the SDK stream. */
+  textDelta?: string;
 }
 
 export interface WarningEvent {

@@ -36,6 +36,12 @@ export interface LiveWorkerState {
   recentTools: string[]; // Ring buffer of recently completed tools (max 5)
   toolCount: number; // Total tool calls observed
   healthState: "healthy" | "stale" | "dead" | "recovered" | null; // Heartbeat health classification
+  // SDK extensions (populated by SDK runtimes only)
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  cost: number;
+  thinkingActive: boolean;
+  streamActive: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -73,7 +79,21 @@ export function trackWorkerStart(
     recentTools: [],
     toolCount: 0,
     healthState: null,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    cost: 0,
+    thinkingActive: false,
+    streamActive: false,
   });
+}
+
+/** Optional SDK-specific progress fields. */
+export interface SdkProgressFields {
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
+  cost?: number;
+  thinkingActive?: boolean;
+  streamActive?: boolean;
 }
 
 export function updateWorkerProgress(
@@ -85,6 +105,7 @@ export function updateWorkerProgress(
   currentToolArgs?: string | null,
   recentTools?: string[],
   toolCount?: number,
+  sdkFields?: SdkProgressFields,
 ): void {
   const worker = liveWorkers.get(runId);
   if (worker) {
@@ -95,6 +116,13 @@ export function updateWorkerProgress(
     if (currentToolArgs !== undefined) worker.currentToolArgs = currentToolArgs;
     if (recentTools !== undefined) worker.recentTools = recentTools;
     if (toolCount !== undefined) worker.toolCount = toolCount;
+    if (sdkFields) {
+      if (sdkFields.cacheReadTokens !== undefined) worker.cacheReadTokens = sdkFields.cacheReadTokens;
+      if (sdkFields.cacheWriteTokens !== undefined) worker.cacheWriteTokens = sdkFields.cacheWriteTokens;
+      if (sdkFields.cost !== undefined) worker.cost = sdkFields.cost;
+      if (sdkFields.thinkingActive !== undefined) worker.thinkingActive = sdkFields.thinkingActive;
+      if (sdkFields.streamActive !== undefined) worker.streamActive = sdkFields.streamActive;
+    }
   }
 }
 

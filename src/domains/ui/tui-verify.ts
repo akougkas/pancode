@@ -38,6 +38,8 @@ import {
 } from "./dispatch-board";
 import { type FooterData, renderFooterLines } from "./footer-renderer";
 import { type PanelSpec, blank, kv, renderPanel, text } from "./panel-renderer";
+import { registerCardWidget } from "./widgets/card-registry";
+import { type ClaudeSdkCardData, ClaudeSdkCardWidget } from "./widgets/claude-sdk-card";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -167,6 +169,65 @@ const mockFooterData: FooterData = {
   ],
   currentView: "editor",
 };
+
+const mockClaudeSdkCard: ClaudeSdkCardData = {
+  agent: "claude-builder",
+  status: "running",
+  elapsedMs: 83000,
+  model: "claude-opus-4-6",
+  taskPreview: "Implement authentication middleware for the worker dispatch system",
+  runId: "a8f2c3d4-e5f6-7890-abcd-ef1234567890",
+  batchId: null,
+  cost: 0.042,
+  inputTokens: 12847,
+  outputTokens: 3421,
+  turns: 4,
+  runtime: "sdk:claude-code",
+  healthState: null,
+  maxTurns: 30,
+  sessionId: "a8f2c3d4-e5f6-7890-abcd-ef1234567b3c1",
+  sessionResumeAvailable: true,
+  streamActive: true,
+  thinkingActive: true,
+  cacheReadTokens: 8200,
+  cacheWriteTokens: 1200,
+  currentTool: "Edit",
+  currentToolArgs: '{"file_path":"src/engine/runtimes/adapters/claude-sdk.ts","old_string":"..."}',
+  recentTools: ["Read", "Grep", "Bash", "Edit"],
+  toolCount: 7,
+};
+
+const mockClaudeSdkCardError: ClaudeSdkCardData = {
+  agent: "claude-builder",
+  status: "error",
+  elapsedMs: 3000,
+  model: "claude-opus-4-6",
+  taskPreview: "Authentication required",
+  runId: "err-001",
+  batchId: null,
+  runtime: "sdk:claude-code",
+  healthState: null,
+};
+
+const mockClaudeSdkCardIdle: ClaudeSdkCardData = {
+  agent: "claude-scout",
+  status: "running",
+  elapsedMs: 5000,
+  model: "claude-sonnet-4-5",
+  taskPreview: "Scan codebase for unused imports",
+  runId: "idle-001",
+  batchId: null,
+  runtime: "sdk:claude-code",
+  healthState: null,
+  inputTokens: 0,
+  outputTokens: 0,
+  turns: 0,
+  streamActive: true,
+  thinkingActive: false,
+};
+
+// Register Claude SDK card widget for verification.
+registerCardWidget("sdk:claude-code", new ClaudeSdkCardWidget());
 
 const mockPanelSpec: PanelSpec = {
   title: "SYSTEM_STATUS",
@@ -303,6 +364,30 @@ for (const w of TEST_WIDTHS) {
   checkBorders("renderDispatchCard", cardLines, cardWidth);
 
   checkWidth("renderDispatchFooter", renderDispatchFooter(mockBoardState, w, c), w);
+
+  // -- Claude SDK card widget --
+
+  const sdkWidget = new ClaudeSdkCardWidget();
+  const sdkCardWidth = Math.max(40, Math.floor(w / 2));
+
+  const sdkCardLines = sdkWidget.render(mockClaudeSdkCard, sdkCardWidth, c);
+  checkWidth("ClaudeSdkCard(running)", sdkCardLines, sdkCardWidth);
+  checkBorders("ClaudeSdkCard(running)", sdkCardLines, sdkCardWidth);
+
+  const sdkErrorLines = sdkWidget.render(mockClaudeSdkCardError, sdkCardWidth, c);
+  checkWidth("ClaudeSdkCard(error)", sdkErrorLines, sdkCardWidth);
+  checkBorders("ClaudeSdkCard(error)", sdkErrorLines, sdkCardWidth);
+
+  const sdkIdleLines = sdkWidget.render(mockClaudeSdkCardIdle, sdkCardWidth, c);
+  checkWidth("ClaudeSdkCard(idle)", sdkIdleLines, sdkCardWidth);
+  checkBorders("ClaudeSdkCard(idle)", sdkIdleLines, sdkCardWidth);
+
+  // Mixed-height board with SDK card
+  const mixedBoardState: DispatchBoardState = {
+    ...mockBoardState,
+    active: [...mockBoardState.active, { ...mockClaudeSdkCard }],
+  };
+  checkWidth("renderDispatchBoard(mixed)", renderDispatchBoard(mixedBoardState, w, c), w);
 
   const footerLine = renderDispatchFooterLine("dynamo/qwen3.5-35b", 2, 14, 0.48, 10.0, 42, w);
   checkWidth("renderDispatchFooterLine", [footerLine], w);
