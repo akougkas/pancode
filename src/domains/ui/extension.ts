@@ -215,6 +215,12 @@ export const extension = defineExtension((pi) => {
   let adminPreviousSafety: SafetyLevel | null = null;
   let adminPreviousReasoning: PanCodeReasoningPreference | null = null;
 
+  // When true, mode transitions (Shift+Tab) will not auto-apply the mode's
+  // default reasoning level. Set to true when the user explicitly changes
+  // reasoning via pan_apply_config or (future) /reasoning command. Cleared
+  // on session reset so fresh sessions start with mode-driven reasoning.
+  let reasoningExplicitlySet = false;
+
   const handlers = createCommandHandlers(state, {
     emitPanel,
     getThinkingLevel: () => pi.getThinkingLevel(),
@@ -338,6 +344,7 @@ export const extension = defineExtension((pi) => {
           break;
         }
         case "runtime.reasoning": {
+          reasoningExplicitlySet = true;
           applyReasoningLevel(event.newValue as PanCodeReasoningPreference, ctx.model, (m, l) => ctx.ui.notify(m, l));
           break;
         }
@@ -819,6 +826,7 @@ export const extension = defineExtension((pi) => {
     });
 
     sharedBus.on(BusChannel.SESSION_RESET, () => {
+      reasoningExplicitlySet = false;
       logNow("Session reset", "warn", true);
     });
 
@@ -862,11 +870,21 @@ export const extension = defineExtension((pi) => {
       // rather than delete it, so shift+tab still routes through the keybinding system.
       const editorHandlers = pancodeEditor.actionHandlers as Map<string, () => void>;
       editorHandlers.set("cycleThinkingLevel", () => {
+        const prev = getCurrentMode();
         const def = cycleModeTo();
-        applyReasoningLevel(def.reasoningLevel, ctx.model, (m, l) => ctx.ui.notify(m, l));
-        ctx.ui.setStatus("mode", `[${def.name}]`);
-        emitModeTransition(def);
-        syncEditorDisplay();
+        // Only auto-apply the mode's default reasoning if the user has not
+        // explicitly overridden reasoning via pan_apply_config or /reasoning.
+        if (!reasoningExplicitlySet) {
+          applyReasoningLevel(def.reasoningLevel, ctx.model, (m, l) => ctx.ui.notify(m, l));
+        }
+        // Emit CONFIG_CHANGED so all subscribers (including this domain's own
+        // handler) are notified. The handler sets status, emits the mode
+        // transition message, and syncs the editor display.
+        sharedBus.emit(BusChannel.CONFIG_CHANGED, {
+          key: "runtime.mode",
+          previousValue: prev,
+          newValue: def.id,
+        } as ConfigChangedEvent);
       });
     }
     syncEditorDisplay();
@@ -903,11 +921,18 @@ export const extension = defineExtension((pi) => {
   pi.registerShortcut("ctrl+y", {
     description: "Cycle safety level (suggest, auto-edit, full-auto)",
     handler: async (ctx) => {
+      const prev = (process.env.PANCODE_SAFETY ?? DEFAULT_SAFETY) as SafetyLevel;
       const next = cycleSafety();
       process.env.PANCODE_SAFETY = next;
       persistSettings({ safetyMode: next }, (message, level) => ctx.ui.notify(message, level));
-      ctx.ui.notify(`Safety: ${next}`, "info");
       syncEditorDisplay();
+      // Emit CONFIG_CHANGED so all subscribers are notified. The handler
+      // for runtime.safety displays the notification to the user.
+      sharedBus.emit(BusChannel.CONFIG_CHANGED, {
+        key: "runtime.safety",
+        previousValue: prev,
+        newValue: next,
+      } as ConfigChangedEvent);
     },
   });
 
@@ -1002,6 +1027,10 @@ export const extension = defineExtension((pi) => {
       messages: event.messages.filter((m) => {
         const ct = (m as MsgWithCustomType).customType;
         if (ct === PanMessageType.PANEL) return false;
+        // Mode transition messages are visual indicators for the user. They
+        // accumulate in context with every Shift+Tab press, consuming tokens
+        // and confusing models that interpret "[MODE SWITCH]" as instructions.
+        if (ct === PanMessageType.MODE_TRANSITION) return false;
         return true;
       }),
     };
