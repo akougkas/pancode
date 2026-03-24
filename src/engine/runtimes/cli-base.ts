@@ -125,7 +125,10 @@ export abstract class CliRuntime implements AgentRuntime {
     };
   }
 
-  protected classifyCliError(stderr: string, exitCode: number): {
+  protected classifyCliError(
+    stderr: string,
+    exitCode: number,
+  ): {
     category: "auth" | "binary" | "rate_limit" | "timeout" | "unknown";
     message: string;
   } {
@@ -134,7 +137,12 @@ export abstract class CliRuntime implements AgentRuntime {
     if (exitCode === 127 || lower.includes("command not found") || lower.includes("not found")) {
       return { category: "binary", message: "Binary not found on PATH. Install the CLI tool and retry." };
     }
-    if (lower.includes("unauthorized") || lower.includes("authentication") || lower.includes("api key") || lower.includes("login")) {
+    if (
+      lower.includes("unauthorized") ||
+      lower.includes("authentication") ||
+      lower.includes("api key") ||
+      lower.includes("login")
+    ) {
       return { category: "auth", message: "Authentication failed. Check your API key or run the CLI login command." };
     }
     if (lower.includes("rate limit") || lower.includes("429") || lower.includes("too many requests")) {

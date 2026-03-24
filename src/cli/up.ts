@@ -1,11 +1,5 @@
 import { execSync } from "node:child_process";
-import {
-  EXIT_FAILURE,
-  EXIT_SUCCESS,
-  type PancodeSession,
-  isTmuxAvailable,
-  listPancodeSessions,
-} from "./shared";
+import { EXIT_FAILURE, EXIT_SUCCESS, type PancodeSession, isTmuxAvailable, listPancodeSessions } from "./shared";
 
 /**
  * Attach to an existing PanCode tmux session.

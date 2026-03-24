@@ -95,12 +95,14 @@ export function registerShadowExplore(
       }),
       depth: Type.Optional(
         Type.Union([Type.Literal("shallow"), Type.Literal("medium"), Type.Literal("deep")], {
-          description: "Exploration depth. shallow=directory scan(4 calls), medium=grep+read(12 calls), deep=thorough(20 calls). Default: medium.",
+          description:
+            "Exploration depth. shallow=directory scan(4 calls), medium=grep+read(12 calls), deep=thorough(20 calls). Default: medium.",
         }),
       ),
       returnBudget: Type.Optional(
         Type.Union([Type.Literal("brief"), Type.Literal("standard"), Type.Literal("detailed")], {
-          description: "Output size. brief=500tok key facts, standard=2K findings+summary, detailed=5K with code excerpts. Default: standard.",
+          description:
+            "Output size. brief=500tok key facts, standard=2K findings+summary, detailed=5K with code excerpts. Default: standard.",
         }),
       ),
     }),
@@ -117,7 +119,9 @@ export function registerShadowExplore(
 
       if (onUpdate) {
         onUpdate(
-          textResult(`scouting... (${scoutCount} scout${scoutCount > 1 ? "s" : ""}, depth=${depthLabel}, return=${budgetLabel})`),
+          textResult(
+            `scouting... (${scoutCount} scout${scoutCount > 1 ? "s" : ""}, depth=${depthLabel}, return=${budgetLabel})`,
+          ),
         );
       }
 

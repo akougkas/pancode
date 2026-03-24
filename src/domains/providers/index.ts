@@ -1,4 +1,5 @@
 export { detectAnthropicAuth, registerAnthropicModels, getAnthropicModelCatalog } from "./anthropic-catalog";
+export { detectOpenAICodexAuth, registerOpenAICodexModels, getOpenAICodexModelCatalog } from "./openai-codex-catalog";
 export { registerApiProvidersOnRegistry } from "./api-providers";
 export {
   discoverEngines,

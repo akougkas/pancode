@@ -50,9 +50,7 @@ export function createOllamaConnection(
         // sequentially. Each show() is an independent API call to the
         // same Ollama instance. On mini with 3 models, this saves ~200ms.
         const entries = response.models.filter((entry) => !!entry.name);
-        const capResults = await Promise.allSettled(
-          entries.map((entry) => this.getModelCapabilities(entry.name)),
-        );
+        const capResults = await Promise.allSettled(entries.map((entry) => this.getModelCapabilities(entry.name)));
 
         const models: DiscoveredModel[] = [];
         for (let i = 0; i < entries.length; i++) {

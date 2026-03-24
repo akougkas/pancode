@@ -39,7 +39,9 @@ function resolveModelSampling(model: string | null, presetName: string | undefin
   if (!sampling) {
     // Missing presets are expected for local models that have no sampling profiles.
     // Log at debug level to stderr only; do not surface in the TUI.
-    console.error(`[pancode:routing] Sampling preset "${presetName}" not found for ${providerId}/${modelId}. Using model defaults.`);
+    console.error(
+      `[pancode:routing] Sampling preset "${presetName}" not found for ${providerId}/${modelId}. Using model defaults.`,
+    );
   }
   return sampling;
 }
@@ -60,6 +62,7 @@ function inferRuntimeFromModel(model: string | null): string | null {
   // Map known cloud providers to their CLI runtimes
   const providerToRuntime: Record<string, string> = {
     anthropic: "cli:claude-code",
+    "openai-codex": "cli:codex",
   };
 
   return providerToRuntime[provider] ?? null;

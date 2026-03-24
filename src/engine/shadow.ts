@@ -98,7 +98,13 @@ async function runSingleScout(query: string, options: ScoutRunOptions): Promise<
   try {
     const model = options.model;
     if (!model) {
-      return { query, response: "", toolCalls: 0, durationMs: Date.now() - startTime, error: "No scout model configured" };
+      return {
+        query,
+        response: "",
+        toolCalls: 0,
+        durationMs: Date.now() - startTime,
+        error: "No scout model configured",
+      };
     }
 
     const registry = options.modelRegistry;

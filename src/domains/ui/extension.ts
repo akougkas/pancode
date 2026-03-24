@@ -261,7 +261,7 @@ export const extension = defineExtension((pi) => {
     const origStderrWrite = process.stderr.write.bind(process.stderr);
     process.stderr.write = ((chunk: string | Uint8Array, ...args: unknown[]) => {
       if (typeof chunk === "string" && chunk.includes("extended-keys")) return true;
-      return (origStderrWrite as Function).call(process.stderr, chunk, ...args);
+      return (origStderrWrite as (...a: unknown[]) => boolean).call(process.stderr, chunk, ...args);
     }) as typeof process.stderr.write;
 
     state.currentModelLabel = ctx.model ? modelRef(ctx.model) : "no model";

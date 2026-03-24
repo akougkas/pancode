@@ -14,7 +14,7 @@ export function buildWorkerModelArgs(config: Pick<PanCodeConfig, "provider" | "m
   let model = config.model;
 
   // Split compound "provider/model-id" format if present.
-  if (model && model.includes("/") && !provider) {
+  if (model?.includes("/") && !provider) {
     const slashIdx = model.indexOf("/");
     provider = model.slice(0, slashIdx);
     model = model.slice(slashIdx + 1);

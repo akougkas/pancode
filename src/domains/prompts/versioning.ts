@@ -2,8 +2,8 @@
 // Tracks compilation manifests in .pancode/runtime/prompt-versions/ for
 // development iteration, debugging, and regression detection.
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import type { PromptManifest, PromptRole } from "./types";
 
 /** Subdirectory under runtimeRoot for prompt version state. */
@@ -56,7 +56,7 @@ export function loadLatestManifest(runtimeRoot: string, role: PromptRole): Promp
 export function appendToHistory(runtimeRoot: string, manifest: PromptManifest): void {
   const filePath = historyPath(runtimeRoot);
   ensureDir(dirname(filePath));
-  appendFileSync(filePath, JSON.stringify(manifest) + "\n", "utf8");
+  appendFileSync(filePath, `${JSON.stringify(manifest)}\n`, "utf8");
 }
 
 /**

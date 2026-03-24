@@ -230,7 +230,7 @@ function describeReasoningCapability(
 }
 
 /** Providers whose models are accessed via cloud APIs rather than local engines. */
-const CLOUD_PROVIDERS = new Set(["anthropic"]);
+const CLOUD_PROVIDERS = new Set(["anthropic", "openai-codex"]);
 
 function isCloudModel(model: Model<Api>): boolean {
   return CLOUD_PROVIDERS.has(model.provider);
@@ -238,6 +238,7 @@ function isCloudModel(model: Model<Api>): boolean {
 
 function runtimeSourceTag(model: Model<Api>): string {
   if (model.provider === "anthropic") return "[Claude Code]";
+  if (model.provider === "openai-codex") return "[Codex CLI]";
   return "";
 }
 
@@ -372,7 +373,9 @@ function formatProviderModelLines(
 ): string[] {
   const chatModels = models.filter((m) => isChatModel(m.id));
   const sorted = [...chatModels].sort((a, b) => a.id.localeCompare(b.id));
-  const tag = CLOUD_PROVIDERS.has(providerName) ? " (cloud, via Claude Code CLI)" : "";
+  const cloudTag =
+    providerName === "anthropic" ? "Claude Code CLI" : providerName === "openai-codex" ? "Codex CLI" : "cloud";
+  const tag = CLOUD_PROVIDERS.has(providerName) ? ` (cloud, via ${cloudTag})` : "";
   const lines: string[] = [`${providerName}${tag} (${sorted.length} models):`];
 
   for (const model of sorted) {
@@ -551,7 +554,10 @@ export function createCommandHandlers(state: UiCommandState, cb: UiCommandCallba
       sections: [
         { rows: [text(readOnlyBanner())] },
         { rows: [kv("Current:", `${currentRef}  ${inlineHint(`use ${request}`)}`)] },
-        { heading: "Active (loaded on connected engines):", rows: formatActiveModelLines(currentRef, profiles).map((line) => text(line)) },
+        {
+          heading: "Active (loaded on connected engines):",
+          rows: formatActiveModelLines(currentRef, profiles).map((line) => text(line)),
+        },
         { rows: [text(`To switch to "${request}", ask Panos: "use ${request}"`)] },
         modelHintRow,
       ],
@@ -591,7 +597,8 @@ export function createCommandHandlers(state: UiCommandState, cb: UiCommandCallba
   const handlePreferencesCommand: CommandHandler = async (args, ctx) => {
     const request = args.trim();
     const enabledDomains = process.env.PANCODE_ENABLED_DOMAINS ?? "all";
-    const intelligenceEnabled = process.env.PANCODE_INTELLIGENCE === "true" || process.env.PANCODE_INTELLIGENCE === "enabled";
+    const intelligenceEnabled =
+      process.env.PANCODE_INTELLIGENCE === "true" || process.env.PANCODE_INTELLIGENCE === "enabled";
     const budgetCeilingNum = Number.parseFloat(process.env.PANCODE_BUDGET_CEILING ?? "10.0") || 10.0;
     const budgetCeiling = budgetCeilingNum.toFixed(2);
     const modeInfo = getModeDefinition();

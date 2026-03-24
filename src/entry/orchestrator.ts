@@ -12,7 +12,7 @@ import { ensureProjectRuntime } from "../core/init";
 import { resolvePackageRoot } from "../core/package-root";
 import { ensurePresetsFile, loadPreset } from "../core/presets";
 import { installSigintDoubleTap, shutdownCoordinator } from "../core/termination";
-import { resolveThinkingLevelForPreference } from "../core/thinking";
+import { type PanCodeReasoningPreference, resolveThinkingLevelForPreference } from "../core/thinking";
 import { DOMAIN_REGISTRY } from "../domains";
 import { ensureAgentsYaml } from "../domains/agents/spec-registry";
 import {
@@ -27,6 +27,7 @@ import {
   registerAnthropicModels,
   registerApiProvidersOnRegistry,
   registerDiscoveredModels,
+  registerOpenAICodexModels,
   resolveConfiguredModel,
   setModelProfileCache,
   setRegistryMetadata,
@@ -177,7 +178,9 @@ function printBootTimingTable(mode: "warm" | "cold", phases: BootPhase[]): void 
     const namePad = phase.name.padEnd(maxName);
     const labelPad = " ".repeat(maxLabel - phase.label.length);
     const flag = elapsed > 500 ? "  <<<" : "";
-    process.stderr.write(`[pancode:boot] ${namePad}  ${phase.label}:${labelPad} ${elapsed.toFixed(0).padStart(6)}ms${flag}\n`);
+    process.stderr.write(
+      `[pancode:boot] ${namePad}  ${phase.label}:${labelPad} ${elapsed.toFixed(0).padStart(6)}ms${flag}\n`,
+    );
   }
   process.stderr.write(`[pancode:boot] ${"TOTAL:".padEnd(maxName + maxLabel + 3)} ${total.toFixed(0).padStart(6)}ms\n`);
 }
@@ -300,7 +303,7 @@ export async function runOrchestratorEntry(): Promise<void> {
     model: args.model ?? presetModel ?? undefined,
     profile: args.profile ?? undefined,
     safety: args.safety ?? presetSafety ?? undefined,
-    reasoningPreference: presetReasoning as any,
+    reasoningPreference: presetReasoning as PanCodeReasoningPreference | undefined,
     theme: args.theme ?? undefined,
   });
 
@@ -391,6 +394,12 @@ export async function runOrchestratorEntry(): Promise<void> {
       `[pancode:providers] Anthropic: ${anthropicResult.registered.length} models registered ` +
         `(${anthropicResult.auth.subscriptionType ?? "unknown"} via ${anthropicResult.auth.authMethod ?? "unknown"})`,
     );
+  }
+
+  // === Phase 3c: OpenAI Codex catalog (Codex CLI auth detection) ===
+  const codexResult = registerOpenAICodexModels(modelRegistry);
+  if (codexResult.auth?.authenticated) {
+    console.error(`[pancode:providers] OpenAI Codex: ${codexResult.registered.length} models registered`);
   }
 
   // === Phase 4: Agent config ===
@@ -513,8 +522,7 @@ export async function runOrchestratorEntry(): Promise<void> {
         const freshCount = profiles.length;
         if (cachedCount !== freshCount) {
           process.stderr.write(
-            `[pancode:boot] Background refresh: ${freshCount} models (was ${cachedCount}). ` +
-              `Changes take effect on next boot or with --rediscover.\n`,
+            `[pancode:boot] Background refresh: ${freshCount} models (was ${cachedCount}). Changes take effect on next boot or with --rediscover.\n`,
           );
         }
       } catch (err) {
