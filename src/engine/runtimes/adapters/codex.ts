@@ -103,13 +103,56 @@ export class CodexRuntime extends CliRuntime {
       .filter((l) => l.trim());
     const events: CodexJsonEvent[] = [];
 
+    // Multi-line accumulator: handles JSON objects that span multiple lines
+    // or stdout lines corrupted by interleaved deprecation warnings.
+    let jsonAccumulator = "";
+
     for (const line of rawLines) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed[0] !== "{") continue;
+      let trimmed = line.trim();
+      if (!trimmed) continue;
+
+      // Strip UTF-8 BOM from the first meaningful line.
+      if (events.length === 0 && !jsonAccumulator && trimmed.charCodeAt(0) === 0xfeff) {
+        trimmed = trimmed.slice(1);
+      }
+
+      // If accumulating a multi-line JSON object, keep appending lines.
+      if (jsonAccumulator) {
+        jsonAccumulator += `\n${trimmed}`;
+        try {
+          events.push(JSON.parse(jsonAccumulator) as CodexJsonEvent);
+          jsonAccumulator = "";
+        } catch {
+          // Still incomplete; keep accumulating.
+        }
+        continue;
+      }
+
+      if (trimmed[0] !== "{") continue;
+
       try {
         events.push(JSON.parse(trimmed) as CodexJsonEvent);
       } catch {
-        // Non-JSON line; skip
+        // Could be the start of a multi-line JSON object.
+        jsonAccumulator = trimmed;
+      }
+    }
+
+    // Flush any remaining accumulator.
+    if (jsonAccumulator) {
+      try {
+        events.push(JSON.parse(jsonAccumulator) as CodexJsonEvent);
+      } catch {
+        // Truly broken JSON; ignore.
+      }
+    }
+
+    // Brace-bounded fallback: if per-line and multi-line parsing both found
+    // nothing, attempt to extract a single JSON object from the raw stdout.
+    if (events.length === 0) {
+      const extracted = this.extractBraceBounded(stdout);
+      if (extracted) {
+        events.push(extracted);
       }
     }
 
@@ -176,5 +219,38 @@ export class CodexRuntime extends CliRuntime {
       model,
       runtime: this.id,
     };
+  }
+
+  /**
+   * Fallback JSON extraction via brace matching.
+   * Handles cases where Codex output contains a single JSON object
+   * spanning multiple lines or embedded in wrapper noise.
+   */
+  private extractBraceBounded(stdout: string): CodexJsonEvent | null {
+    const trimmed = stdout.trim();
+    if (!trimmed) return null;
+
+    // Strip UTF-8 BOM if present.
+    const clean = trimmed.charCodeAt(0) === 0xfeff ? trimmed.slice(1) : trimmed;
+
+    const start = clean.indexOf("{");
+    if (start === -1) return null;
+
+    // Try from first brace to end of string.
+    try {
+      return JSON.parse(clean.slice(start)) as CodexJsonEvent;
+    } catch {
+      // Try from first brace to last brace.
+      const end = clean.lastIndexOf("}");
+      if (end > start) {
+        try {
+          return JSON.parse(clean.slice(start, end + 1)) as CodexJsonEvent;
+        } catch {
+          return null;
+        }
+      }
+    }
+
+    return null;
   }
 }

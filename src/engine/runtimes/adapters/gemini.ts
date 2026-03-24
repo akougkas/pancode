@@ -124,6 +124,17 @@ export class GeminiRuntime extends CliRuntime {
       args.push("--yolo");
     }
 
+    // Sandbox for mutable agents: containerized tool execution prevents
+    // destructive actions from escaping isolation. Skip if user explicitly
+    // controls sandbox behavior via runtimeArgs.
+    if (
+      !config.readonly &&
+      !config.runtimeArgs.includes("--sandbox") &&
+      !config.runtimeArgs.includes("--no-sandbox")
+    ) {
+      args.push("--sandbox");
+    }
+
     // Gemini CLI does not support a --timeout flag. The cli-entry.ts wrapper
     // provides a process-level kill timer as the fallback timeout mechanism.
 
@@ -140,6 +151,11 @@ export class GeminiRuntime extends CliRuntime {
     // Gemini CLI reads this to set system instructions for the session.
     if (config.systemPrompt.trim()) {
       env.GEMINI_SYSTEM_MD = config.systemPrompt.trim();
+    }
+
+    // Enable sandbox mode via environment variable for mutable agents.
+    if (!config.readonly) {
+      env.GEMINI_SANDBOX = "true";
     }
 
     return this.buildCliSpawnConfig(config, { env, outputFormat: "json" });
