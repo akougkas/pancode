@@ -112,6 +112,10 @@ export const extension = defineExtension((pi) => {
   });
 
   // === /session: Show Pi session info + PanCode domain state summary ===
+  // NOTE: /session uses the same name as Pi's built-in session command.
+  // This registration only works because shell-overrides.ts hides the Pi
+  // built-in first. If shell-overrides fails, this registration is silently
+  // skipped and Pi's native session display runs instead.
   pi.registerCommand("session", {
     description: "Show session info with PanCode state summary",
     async handler(_args, ctx) {

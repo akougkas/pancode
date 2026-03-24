@@ -44,7 +44,9 @@ const HIDDEN_BUILTIN_NAMES = new Set([
   "new",
   "compact",
   "resume",
-  "quit",
+  // "quit" is intentionally NOT hidden. Pi's /quit provides a native exit
+  // command that users expect. PanCode's /exit is an alias registered via
+  // the UI domain. Both work; /quit is available in autocomplete.
   "reload",
 ]);
 

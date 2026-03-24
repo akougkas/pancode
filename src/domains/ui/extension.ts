@@ -1070,11 +1070,12 @@ export const extension = defineExtension((pi) => {
     handler: handlers.handleModelsCommand,
   });
 
-  pi.registerCommand("preferences", {
-    description: "Show or change PanCode preferences",
-    handler: handlers.handlePreferencesCommand,
-  });
+  // /preferences removed (redundant with /settings). The handlePreferencesCommand
+  // handler remains available through /settings.
 
+  // NOTE: /settings uses the same name as Pi's built-in SettingsSelectorComponent.
+  // This registration only works because shell-overrides.ts hides the Pi built-in
+  // first. If shell-overrides fails, this registration is silently skipped.
   pi.registerCommand("settings", {
     description: "Show or change PanCode configuration",
     handler: handlers.handlePreferencesCommand,
@@ -1085,10 +1086,7 @@ export const extension = defineExtension((pi) => {
     handler: handlers.handleReasoningCommand,
   });
 
-  pi.registerCommand("thinking", {
-    description: "Backward-compatible alias for /reasoning",
-    handler: handlers.handleReasoningCommand,
-  });
+  // /thinking removed (redundant with /reasoning).
 
   pi.registerCommand("modes", {
     description: "Switch orchestrator mode (admin, plan, build, review)",
@@ -1120,6 +1118,10 @@ export const extension = defineExtension((pi) => {
     handler: handlers.handleExitCommand,
   });
 
+  // NOTE: /hotkeys uses the same name as Pi's built-in hotkeys display.
+  // This registration only works because shell-overrides.ts hides the Pi
+  // built-in first. If shell-overrides fails, this registration is silently
+  // skipped and Pi's native hotkeys display runs instead.
   pi.registerCommand("hotkeys", {
     description: "Show keyboard shortcuts",
     handler: handlers.handleHotkeysCommand,
