@@ -63,15 +63,35 @@ different internal implementation. The user never sees the difference.
 
 ### 2.3 API
 
-HTTP inference endpoints serving OpenAI-compatible APIs.
+Inference providers accessed via API tokens or OpenAI-compatible HTTP endpoints.
+Split into two subcategories:
+
+**Cloud API vendors** (token-based): Traditional API providers where you pay per
+token and authenticate with an API key.
 
 | Property | Value |
 |----------|-------|
-| Examples | Ollama, LM Studio, llamacpp, vLLM, LocalAI, OpenRouter |
-| Control mechanism | HTTP client (official SDKs when available, raw HTTP fallback) |
-| Model source | Endpoint model list API (`/api/tags`, `/v1/models`) |
-| Auth | API key or none (local engines) |
-| Streaming | SSE streaming |
+| Examples | Anthropic API, OpenAI API, Google AI, Groq, Inception Labs, Cerebras, OpenRouter |
+| Control mechanism | Pi SDK built-in providers (`anthropic-messages`, `openai-completions`, etc.) |
+| Model source | Pi SDK model registry (hardcoded catalogs + dynamic discovery) |
+| Auth | API key via environment variable or stored credential |
+| Integration | Already built into `pi-ai`. PanCode manages auth and surfaces in model selector. |
+
+**Local AI endpoints** (SDK-based): Self-hosted inference servers on user-owned
+hardware, accessed through their official SDKs.
+
+| Property | Value |
+|----------|-------|
+| Examples | Ollama (`ollama` npm), LM Studio (`@lmstudio/sdk`), llamacpp (HTTP), vLLM, LocalAI |
+| Control mechanism | Official SDK or OpenAI-compatible HTTP via `registerApiProvider("openai-completions")` |
+| Model source | Endpoint model list API (`/api/tags`, `/v1/models`, `/props`) |
+| Auth | None (local network) |
+| Integration | PanCode registers local endpoints as Pi API providers. The Pi agent loop uses them natively. |
+
+This is PanCode's core contribution: making local AI work as first-class Pi providers.
+When a user boots `pancode --preset local-mini`, the llamacpp endpoint on mini is
+registered as a Pi provider, and Panos is powered by the local model through the
+standard Pi SDK streaming path.
 
 ### 2.4 SDK
 
@@ -240,19 +260,38 @@ src/domains/pan-providers/
 | `src/domains/dispatch/session-continuity.ts` | `pan-providers/session/continuity.ts` | |
 | `src/domains/dispatch/routing.ts` | `pan-providers/models/matcher.ts` | Model routing |
 
-### 5.3 Engine boundary
+### 5.3 Pi SDK IS the engine
 
-The Pi SDK boundary rule still applies. `pi-native.ts` (the Pi adapter) imports
-from `@pancode/pi-*`. It lives logically in pan-providers but physically must stay
-within the engine import boundary.
+The Pi SDK is not something PanCode wraps at arm's length. It IS the engine that
+powers PanCode. The `pi-coding-agent` provides the agent loop. The `pi-ai` provides
+the model/provider system with `registerApiProvider()`, `ModelManager`, and streaming.
+The `pi-tui` renders the TUI. PanCode is a set of domain extensions layered on top.
 
-Solution: `pan-providers/adapters/pi-native.ts` re-exports from a thin wrapper in
-`src/engine/pi-adapter.ts`. The engine wrapper owns the Pi SDK import. The domain
-owns the registration and lifecycle.
+**For the native category:** The Pi coding agent IS the native execution path. When
+PanCode boots, it starts a Pi coding agent extended with PanCode's domain extensions.
+The orchestrator (Panos) is a Pi coding agent. Native workers are Pi coding agent
+subprocesses. There is no separate "Pi adapter." The Pi SDK is the foundation.
 
-Similarly, `claude-cli.ts` imports from `@anthropic-ai/claude-agent-sdk` (not Pi SDK).
-This is a third-party dependency, not a Pi SDK package. It can live directly in the
-domain without violating the engine boundary.
+**For local AI providers (Ollama, LM Studio, llamacpp):** These endpoints speak
+OpenAI-compatible APIs. PanCode registers them INTO the Pi SDK's provider registry
+using `registerApiProvider()` with the `openai-completions` API type. The Pi agent
+loop then uses local models natively through its own streaming infrastructure. No
+PanCode-specific inference layer needed.
+
+**For cloud API providers (Anthropic, OpenAI, Google, Groq):** These are already
+built into `pi-ai` as registered API providers. PanCode's job is to manage auth
+(API keys) and surface them in the model selector.
+
+**For CLI agent providers (claude, codex, gemini):** These are worker dispatch
+targets, not Pi providers. When PanCode dispatches work to a CLI agent, it spawns
+a subprocess. The CLI agent manages its own model/provider selection internally.
+
+**For SDK agent providers (Claude Agent SDK, Google ADK):** These are in-process
+dispatch targets. PanCode uses their programmatic APIs for typed streaming and
+session management.
+
+See `.specs/LOCKED/diagrams/architecture-layers.md` for visual diagrams of this
+architecture.
 
 ---
 
@@ -582,12 +621,35 @@ All in `src/domains/pan-providers/`.
 
 ---
 
-## 13. What This Spec Does NOT Cover
+## 13. Architectural Decision: Pi Coding Agent vs Custom Agent
+
+Two paths exist for building PanCode's orchestrator agent:
+
+**Path A (current):** Use `pi-coding-agent` directly. PanCode creates an
+ExtensionFactory that hooks into the Pi agent's lifecycle and overlays domain
+extensions. The Pi agent handles the agent loop, tool execution, and conversation
+management. PanCode extends it.
+
+**Path B (future option):** Build a custom "Panos" agent using `pi-ai` +
+`pi-tui` + `pi-agent-core` primitives. PanCode owns the agent loop entirely.
+No dependency on the `pi-coding-agent` binary. Full control over the agent's
+behavior, tool routing, and conversation flow.
+
+**Current decision:** Path A. The Pi coding agent is mature, handles edge cases
+(context compaction, tool retries, session persistence), and gives PanCode free
+upgrades when the SDK improves. Path B is only justified if PanCode needs agent
+loop control that the Pi extension model cannot provide.
+
+This decision should be revisited when PanCode's dispatch system matures. If
+multi-agent orchestration requires control over the agent loop itself (not just
+extensions on top of it), Path B becomes necessary.
+
+---
+
+## 14. What This Spec Does NOT Cover
 
 - XDG filesystem layout (see PRODUCTIZATION.md)
 - Onboarding wizard (separate sprint)
 - OAuth flows (future, depends on Pi SDK support)
 - LibSQL persistence (future sprint)
 - Remote SSH dispatch (deferred, needs correct architecture first)
-- Inference endpoint adapters (api:ollama etc. are discovery + observation only in Phase 1;
-  actual inference execution through API providers is a future enhancement)
