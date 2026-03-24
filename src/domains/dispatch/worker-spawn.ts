@@ -471,6 +471,43 @@ function spawnWorkerNdjsonPath(
       result.error = runtimeResult.error;
     }
 
+    // Merge usage from runtime result file when NDJSON streaming reported zeros.
+    // Pi runtime writes a result file with accurate totals; prefer those over
+    // the streaming accumulators when the stream yielded no usage data.
+    if (runtimeResult.usage) {
+      if (accInputTokens === 0 && (runtimeResult.usage.inputTokens ?? 0) > 0) {
+        accInputTokens = runtimeResult.usage.inputTokens ?? 0;
+      }
+      if (accOutputTokens === 0 && (runtimeResult.usage.outputTokens ?? 0) > 0) {
+        accOutputTokens = runtimeResult.usage.outputTokens ?? 0;
+      }
+      if (accCacheRead === 0 && (runtimeResult.usage.cacheReadTokens ?? 0) > 0) {
+        accCacheRead = runtimeResult.usage.cacheReadTokens ?? 0;
+      }
+      if (accCacheWrite === 0 && (runtimeResult.usage.cacheWriteTokens ?? 0) > 0) {
+        accCacheWrite = runtimeResult.usage.cacheWriteTokens ?? 0;
+      }
+      if (accCost === 0 && (runtimeResult.usage.cost ?? 0) > 0) {
+        accCost = runtimeResult.usage.cost ?? 0;
+      }
+      if (accTurns === 0 && (runtimeResult.usage.turns ?? 0) > 0) {
+        accTurns = runtimeResult.usage.turns ?? 0;
+      }
+    }
+    if (!result.model && runtimeResult.model) {
+      result.model = runtimeResult.model;
+    }
+
+    // Re-assign usage with potentially updated accumulators from result file merge.
+    result.usage = {
+      inputTokens: accInputTokens,
+      outputTokens: accOutputTokens,
+      cacheReadTokens: accCacheRead,
+      cacheWriteTokens: accCacheWrite,
+      cost: accCost,
+      turns: accTurns,
+    };
+
     // Mark timeout and budget-exceeded kill reasons on the result.
     if (killState.timedOut) {
       result.timedOut = true;

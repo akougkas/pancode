@@ -120,6 +120,22 @@ export class MetricsLedger {
     return this.getMetrics().slice(-count);
   }
 
+  /**
+   * Return session IDs that have a session_start marker without a matching session_end.
+   * Used to detect orphaned sessions from unclean shutdowns.
+   */
+  getOpenSessionIds(): string[] {
+    const started = new Set<string>();
+    const ended = new Set<string>();
+    for (const entry of this.entries) {
+      if (isSessionBoundary(entry)) {
+        if (entry.type === "session_start") started.add(entry.sessionId);
+        if (entry.type === "session_end") ended.add(entry.sessionId);
+      }
+    }
+    return Array.from(started).filter((id) => !ended.has(id));
+  }
+
   serialize(): RunMetric[] {
     return [...this.getMetrics()];
   }

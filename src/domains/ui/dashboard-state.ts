@@ -153,8 +153,8 @@ export function buildDashboardState(params: {
       tokens: totalTok,
     });
   }
-  // Add recent completed runs (last 5)
-  const recentRuns = allRuns.filter((r) => r.status !== "running" && r.status !== "pending").slice(-5);
+  // Add recent completed runs (last 10)
+  const recentRuns = allRuns.filter((r) => r.status !== "running" && r.status !== "pending").slice(-10);
   for (const r of recentRuns) {
     tasks.push({
       id: r.id.length > 8 ? `#${r.id.slice(0, 7)}` : `#${r.id}`,

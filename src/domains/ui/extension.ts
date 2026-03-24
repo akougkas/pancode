@@ -480,7 +480,7 @@ export const extension = defineExtension((pi) => {
 
         const recent: DispatchCardData[] = allRuns
           .filter((r) => r.status !== "running" && r.status !== "pending")
-          .slice(-5)
+          .slice(-10)
           .map((r) => ({
             agent: r.agent,
             status: r.status,

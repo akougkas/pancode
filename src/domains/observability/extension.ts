@@ -22,6 +22,8 @@ let dispatchLedger: DispatchLedger | null = null;
 let auditTrail: AuditTrail | null = null;
 let receiptWriter: ReceiptWriter | null = null;
 let budgetSnapshot = { totalCost: 0, ceiling: 10 };
+let observabilityListenersRegistered = false;
+let currentSessionId: string | null = null;
 
 export function getMetricsLedger(): MetricsLedger | null {
   return metricsLedger;
@@ -53,6 +55,18 @@ export const extension = defineExtension((pi) => {
 
     // Session boundary marker
     const sessionId = process.env.PANCODE_SESSION_ID ?? randomUUID().slice(0, 8);
+    currentSessionId = sessionId;
+
+    // Close any orphaned sessions from previous unclean shutdowns.
+    const openSessions = metricsLedger.getOpenSessionIds();
+    for (const orphanId of openSessions) {
+      metricsLedger.addSessionMarker({
+        type: "session_end",
+        timestamp: new Date().toISOString(),
+        sessionId: orphanId,
+      });
+    }
+
     metricsLedger.addSessionMarker({ type: "session_start", timestamp: new Date().toISOString(), sessionId });
     budgetSnapshot = {
       totalCost: 0,
@@ -67,113 +81,134 @@ export const extension = defineExtension((pi) => {
       severity: "info",
     });
 
-    // Subscribe to dispatch events for both metrics and audit
-    sharedBus.on(BusChannel.RUN_FINISHED, (payload) => {
-      const event = payload as RunFinishedEvent;
-      const durationMs = new Date(event.completedAt).getTime() - new Date(event.startedAt).getTime();
+    // Best-effort session close on unexpected exit (SIGKILL, OOM, unhandled exceptions).
+    process.on("exit", () => {
+      if (currentSessionId) {
+        try {
+          metricsLedger?.addSessionMarker({
+            type: "session_end",
+            timestamp: new Date().toISOString(),
+            sessionId: currentSessionId,
+          });
+        } catch {
+          // ignore: best-effort only
+        }
+      }
+    });
 
-      const metric: RunMetric = {
-        runId: event.runId,
-        agent: event.agent,
-        status: event.status,
-        runtime: event.runtime ?? "pi",
-        inputTokens: event.usage.inputTokens,
-        outputTokens: event.usage.outputTokens,
-        cacheReadTokens: event.usage.cacheReadTokens,
-        cacheWriteTokens: event.usage.cacheWriteTokens,
-        cost: event.usage.cost,
-        turns: event.usage.turns,
-        durationMs: Math.max(0, durationMs),
-        timestamp: event.completedAt,
-      };
+    // Guard against duplicate listener registration if SESSION_START fires more than once.
+    if (!observabilityListenersRegistered) {
+      observabilityListenersRegistered = true;
 
-      metricsLedger?.record(metric);
+      // Subscribe to dispatch events for both metrics and audit
+      sharedBus.on(BusChannel.RUN_FINISHED, (payload) => {
+        const event = payload as RunFinishedEvent;
+        const durationMs = new Date(event.completedAt).getTime() - new Date(event.startedAt).getTime();
 
-      // Persistent dispatch ledger (NDJSON, survives restart).
-      // Look up the run envelope from the dispatch RunLedger for task and error fields.
-      const runEnvelope = getRunLedger()?.get(event.runId);
-      const ledgerEntry: DispatchLedgerEntry = {
-        ts: event.completedAt,
-        runId: event.runId,
-        agent: event.agent,
-        runtime: event.runtime ?? "pi",
-        model: runEnvelope?.model ?? null,
-        task: runEnvelope ? runEnvelope.task.slice(0, 200) : "",
-        status: event.status,
-        exitCode: event.status === "done" ? 0 : 1,
-        wallMs: Math.max(0, durationMs),
-        tokens: {
-          in: event.usage.inputTokens,
-          out: event.usage.outputTokens,
-          cacheRead: event.usage.cacheReadTokens,
-          cacheWrite: event.usage.cacheWriteTokens,
-        },
-        cost: event.usage.cost,
-        turns: event.usage.turns,
-        error: runEnvelope?.error || null,
-      };
-      dispatchLedger?.append(ledgerEntry);
+        const metric: RunMetric = {
+          runId: event.runId,
+          agent: event.agent,
+          status: event.status,
+          runtime: event.runtime ?? "pi",
+          inputTokens: event.usage.inputTokens,
+          outputTokens: event.usage.outputTokens,
+          cacheReadTokens: event.usage.cacheReadTokens,
+          cacheWriteTokens: event.usage.cacheWriteTokens,
+          cost: event.usage.cost,
+          turns: event.usage.turns,
+          durationMs: Math.max(0, durationMs),
+          timestamp: event.completedAt,
+        };
 
-      // Audit trail entry with correlation ID for lifecycle reconstruction.
-      const severity = event.status === "error" ? "warn" : "info";
-      const costLabel = event.usage.cost != null ? `$${event.usage.cost.toFixed(4)}` : "--";
-      auditTrail?.record({
-        domain: "dispatch",
-        event: `run-${event.status}`,
-        agent: event.agent,
-        detail: `Run ${event.runId}: ${event.status} (${(durationMs / 1000).toFixed(1)}s, ${costLabel})`,
-        severity,
-        correlationId: event.runId,
+        metricsLedger?.record(metric);
+
+        // Persistent dispatch ledger (NDJSON, survives restart).
+        // Look up the run envelope from the dispatch RunLedger for task and error fields.
+        const runEnvelope = getRunLedger()?.get(event.runId);
+        const ledgerEntry: DispatchLedgerEntry = {
+          ts: event.completedAt,
+          runId: event.runId,
+          agent: event.agent,
+          runtime: event.runtime ?? "pi",
+          model: runEnvelope?.model ?? null,
+          task: runEnvelope ? runEnvelope.task.slice(0, 200) : "",
+          status: event.status,
+          exitCode: event.status === "done" ? 0 : 1,
+          wallMs: Math.max(0, durationMs),
+          tokens: {
+            in: event.usage.inputTokens,
+            out: event.usage.outputTokens,
+            cacheRead: event.usage.cacheReadTokens,
+            cacheWrite: event.usage.cacheWriteTokens,
+          },
+          cost: event.usage.cost,
+          turns: event.usage.turns,
+          error: runEnvelope?.error || null,
+        };
+        dispatchLedger?.append(ledgerEntry);
+
+        // Audit trail entry with correlation ID for lifecycle reconstruction.
+        const severity = event.status === "error" ? "warn" : "info";
+        const costLabel = event.usage.cost != null ? `$${event.usage.cost.toFixed(4)}` : "--";
+        auditTrail?.record({
+          domain: "dispatch",
+          event: `run-${event.status}`,
+          agent: event.agent,
+          detail: `Run ${event.runId}: ${event.status} (${(durationMs / 1000).toFixed(1)}s, ${costLabel})`,
+          severity,
+          correlationId: event.runId,
+        });
+
+        // Write reproducibility receipt for this dispatch.
+        receiptWriter?.writeReceipt(event, runEnvelope);
       });
 
-      // Write reproducibility receipt for this dispatch.
-      receiptWriter?.writeReceipt(event, runEnvelope);
-    });
-
-    // Subscribe to worker progress for receipt action tracking
-    sharedBus.on(BusChannel.WORKER_PROGRESS, (payload) => {
-      const event = payload as WorkerProgressEvent;
-      receiptWriter?.recordProgress(event);
-    });
-
-    // Subscribe to warnings
-    sharedBus.on(BusChannel.WARNING, (payload) => {
-      const event = payload as WarningEvent;
-      auditTrail?.record({
-        domain: event.source,
-        event: "warning",
-        detail: event.message,
-        severity: "warn",
+      // Subscribe to worker progress for receipt action tracking
+      sharedBus.on(BusChannel.WORKER_PROGRESS, (payload) => {
+        const event = payload as WorkerProgressEvent;
+        receiptWriter?.recordProgress(event);
       });
-    });
 
-    // Subscribe to session reset
-    sharedBus.on(BusChannel.SESSION_RESET, () => {
-      auditTrail?.record({ domain: "session", event: "reset", detail: "Coordination state reset", severity: "info" });
-    });
-
-    // Subscribe to compaction
-    sharedBus.on(BusChannel.COMPACTION_STARTED, () => {
-      auditTrail?.record({
-        domain: "session",
-        event: "compaction",
-        detail: "Context compaction triggered",
-        severity: "info",
+      // Subscribe to warnings
+      sharedBus.on(BusChannel.WARNING, (payload) => {
+        const event = payload as WarningEvent;
+        auditTrail?.record({
+          domain: event.source,
+          event: "warning",
+          detail: event.message,
+          severity: "warn",
+        });
       });
-    });
 
-    sharedBus.on(BusChannel.BUDGET_UPDATED, (payload) => {
-      const event = payload as BudgetUpdatedEvent;
-      budgetSnapshot = {
-        totalCost: event.totalCost,
-        ceiling: event.ceiling,
-      };
-    });
+      // Subscribe to session reset
+      sharedBus.on(BusChannel.SESSION_RESET, () => {
+        auditTrail?.record({ domain: "session", event: "reset", detail: "Coordination state reset", severity: "info" });
+      });
+
+      // Subscribe to compaction
+      sharedBus.on(BusChannel.COMPACTION_STARTED, () => {
+        auditTrail?.record({
+          domain: "session",
+          event: "compaction",
+          detail: "Context compaction triggered",
+          severity: "info",
+        });
+      });
+
+      sharedBus.on(BusChannel.BUDGET_UPDATED, (payload) => {
+        const event = payload as BudgetUpdatedEvent;
+        budgetSnapshot = {
+          totalCost: event.totalCost,
+          ceiling: event.ceiling,
+        };
+      });
+    } // end observabilityListenersRegistered guard
   });
 
   pi.on(PiEvent.SESSION_SHUTDOWN, async () => {
-    const sessionId = process.env.PANCODE_SESSION_ID ?? "unknown";
+    const sessionId = currentSessionId ?? process.env.PANCODE_SESSION_ID ?? "unknown";
     metricsLedger?.addSessionMarker({ type: "session_end", timestamp: new Date().toISOString(), sessionId });
+    currentSessionId = null; // Prevent process.on("exit") from writing a duplicate marker.
   });
 
   // === /metrics ===

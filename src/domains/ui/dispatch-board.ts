@@ -45,7 +45,7 @@ export interface AgentStat {
 
 export interface DispatchBoardState {
   active: DispatchCardData[];
-  recent: DispatchCardData[]; // last 5 completed
+  recent: DispatchCardData[]; // last 10 completed
   totalRuns: number;
   totalCost: number | null;
   budgetCeiling: number | null;

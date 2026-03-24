@@ -161,7 +161,7 @@ function renderStandardDashboard(state: DashboardState, width: number, height: n
   }
 
   // Agent registry + Codex input
-  const agentPanel = renderAgentRegistry(state.agents, SIDEBAR_WIDTH, 8, c);
+  const agentPanel = renderAgentRegistry(state.agents, SIDEBAR_WIDTH, 14, c);
   const codexPanel = renderCodexInput(state, mainWidth, c);
   lines.push(...mergeColumns(agentPanel, SIDEBAR_WIDTH, codexPanel, mainWidth, COLUMN_GAP));
 
@@ -209,7 +209,7 @@ function renderCompactDashboard(state: DashboardState, width: number, height: nu
   lines.push(...renderAgentRegistryInline(state.agents, width, c));
 
   // Dispatch table (full width, stacked)
-  const maxRows = 6;
+  const maxRows = 10;
   lines.push(...renderDispatchTable(state.tasks, width, maxRows, c));
 
   // Log viewer (full width, stacked below dispatch)
@@ -266,7 +266,7 @@ function renderWideDashboard(state: DashboardState, width: number, height: numbe
   }
 
   // Agent registry + Codex input
-  const agentPanel = renderAgentRegistry(state.agents, SIDEBAR_WIDTH, 8, c);
+  const agentPanel = renderAgentRegistry(state.agents, SIDEBAR_WIDTH, 14, c);
   const codexPanel = renderCodexInput(state, mainWidth, c);
   lines.push(...mergeColumns(agentPanel, SIDEBAR_WIDTH, codexPanel, mainWidth, COLUMN_GAP));
 

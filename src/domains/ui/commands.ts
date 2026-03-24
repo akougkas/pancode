@@ -524,7 +524,7 @@ export function createCommandHandlers(state: UiCommandState, cb: UiCommandCallba
           {
             rows: [
               kv("Current:", `${currentRef}  ${inlineHint("use qwen model")}`),
-              kv("Total available:", `${registry.available.length} models`),
+              kv("Total available:", `${registry.available.filter((m) => isChatModel(m.id)).length} models`),
             ],
           },
           { rows: formatAllAvailableLines(currentRef, registry.available, profiles).map((line) => text(line)) },
