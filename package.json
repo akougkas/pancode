@@ -53,6 +53,7 @@
     "scripts/"
   ],
   "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.81",
     "@lmstudio/sdk": "^1.5.0",
     "@pancode/pi-agent-core": "*",
     "@pancode/pi-ai": "*",
