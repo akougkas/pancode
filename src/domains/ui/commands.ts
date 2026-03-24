@@ -241,6 +241,26 @@ function runtimeSourceTag(model: Model<Api>): string {
   return "";
 }
 
+/** Build PanelRow items summarizing worker runtime and available runtimes. */
+function formatRuntimeInfoRows(): PanelRow[] {
+  const currentRuntime = process.env.PANCODE_WORKER_RUNTIME?.trim() || "pi";
+  const available = runtimeRegistry.available();
+
+  const runtimeList =
+    available
+      .map((r) => {
+        const version = r.getVersion();
+        const versionSuffix = version ? ` (${version})` : "";
+        return `${r.id}${versionSuffix}`;
+      })
+      .join(", ") || "pi only";
+
+  return [
+    kv("Worker runtime:", `${currentRuntime}  ${inlineHint("use claude code for workers")}`),
+    kv("Available:", runtimeList),
+  ];
+}
+
 function getRegisteredModels(ctx: ExtensionContext): {
   all: Array<Model<Api>>;
   available: Array<Model<Api>>;
@@ -605,6 +625,11 @@ export function createCommandHandlers(state: UiCommandState, cb: UiCommandCallba
               ),
               kv("Mode:", `${modeInfo.name}  ${inlineHint("switch to plan mode")}`),
             ],
+          },
+          {
+            heading: "Runtimes:",
+            indent: 2,
+            rows: formatRuntimeInfoRows(),
           },
           {
             rows: [

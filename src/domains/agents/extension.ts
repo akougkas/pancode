@@ -9,7 +9,7 @@ import { defineExtension } from "../../engine/extensions";
 import { discoverAndRegisterRuntimes } from "../../engine/runtimes/discovery";
 import { runtimeRegistry } from "../../engine/runtimes/registry";
 import { PANCODE_HOME, getModelProfileCache } from "../providers";
-import { kv, sendPanelSpec, text } from "../ui/panel-renderer";
+import { type PanelSection, kv, sendPanelSpec, text } from "../ui/panel-renderer";
 import { registerShadowExplore } from "./shadow-explore";
 import { type SkillDefinition, discoverSkills, validateSkillTools } from "./skills";
 import { agentRegistry, loadAgentsFromYaml } from "./spec-registry";
@@ -261,10 +261,46 @@ export const extension = defineExtension((pi) => {
         tableRows.push(text(`${id} ${tier} ${telemetry} ${version} ${status} ${binary}`));
       }
 
-      sendPanelSpec(emitPanel, {
-        title: "PanCode Runtimes",
-        sections: [{ rows: [kv("Registered:", `${allRuntimes.length} runtimes`)] }, { rows: tableRows }],
-      });
+      // Build agent-to-runtime mapping summary
+      const specs = agentRegistry.getAll();
+      const runtimeAgentMap = new Map<string, string[]>();
+      for (const spec of specs) {
+        const existing = runtimeAgentMap.get(spec.runtime) ?? [];
+        existing.push(spec.name);
+        runtimeAgentMap.set(spec.runtime, existing);
+      }
+
+      const mappingRows = [];
+      for (const [runtimeId, agents] of runtimeAgentMap.entries()) {
+        mappingRows.push(text(`  ${runtimeId}: ${agents.join(", ")}`));
+      }
+
+      const sections: PanelSection[] = [
+        { rows: [kv("Registered:", `${allRuntimes.length} runtimes`)] },
+        { rows: tableRows },
+      ];
+
+      if (mappingRows.length > 0) {
+        sections.push({ heading: "Agent assignments:", rows: mappingRows });
+      }
+
+      // Show auth status for cloud runtimes
+      const claudeRuntime = allRuntimes.find((r) => r.id === "cli:claude-code");
+      if (claudeRuntime?.isAvailable()) {
+        try {
+          const { detectAnthropicAuth } = await import("../providers/anthropic-catalog");
+          const auth = detectAnthropicAuth();
+          if (auth) {
+            sections.push({
+              rows: [text(`Claude Code: ${auth.subscriptionType} subscription (${auth.email})`)],
+            });
+          }
+        } catch {
+          // Auth detection is best-effort; do not surface errors.
+        }
+      }
+
+      sendPanelSpec(emitPanel, { title: "PanCode Runtimes", sections });
     },
   });
 
