@@ -9,3 +9,4 @@ export { dispatchChain, type ChainStep, type ChainResult, type ChainStepResult }
 export { createBackoffManager, type BackoffManager, type BackoffState } from "./backoff";
 export { createResilienceTracker, type ResilienceTracker, type ProviderHealth } from "./resilience";
 export { WorkerHealthMonitor, healthMonitor, DEFAULT_HEARTBEAT_INTERVAL_MS } from "./health";
+export { inferRuntimeFromModel, resolveWorkerRouting, type WorkerRouting } from "./routing";

@@ -12,7 +12,6 @@ export interface PanCodeSettings {
   reasoningPreference: PanCodeReasoningPreference;
   safetyMode: string | null;
   workerModel: string | null;
-  workerRuntime: string | null;
   budgetCeiling: number | null;
   intelligence: boolean | null;
 }
@@ -70,7 +69,6 @@ function normalizeSettings(value: unknown): PanCodeSettings {
     reasoningPreference: normalizeReasoningPreference(object.reasoningPreference),
     safetyMode: normalizeOptionalString(object.safetyMode),
     workerModel: normalizeOptionalString(object.workerModel),
-    workerRuntime: normalizeOptionalString(object.workerRuntime),
     budgetCeiling: normalizeOptionalNumber(object.budgetCeiling),
     intelligence: normalizeOptionalBoolean(object.intelligence),
   };

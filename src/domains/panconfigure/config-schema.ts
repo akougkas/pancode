@@ -113,18 +113,6 @@ export const CONFIG_SCHEMA: ReadonlyArray<ConfigParamDef> = [
     domain: "models",
     envVar: "PANCODE_SCOUT_MODEL",
   },
-  {
-    key: "models.workerRuntime",
-    defaultValue: "pi",
-    type: "string",
-    description:
-      "Runtime for dispatch workers. Determines how worker agents are executed (pi, cli:claude-code, cli:codex, etc.).",
-    hotReload: true,
-    adminOnly: false,
-    domain: "models",
-    envVar: "PANCODE_WORKER_RUNTIME",
-    settingsKey: "workerRuntime",
-  },
 
   // budget domain
   {

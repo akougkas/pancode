@@ -21,10 +21,6 @@ function getWorkerModel(): string | null {
   return process.env.PANCODE_WORKER_MODEL?.trim() || null;
 }
 
-function getWorkerRuntime(): string {
-  return process.env.PANCODE_WORKER_RUNTIME?.trim() || "pi";
-}
-
 function resolveModelSampling(model: string | null, presetName: string | undefined): SamplingPreset | null {
   if (!model || !presetName) return null;
 
@@ -51,7 +47,7 @@ function resolveModelSampling(model: string | null, presetName: string | undefin
  * Anthropic models (prefix "anthropic/") must use cli:claude-code since they cannot be served
  * by the Pi native runtime or local engines.
  */
-function inferRuntimeFromModel(model: string | null): string | null {
+export function inferRuntimeFromModel(model: string | null): string | null {
   if (!model) return null;
 
   const slashIdx = model.indexOf("/");
@@ -73,16 +69,11 @@ function inferRuntimeFromModel(model: string | null): string | null {
  *
  * Resolution order:
  * 1. Explicit spec runtime (if not the default "pi")
- * 2. Configured worker runtime from settings/env (PANCODE_WORKER_RUNTIME)
- * 3. Inferred from model provider prefix
- * 4. Default "pi"
+ * 2. Inferred from model provider prefix
+ * 3. Default "pi"
  */
 function resolveRuntime(model: string | null, specRuntime: string): string {
   if (specRuntime !== "pi") return specRuntime;
-
-  const configuredRuntime = getWorkerRuntime();
-  if (configuredRuntime !== "pi") return configuredRuntime;
-
   return inferRuntimeFromModel(model) ?? "pi";
 }
 

@@ -13,8 +13,10 @@ import { runtimeRegistry } from "../../engine/runtimes";
 import type { ThemeColor } from "../../engine/tui";
 import type { Api, Model } from "../../engine/types";
 import { agentRegistry } from "../agents";
-import { getRunLedger } from "../dispatch";
+import { getRunLedger, inferRuntimeFromModel } from "../dispatch";
 import { getMetricsLedger } from "../observability";
+import { classifyModelTier, deriveProviderHint } from "../prompts/tiering";
+import type { ModelTier } from "../prompts/types";
 import { type MergedModelProfile, getModelProfileCache } from "../providers";
 import { getBudgetTracker } from "../scheduling";
 import { getContextPercent, getContextTokens, getContextWindow } from "./context-tracker";
@@ -244,7 +246,8 @@ function runtimeSourceTag(model: Model<Api>): string {
 
 /** Build PanelRow items summarizing worker runtime and available runtimes. */
 function formatRuntimeInfoRows(): PanelRow[] {
-  const currentRuntime = process.env.PANCODE_WORKER_RUNTIME?.trim() || "pi";
+  const workerModel = process.env.PANCODE_WORKER_MODEL?.trim() || null;
+  const currentRuntime = inferRuntimeFromModel(workerModel) ?? "pi";
   const available = runtimeRegistry.available();
 
   const runtimeList =
@@ -359,6 +362,111 @@ function formatAvailableSummary(registryAvailable: ReadonlyArray<Model<Api>>): s
     parts.push(`(${localModels.length} local, ${cloudModels.length} cloud)`);
   }
   return `Available: ${parts.join(" ")}. Use /models all to browse.`;
+}
+
+// ---------------------------------------------------------------------------
+// Tier-grouped model display helpers
+// ---------------------------------------------------------------------------
+
+/** Format cost per million tokens as "$input/$output" or "free". */
+function formatCost(model: Model<Api>): string {
+  if (model.cost.input === 0 && model.cost.output === 0) return "free";
+  const fmtNum = (n: number): string => (n === Math.floor(n) ? `$${n}` : `$${n}`);
+  return `${fmtNum(model.cost.input)}/${fmtNum(model.cost.output)}`;
+}
+
+/** Format context window as human-readable shorthand (1M, 272k, 4k). */
+function formatContextShort(ctx: number | null | undefined): string {
+  if (!ctx) return "? ctx";
+  if (ctx >= 1_000_000) return `${(ctx / 1_000_000).toFixed(0)}M ctx`;
+  return `${Math.round(ctx / 1000)}k ctx`;
+}
+
+/** Tier display labels in presentation order. */
+const TIER_LABELS: Record<ModelTier, string> = {
+  frontier: "Frontier:",
+  mid: "Mid-tier:",
+  small: "Small/Scout:",
+};
+
+/** Presentation order for tiers. */
+const TIER_ORDER: ModelTier[] = ["frontier", "mid", "small"];
+
+/**
+ * Classify a registry model into a tier. Uses the profile cache for richer
+ * capabilities when available, falls back to the registry model fields.
+ */
+function classifyRegistryModel(model: Model<Api>, profiles: MergedModelProfile[]): ModelTier {
+  const profile = profiles.find((p) => p.providerId === model.provider && p.modelId === model.id);
+  if (profile) {
+    return classifyModelTier(profile.capabilities, deriveProviderHint(model.provider), profile.family);
+  }
+  return classifyModelTier(
+    { contextWindow: model.contextWindow ?? null, reasoning: model.reasoning ?? null },
+    deriveProviderHint(model.provider),
+  );
+}
+
+/**
+ * Build the tier-grouped default /models display.
+ * Groups all available chat models by tier, sorted by cost (expensive first)
+ * then alphabetically by provider/id. Returns PanelSection[] ready for rendering.
+ */
+function buildTierGroupedSections(
+  currentRef: string,
+  models: ReadonlyArray<Model<Api>>,
+  profiles: MergedModelProfile[],
+): PanelSection[] {
+  const chatModels = models.filter((m) => isChatModel(m.id));
+  const buckets = new Map<ModelTier, Array<Model<Api>>>();
+  for (const tier of TIER_ORDER) buckets.set(tier, []);
+
+  for (const m of chatModels) {
+    const tier = classifyRegistryModel(m, profiles);
+    const bucket = buckets.get(tier);
+    if (bucket) bucket.push(m);
+  }
+
+  // Sort within each tier: expensive first (by output cost), then provider/id
+  for (const [, bucket] of buckets) {
+    bucket.sort((a, b) => {
+      const costDiff = b.cost.output - a.cost.output;
+      if (costDiff !== 0) return costDiff;
+      const provDiff = a.provider.localeCompare(b.provider);
+      if (provDiff !== 0) return provDiff;
+      return a.id.localeCompare(b.id);
+    });
+  }
+
+  // Compute column widths for alignment
+  let maxRefLen = 0;
+  let maxCtxLen = 0;
+  for (const m of chatModels) {
+    const ref = modelRef(m);
+    if (ref.length > maxRefLen) maxRefLen = ref.length;
+    const ctx = formatContextShort(m.contextWindow ?? null);
+    if (ctx.length > maxCtxLen) maxCtxLen = ctx.length;
+  }
+
+  const sections: PanelSection[] = [];
+  for (const tier of TIER_ORDER) {
+    const bucket = buckets.get(tier);
+    if (!bucket || bucket.length === 0) continue;
+
+    const rows: PanelRow[] = bucket.map((m) => {
+      const ref = modelRef(m);
+      const marker = ref === currentRef ? "*" : " ";
+      const ctx = formatContextShort(m.contextWindow ?? null);
+      const cost = formatCost(m);
+      const padRef = ref.padEnd(maxRefLen + 2);
+      const padCtx = ctx.padEnd(maxCtxLen + 2);
+      return text(`  ${marker} ${padRef}${padCtx}${cost}`);
+    });
+
+    sections.push({ heading: TIER_LABELS[tier], rows });
+  }
+
+  return sections;
 }
 
 /**
@@ -480,38 +588,16 @@ export function createCommandHandlers(state: UiCommandState, cb: UiCommandCallba
     const title = `${PANCODE_PRODUCT_NAME} Models`;
 
     if (!request || request === "list") {
-      const activeLines = formatActiveModelLines(currentRef, profiles);
-      const availableSummary = formatAvailableSummary(registry.available);
+      const chatCount = registry.available.filter((m) => isChatModel(m.id)).length;
+      const providerCount = new Set(registry.available.map((m) => m.provider)).size;
+
       const sections: PanelSection[] = [
-        { rows: [text(readOnlyBanner())] },
-        { rows: [kv("Current:", `${currentRef}  ${inlineHint("use qwen model")}`)] },
-        { heading: "Active (loaded on connected engines):", rows: activeLines.map((line) => text(line)) },
+        { rows: [kv("Current:", currentRef)] },
+        ...buildTierGroupedSections(currentRef, registry.available, profiles),
+        { rows: [text(`${chatCount} models across ${providerCount} providers`)] },
+        { rows: [text(`Say "use claude sonnet" or "switch to gpt-5.4" to change models.`)] },
+        modelHintRow,
       ];
-
-      // Cloud models section: show models from cloud providers (e.g. Anthropic via Claude Code CLI)
-      const cloudModels = registry.available.filter((m) => isCloudModel(m) && isChatModel(m.id));
-      if (cloudModels.length > 0) {
-        const cloudLines = cloudModels.map((m) => {
-          const ref = modelRef(m);
-          const isCurrent = ref === currentRef;
-          const marker = isCurrent ? "*" : "-";
-          const caps: string[] = [];
-          if (m.reasoning) caps.push("reasoning");
-          const ctxLabel = formatContextWindow(m.contextWindow ?? null);
-          if (ctxLabel) caps.push(ctxLabel);
-          const capsStr = caps.length > 0 ? `  (${caps.join(", ")})` : "";
-          return `  ${marker} ${ref}${capsStr}`;
-        });
-        sections.push({
-          heading: "Cloud (via Claude Code CLI):",
-          rows: cloudLines.map((line) => text(line)),
-        });
-      }
-
-      if (availableSummary) {
-        sections.push({ rows: [text(availableSummary)] });
-      }
-      sections.push(modelHintRow);
       sendPanelSpec(cb.emitPanel, { title, sections });
       return;
     }

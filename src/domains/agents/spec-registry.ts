@@ -84,13 +84,12 @@ interface YamlAgentsFile {
 
 const DEFAULT_AGENTS_YAML = `# PanCode Agent Definitions (panagents.yaml)
 # Each agent specifies tools, sampling preset, readonly mode, and tier.
-# The model field supports \${ENV_VAR} expansion.
-# Tier indicates the recommended model capability: frontier, mid, or any.
+# Agents are purely behavioral. Model and runtime are resolved at dispatch time
+# from environment variables (PANCODE_WORKER_MODEL) and provider inference.
 
 agents:
   scout:
     description: "Fast codebase reconnaissance and exploration"
-    model: \${PANCODE_WORKER_MODEL}
     tools: [read, grep, find, ls]
     sampling: general
     readonly: true
@@ -107,7 +106,6 @@ agents:
 
   planner:
     description: "Architecture and implementation planning"
-    model: \${PANCODE_WORKER_MODEL}
     tools: [read, grep, find, ls]
     sampling: general
     readonly: true
@@ -124,7 +122,6 @@ agents:
 
   builder:
     description: "Implementation and code generation"
-    model: \${PANCODE_WORKER_MODEL}
     tools: [read, write, edit, bash, grep, find, ls]
     sampling: coding
     readonly: false
@@ -141,7 +138,6 @@ agents:
 
   reviewer:
     description: "Code review and quality analysis"
-    model: \${PANCODE_WORKER_MODEL}
     tools: [read, bash, grep, find, ls]
     sampling: general
     readonly: true
@@ -158,7 +154,6 @@ agents:
 
   plan-reviewer:
     description: "Plan critic and feasibility validator"
-    model: \${PANCODE_WORKER_MODEL}
     tools: [read, grep, find, ls]
     sampling: general
     readonly: true
@@ -175,7 +170,6 @@ agents:
 
   documenter:
     description: "Documentation generation and maintenance"
-    model: \${PANCODE_WORKER_MODEL}
     tools: [read, write, edit, grep, find, ls]
     sampling: general
     readonly: false
@@ -192,7 +186,6 @@ agents:
 
   red-team:
     description: "Security and adversarial testing"
-    model: \${PANCODE_WORKER_MODEL}
     tools: [read, bash, grep, find, ls]
     sampling: general
     readonly: true
@@ -210,23 +203,6 @@ agents:
   # Scout is NOT a dispatchable agent. It runs as a shadow tool (shadow_explore)
   # inside the orchestrator process using PANCODE_SCOUT_MODEL. Users cannot
   # dispatch scouts. See src/engine/shadow.ts for the scout engine.
-
-  # --- External agent examples (uncomment if installed) ---
-  # claude-reviewer:
-  #   runtime: cli:claude-code
-  #   description: "Claude Code for deep code review"
-  #   runtime_args: ["--allowedTools", "Read,Grep,Glob"]
-  #   readonly: true
-  #   tier: frontier
-  #   system_prompt: "Review the code for bugs, security issues, and improvements."
-  #
-  # codex-builder:
-  #   runtime: cli:codex
-  #   description: "Codex for quick targeted edits"
-  #   runtime_args: ["--full-auto"]
-  #   readonly: false
-  #   tier: mid
-  #   system_prompt: "Fix the described issue efficiently."
 `;
 
 function expandEnvVars(value: string): string {
@@ -248,7 +224,7 @@ export function ensureAgentsYaml(pancodeHome: string): string {
       const parsed = YAML.parse(content) as YamlAgentsFile;
       if (parsed?.agents) {
         const firstAgent = Object.values(parsed.agents)[0];
-        if (firstAgent && !("speed" in firstAgent)) {
+        if (firstAgent && (!("speed" in firstAgent) || "model" in firstAgent)) {
           atomicWriteTextSync(filePath, DEFAULT_AGENTS_YAML);
         }
       }
