@@ -1,22 +1,30 @@
 # PanCode
 
+[![Version](https://img.shields.io/badge/version-0.3.0--exp-blue)](https://github.com/akougkas/pancode)
+[![License](https://img.shields.io/badge/license-Apache%202.0-green)](./LICENSE)
+[![Node.js](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](https://nodejs.org/)
+[![Experimental](https://img.shields.io/badge/status-experimental%20preview-orange)](https://github.com/akougkas/pancode)
+
 Composable multi-agent runtime for software engineering.
 
 PanCode orchestrates coding agents the way Kubernetes orchestrates containers. Any coding agent installed on your machine becomes a managed, observable, coordinated worker. You dispatch workers by capability, not by backend. PanCode handles discovery, configuration, safety, cost tracking, and coordination across heterogeneous agent fleets. It is not a chatbot, not a plugin, not a cloud service. It is the runtime.
 
+> **Experimental Preview (v0.3.0-exp)**
+>
+> PanCode is in experimental preview. APIs, configuration formats, and features may change between releases. Production use is not recommended at this stage.
+
 ## Key Features
 
-- **Zero-settings configuration.** No slash commands mutate state. All configuration happens through natural language conversation with Panos, the orchestrator. Keyboard shortcuts provide fast toggles for mode switching and reasoning levels.
-- **God Mode (Admin).** Full system management, fleet diagnostics, configuration changes, and operational triage from a single mode.
-- **4 orchestrator modes.** Admin, Plan, Build, and Review control what the orchestrator does with user input. Each mode gates tool access, dispatch permissions, and mutation capabilities.
+- **Zero-settings configuration.** All configuration happens through natural language conversation with Panos, the orchestrator. Keyboard shortcuts provide fast toggles for mode switching and reasoning levels.
+- **4 orchestrator modes.** Admin (God Mode), Plan, Build, and Review control what the orchestrator does with user input. Each mode gates tool access, dispatch permissions, and mutation capabilities.
 - **7-agent fleet.** Scout, Planner, Builder, Reviewer, Plan-Reviewer, Documenter, and Red-Team agents ship as defaults in `panagents.yaml`, each with dedicated system prompts, tool allowlists, speed ratings, autonomy levels, and tier classification.
-- **7 runtime adapters.** Pi SDK native plus Claude Code, Codex, Gemini CLI, OpenCode, Cline, and Copilot CLI. Discovery at boot scans PATH for known binaries and registers them automatically.
-- **Responsive TUI dashboard.** Terminal-native interface with responsive breakpoints (compact, standard, wide), mode badges, dynamic footer with context window visualization, and structured panel rendering for all slash commands.
+- **7 runtime adapters.** Native runtime plus Claude Code, Codex, Gemini CLI, OpenCode, Cline, and Copilot CLI. Discovery at boot scans PATH for known binaries and registers them automatically.
+- **Responsive TUI dashboard.** Terminal-native interface with responsive breakpoints (compact, standard, wide), mode badges, dynamic footer with context window visualization, and structured panel rendering.
 - **PanPrompt constitutional system.** Typed prompt fragments compiled per role, tier, and mode. Behavioral rules enforced across all agents and runtimes through voice overlays, scope constraints, and output contracts.
 - **Dispatch pipeline with receipts.** Admission gating, recursion guards, provider backoff, heartbeat monitoring, staggered batch launches, worktree isolation, and reproducibility receipts for audit-ready verification.
 - **PanConfigure conversational config.** Two tools (`pan_read_config`, `pan_apply_config`) let the orchestrator read and modify runtime parameters through conversation. Admin-only parameters require God Mode.
 - **PanModels registry.** Offline model metadata with capability matching, performance tiers, and provider-agnostic model selection.
-- **10 composable domains.** Safety, Session, Agents, Prompts, Dispatch, Observability, Scheduling, PanConfigure, and UI. Manifest-driven registration with topological dependency loading.
+- **10 composable domains.** Safety, Session, Agents, Prompts, Dispatch, Observability, Intelligence, Scheduling, PanConfigure, and UI. Manifest-driven registration with topological dependency loading.
 
 ## Quick Start
 
@@ -30,7 +38,7 @@ PanCode orchestrates coding agents the way Kubernetes orchestrates containers. A
 ### Install
 
 ```bash
-npm install -g pancode
+npm install -g pancode@exp
 ```
 
 For local development:
@@ -39,6 +47,7 @@ For local development:
 git clone https://github.com/akougkas/pancode.git
 cd pancode
 npm install
+npm run build
 npm link
 ```
 
@@ -53,6 +62,20 @@ pancode sessions           # List running sessions
 ```
 
 PanCode always starts inside tmux. The `pancode` command creates the session, `pancode up` reattaches, and `pancode down` tears it down cleanly.
+
+### First Commands
+
+Once inside a PanCode session:
+
+| Action | How |
+|--------|-----|
+| Switch modes | `Shift+Tab` cycles Plan, Build, Review |
+| Enter God Mode | `Alt+A` |
+| Cycle safety levels | `Ctrl+Y` |
+| View agent fleet | Type `/agents` |
+| View current mode | Type `/modes` |
+| View presets | Type `/preset` |
+| Dispatch a scout | Ask Panos: "scout the src/ directory" |
 
 ### Core CLI Commands
 
@@ -80,16 +103,16 @@ PanCode always starts inside tmux. The `pancode` command creates the session, `p
 |  +-----------+  +-----------+  +-----------+  +-----------+     |
 |  | dispatch  |  | observ.   |  | scheduling|  | panconfig |     |
 |  +-----------+  +-----------+  +-----------+  +-----------+     |
-|  +-------------+                                                 |
-|  | ui (TUI)    |                                                 |
-|  +-------------+                                                 |
+|  +-----------+  +-------------+                                  |
+|  | intellig. |  | ui (TUI)    |                                  |
+|  +-----------+  +-------------+                                  |
 |                                                                  |
-|  src/engine/    SOLE Pi SDK IMPORT BOUNDARY                     |
+|  src/engine/    SOLE IMPORT BOUNDARY                             |
 |  +--------------------------------------------------------------+|
-|  | Pi SDK wrappers | Session | Shadow | Tools | TUI | Types    ||
+|  | SDK wrappers | Session | Shadow | Tools | TUI | Types        ||
 |  | runtimes/                                                    ||
-|  |   pi-runtime.ts          (native Pi workers)                 ||
-|  |   adapters/               (6 CLI adapters)                   ||
+|  |   native runtime        (full-control workers)               ||
+|  |   adapters/              (6 CLI adapters)                    ||
 |  +--------------------------------------------------------------+|
 |                                                                  |
 |  src/worker/    PHYSICALLY ISOLATED (no domain imports)          |
@@ -99,7 +122,7 @@ PanCode always starts inside tmux. The `pancode` command creates the session, `p
 +------------------------------------------------------------------+
 ```
 
-**Engine boundary.** Only `src/engine/` imports from the vendored Pi SDK packages (`@pancode/pi-coding-agent`, `@pancode/pi-ai`, `@pancode/pi-tui`, `@pancode/pi-agent-core`). No file outside `src/engine/` may reference these packages.
+**Engine boundary.** Only `src/engine/` imports from the vendored SDK packages. No file outside `src/engine/` may reference these packages. This is enforced at build time by `check-boundaries`.
 
 **Worker isolation.** `src/worker/` is physically isolated. It cannot import from `src/domains/`. Every worker runs as a separate subprocess.
 
@@ -129,6 +152,38 @@ PanCode operates in one of four orchestrator modes. Modes control what the orche
 | task_write, task_check, task_update, task_list | Yes | Yes | Yes | No |
 | pan_read_config, pan_apply_config | Yes | Yes | Yes | Yes |
 
+## Agent Fleet
+
+PanCode ships 7 default agents in `~/.pancode/panagents.yaml`. Each agent specifies tools, sampling preset, readonly mode, tier classification, speed, autonomy level, and a dedicated system prompt.
+
+| Agent | Role | Tools | Readonly | Tier | Speed | Autonomy |
+|-------|------|-------|----------|------|-------|----------|
+| **scout** | Fast codebase reconnaissance | read, grep, find, ls | Yes | any | fast | autonomous |
+| **planner** | Architecture and implementation planning | read, grep, find, ls | Yes | frontier | thorough | supervised |
+| **builder** | Implementation and code generation | read, write, edit, bash, grep, find, ls | No | mid | balanced | supervised |
+| **reviewer** | Code review and quality analysis | read, bash, grep, find, ls | Yes | mid | thorough | autonomous |
+| **plan-reviewer** | Plan critic and feasibility validator | read, grep, find, ls | Yes | mid | thorough | autonomous |
+| **documenter** | Documentation generation and maintenance | read, write, edit, grep, find, ls | No | any | balanced | supervised |
+| **red-team** | Security and adversarial testing | read, bash, grep, find, ls | Yes | mid | thorough | autonomous |
+
+Agents are defined in YAML with `${ENV_VAR}` expansion for model references. Add custom agents by editing `panagents.yaml`. CLI runtime agents (Claude Code, Codex, etc.) can be assigned by setting `runtime: cli:claude-code` on an agent entry.
+
+## Runtime Adapters
+
+Every agent, regardless of backend, produces a PanCode worker with the same dispatch, safety, and observability guarantees.
+
+| Runtime | Tier | Binary | Integration |
+|---------|------|--------|-------------|
+| Native | Native | built-in | Full control (tools, model, prompt, safety, events) |
+| Claude Code | CLI | `claude` | JSON structured output |
+| Codex CLI | CLI | `codex` | JSON lines |
+| Gemini CLI | CLI | `gemini` | JSON output |
+| OpenCode | CLI | `opencode` | NDJSON |
+| Cline CLI | CLI | `cline` | NDJSON |
+| Copilot CLI | CLI | `copilot` | Text |
+
+Runtime discovery runs at boot, scanning PATH for known binaries. Detected runtimes are registered automatically and available for agent assignment. Adding a new adapter requires implementing one TypeScript file in `src/engine/runtimes/adapters/`.
+
 ## Configuration
 
 PanCode follows a zero-settings philosophy. Slash commands are read-only views. All configuration changes happen through natural language conversation with Panos, the orchestrator, which uses `pan_read_config` and `pan_apply_config` internally. Keyboard shortcuts serve as fast toggles for frequently changed settings.
@@ -148,6 +203,8 @@ PanCode follows a zero-settings philosophy. Slash commands are read-only views. 
 | `budget` | session cost ceiling |
 | `dispatch` | timeout, max recursion depth, concurrency limit |
 | `preset` | active boot preset |
+
+For the full configuration reference, see the [documentation site](https://pancode.dev).
 
 ### Configuration Files
 
@@ -179,38 +236,6 @@ pancode --preset local       # Boot with a preset
 ```
 
 Inside a session, use `/preset` to view available presets or ask Panos to switch.
-
-## Agent Fleet
-
-PanCode ships 7 default agents in `~/.pancode/panagents.yaml`. Each agent specifies tools, sampling preset, readonly mode, tier classification, speed, autonomy level, and a dedicated system prompt.
-
-| Agent | Role | Tools | Readonly | Tier | Speed | Autonomy |
-|-------|------|-------|----------|------|-------|----------|
-| **scout** | Fast codebase reconnaissance | read, grep, find, ls | Yes | any | fast | autonomous |
-| **planner** | Architecture and implementation planning | read, grep, find, ls | Yes | frontier | thorough | supervised |
-| **builder** | Implementation and code generation | read, write, edit, bash, grep, find, ls | No | mid | balanced | supervised |
-| **reviewer** | Code review and quality analysis | read, bash, grep, find, ls | Yes | mid | thorough | autonomous |
-| **plan-reviewer** | Plan critic and feasibility validator | read, grep, find, ls | Yes | mid | thorough | autonomous |
-| **documenter** | Documentation generation and maintenance | read, write, edit, grep, find, ls | No | any | balanced | supervised |
-| **red-team** | Security and adversarial testing | read, bash, grep, find, ls | Yes | mid | thorough | autonomous |
-
-Agents are defined in YAML with `${ENV_VAR}` expansion for model references. Add custom agents by editing `panagents.yaml`. CLI runtime agents (Claude Code, Codex, etc.) can be added by setting `runtime: cli:claude-code` on an agent entry.
-
-## Runtime Adapters
-
-Every agent, regardless of backend, produces a PanCode worker with the same dispatch, safety, and observability guarantees.
-
-| Runtime | Tier | Binary | Integration |
-|---------|------|--------|-------------|
-| Pi (native) | Native | built-in | Full control (tools, model, prompt, safety, events) |
-| Claude Code | CLI | `claude` | JSON structured output |
-| Codex CLI | CLI | `codex` | JSON lines |
-| Gemini CLI | CLI | `gemini` | JSON output |
-| OpenCode | CLI | `opencode` | NDJSON |
-| Cline CLI | CLI | `cline` | NDJSON |
-| Copilot CLI | CLI | `copilot` | Text |
-
-Runtime discovery runs at boot, scanning PATH for known binaries. Detected runtimes are registered automatically and available for agent assignment. Adding a new adapter requires implementing one TypeScript file in `src/engine/runtimes/adapters/`.
 
 ## Environment Variables
 
@@ -248,6 +273,8 @@ Runtime discovery runs at boot, scanning PATH for known binaries. Detected runti
 | `PANCODE_MAX_RUNS` | Dispatch run history ring buffer size (default 500) |
 | `PANCODE_MAX_METRICS` | Metric history ring buffer size (default 1000) |
 
+For the full environment variable reference, see the [documentation site](https://pancode.dev).
+
 ## Local AI Setup
 
 ### LM Studio
@@ -276,12 +303,28 @@ export PANCODE_WORKER_MODEL=llamacpp/model
 pancode
 ```
 
+## Coming Soon
+
+The following capabilities are on the roadmap. No dates or timelines are promised.
+
+- **Multi-node fleet dispatch.** Distribute workers across multiple machines in a local network for parallel execution at scale.
+- **SDK agent adapters.** First-class integration with Claude Agent SDK, OpenAI Agents SDK, and Mastra for deep programmatic control beyond CLI wrappers.
+- **Dynamic model routing.** Cost-aware model selection that routes tasks to the most capable and cost-effective model based on task complexity.
+- **Agent marketplace.** Community-contributed agent definitions and skill packs that can be installed and composed into custom fleets.
+- **Team-based workflows.** Multi-user coordination with shared dispatch queues, role-based access, and collaborative agent orchestration.
+- **Web dashboard.** Browser-based companion UI for fleet monitoring, cost visualization, and dispatch history review.
+- **Plugin system.** Third-party domain extensions that plug into the manifest-driven architecture for custom capabilities.
+
+## Documentation
+
+Full documentation, tutorials, and reference guides are available at [pancode.dev](https://pancode.dev).
+
 ## Development
 
 ### Build Commands
 
 ```bash
-npm run build              # Production build (Pi SDK + tsup)
+npm run build              # Production build (SDK packages + tsup)
 npm run dev                # Dev mode (tsx, skips tmux)
 npm run typecheck          # TypeScript strict check + boundary audit
 npm run check-boundaries   # Engine and worker isolation enforcement
@@ -301,11 +344,15 @@ npm run verify-tui         # TUI width-safety regression harness
 
 The `check-boundaries` script enforces two architectural invariants at build time:
 
-1. **Engine boundary.** No file outside `src/engine/` may import from `@pancode/pi-*` packages.
+1. **Engine boundary.** No file outside `src/engine/` may import from vendored SDK packages.
 2. **Worker isolation.** `src/worker/` may not import from `src/domains/`.
 
 Violations fail the build.
 
+## Contributing
+
+Contributions are welcome. See [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines.
+
 ## License
 
-Apache 2.0
+[Apache 2.0](./LICENSE)

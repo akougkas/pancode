@@ -1,0 +1,46 @@
+name: Bug Report
+description: Report a bug in PanCode
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. PanCode is in experimental preview, so bug reports are especially valuable.
+  - type: input
+    id: version
+    attributes:
+      label: PanCode Version
+      description: "Output of `pancode version`"
+      placeholder: "0.3.0-exp"
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: "What happened? What did you expect?"
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to Reproduce
+      description: "Minimal steps to trigger the bug"
+    validations:
+      required: true
+  - type: input
+    id: node-version
+    attributes:
+      label: Node.js Version
+      placeholder: "22.x"
+  - type: input
+    id: os
+    attributes:
+      label: Operating System
+      placeholder: "macOS 15, Ubuntu 24.04, etc."
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant Logs
+      description: "Paste any error output or logs"
+      render: shell
