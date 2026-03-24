@@ -30,29 +30,61 @@ export default defineConfig({
         {
           label: "Getting Started",
           items: [
-            { label: "Installation", slug: "docs/getting-started" },
+            { label: "Installation", slug: "getting-started/installation" },
+            { label: "Quick Start", slug: "getting-started/quick-start" },
+            { label: "Core Concepts", slug: "getting-started/core-concepts" },
           ],
         },
         {
           label: "Guides",
           items: [
-            { label: "Configuration", slug: "docs/configuration" },
-            { label: "Dispatch", slug: "docs/dispatch" },
-            { label: "Domains", slug: "docs/domains" },
+            { label: "Configuration", slug: "guides/configuration" },
+            { label: "Agents", slug: "guides/agents" },
+            { label: "Providers", slug: "guides/providers" },
+            { label: "Dispatch", slug: "guides/dispatch" },
+            { label: "Safety", slug: "guides/safety" },
+            { label: "Observability", slug: "guides/observability" },
+            { label: "Teams", slug: "guides/teams" },
+            { label: "Modes & Presets", slug: "guides/modes-and-presets" },
+          ],
+        },
+        {
+          label: "Reference",
+          items: [
+            { label: "Commands", slug: "reference/commands" },
+            { label: "CLI", slug: "reference/cli" },
+            { label: "Configuration Reference", slug: "reference/configuration-reference" },
+            { label: "Keyboard Shortcuts", slug: "reference/keyboard-shortcuts" },
+            { label: "Environment Variables", slug: "reference/environment-variables" },
           ],
         },
         {
           label: "Architecture",
           items: [
-            { label: "Overview", slug: "docs/architecture" },
+            { label: "Overview", slug: "architecture/overview" },
+            { label: "Domains", slug: "architecture/domains" },
+            { label: "Engine Boundary", slug: "architecture/engine-boundary" },
+            { label: "Worker Isolation", slug: "architecture/worker-isolation" },
+            { label: "Event System", slug: "architecture/event-system" },
+          ],
+        },
+        {
+          label: "Tutorials",
+          items: [
+            { label: "Local Fleet Setup", slug: "tutorials/local-fleet" },
+            { label: "Multi-Agent Dispatch", slug: "tutorials/multi-agent-dispatch" },
+            { label: "Custom Agent", slug: "tutorials/custom-agent" },
           ],
         },
         {
           label: "Development",
           items: [
-            { label: "Contributing", slug: "docs/development" },
+            { label: "Contributing", slug: "development/contributing" },
+            { label: "Adding Domains", slug: "development/adding-domains" },
+            { label: "Adding Runtimes", slug: "development/adding-runtimes" },
           ],
         },
+        { label: "Troubleshooting", slug: "troubleshooting" },
       ],
       head: [
         {
