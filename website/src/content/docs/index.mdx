@@ -1,12 +1,23 @@
 ---
 title: PanCode
-description: Composable multi-agent runtime for software engineering. One runtime, every agent.
+description: Terminal-native runtime for orchestrating coding agents across local and cloud fleets.
 template: splash
-hero:
-  tagline: ""
-  actions: []
 ---
 
 import Landing from '../../components/Landing.astro';
+
+<style is:global>{`
+  :root {
+    --sl-content-width: 82rem;
+  }
+
+  main > .content-panel:first-of-type {
+    display: none;
+  }
+
+  main > .content-panel:last-of-type {
+    padding: 0 0 1.5rem;
+  }
+`}</style>
 
 <Landing />

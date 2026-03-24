@@ -9,7 +9,7 @@ export default defineConfig({
   integrations: [
     starlight({
       title: "PanCode",
-      description: "Composable multi-agent runtime for software engineering",
+      description: "Terminal-native runtime for orchestrating coding agents across local and cloud fleets",
       logo: {
         light: "./src/assets/pancode-logo-light.svg",
         dark: "./src/assets/pancode-logo-dark.svg",
@@ -91,7 +91,7 @@ export default defineConfig({
           tag: "meta",
           attrs: {
             name: "theme-color",
-            content: "#16c858",
+            content: "#081114",
           },
         },
       ],
