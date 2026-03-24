@@ -3,16 +3,23 @@ import { defineConfig } from "astro/config";
 import starlight from "@astrojs/starlight";
 import tailwindcss from "@tailwindcss/vite";
 
+const siteTitle = "PanCode";
+const siteDescription =
+  "Orchestrate coding agents the way Kubernetes orchestrates containers. Discover, dispatch, and observe heterogeneous agent fleets from one terminal. Open source, local-first, provider-agnostic.";
+const googleFontsHref =
+  "https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Instrument+Sans:wght@400;500;600;700;800&family=Schibsted+Grotesk:wght@500;600;700;800&display=swap";
+
 // https://astro.build/config
 export default defineConfig({
   site: "https://pancode.dev",
   integrations: [
     starlight({
-      title: "PanCode",
-      description: "Terminal-native runtime for orchestrating coding agents across local and cloud fleets",
+      title: siteTitle,
+      description: siteDescription,
       logo: {
         light: "./src/assets/pancode-logo-light.svg",
         dark: "./src/assets/pancode-logo-dark.svg",
+        alt: "PanCode",
         replacesTitle: false,
       },
       social: [
@@ -25,7 +32,9 @@ export default defineConfig({
       editLink: {
         baseUrl: "https://github.com/akougkas/pancode/edit/main/docs/",
       },
+      routeMiddleware: "./src/starlightRouteData.ts",
       customCss: ["./src/styles/global.css"],
+      favicon: "/favicon.svg",
       sidebar: [
         {
           label: "Getting Started",
@@ -91,8 +100,51 @@ export default defineConfig({
           tag: "meta",
           attrs: {
             name: "theme-color",
-            content: "#081114",
+            content: "#09090b",
           },
+        },
+        {
+          tag: "meta",
+          attrs: {
+            name: "color-scheme",
+            content: "dark",
+          },
+        },
+        {
+          tag: "link",
+          attrs: {
+            rel: "preconnect",
+            href: "https://fonts.googleapis.com",
+          },
+        },
+        {
+          tag: "link",
+          attrs: {
+            rel: "preconnect",
+            href: "https://fonts.gstatic.com",
+            crossorigin: "anonymous",
+          },
+        },
+        {
+          tag: "link",
+          attrs: {
+            rel: "preload",
+            href: googleFontsHref,
+            as: "style",
+          },
+        },
+        {
+          tag: "link",
+          attrs: {
+            rel: "stylesheet",
+            href: googleFontsHref,
+            media: "print",
+            onload: "this.media='all'",
+          },
+        },
+        {
+          tag: "noscript",
+          content: `<link rel="stylesheet" href="${googleFontsHref}">`,
         },
       ],
     }),

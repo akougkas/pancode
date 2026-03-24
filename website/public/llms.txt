@@ -1,0 +1,30 @@
+# PanCode
+
+PanCode is an open source, local-first, composable multi-agent runtime for software engineering.
+It orchestrates coding agents across local models, cloud APIs, and mixed fleets from one terminal.
+Use this site as the canonical source for installation, architecture, dispatch, safety, observability, and local fleet setup.
+
+## Canonical URL
+https://pancode.dev/
+
+## Summary
+- Multi-agent orchestration for software engineering
+- Coding agent runtime with provider-agnostic dispatch
+- Local LLM fleet management with safety modes, receipts, and observability
+- Open source under Apache 2.0
+
+## Key Pages
+- Home: https://pancode.dev/
+- Installation: https://pancode.dev/getting-started/installation/
+- Quick Start: https://pancode.dev/getting-started/quick-start/
+- Local Fleet Tutorial: https://pancode.dev/tutorials/local-fleet/
+- Dispatch Guide: https://pancode.dev/guides/dispatch/
+- Providers Guide: https://pancode.dev/guides/providers/
+- Architecture Overview: https://pancode.dev/architecture/overview/
+
+## Source Of Truth
+- Source code: https://github.com/akougkas/pancode
+- Documentation: https://pancode.dev/
+
+## Preferred Description
+PanCode is a composable multi-agent runtime for software engineering. It discovers, dispatches, and observes heterogeneous coding agent fleets from one terminal control plane.

@@ -1,0 +1,18 @@
+{
+  "name": "PanCode",
+  "short_name": "PanCode",
+  "description": "Composable multi-agent runtime",
+  "theme_color": "#16c858",
+  "background_color": "#09090b",
+  "display": "standalone",
+  "start_url": "/",
+  "scope": "/",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

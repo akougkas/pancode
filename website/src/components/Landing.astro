@@ -137,10 +137,18 @@ const layers = [
     detail: "Runtime adapters and the sole boundary for SDK-facing integration.",
   },
 ];
+
+const sectionLinks = [
+  { label: "Docs", href: "/getting-started/installation/" },
+  { label: "Dispatch", href: "#workflow" },
+  { label: "Architecture", href: "#architecture" },
+  { label: "Local Fleet", href: "/tutorials/local-fleet/" },
+  { label: "GitHub", href: "https://github.com/akougkas/pancode", external: true },
+];
 ---
 
-<div class="landing-page not-content">
-  <div class="preview-bar">
+<article class="landing-page not-content" aria-labelledby="landing-title">
+  <nav class="preview-bar" aria-label="PanCode utility links">
     <div class="landing-boundary preview-bar__inner">
       <div class="preview-bar__copy">
         <span class="preview-pill">Experimental Preview</span>
@@ -149,13 +157,36 @@ const layers = [
           control-plane thesis will not.
         </p>
       </div>
-      <a href="https://github.com/akougkas/pancode/releases" target="_blank" rel="noopener noreferrer">
+      <a
+        href="https://github.com/akougkas/pancode/releases"
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label="Read PanCode release notes on GitHub"
+      >
         Release Notes
       </a>
     </div>
-  </div>
+  </nav>
 
-  <section class="landing-boundary hero-section">
+  <nav class="landing-boundary section-nav" aria-label="PanCode sections">
+    <ul class="section-nav__list" role="list">
+      {
+        sectionLinks.map((link) => (
+          <li>
+            <a
+              href={link.href}
+              target={link.external ? "_blank" : undefined}
+              rel={link.external ? "noopener noreferrer" : undefined}
+            >
+              {link.label}
+            </a>
+          </li>
+        ))
+      }
+    </ul>
+  </nav>
+
+  <header class="landing-boundary hero-section">
     <div class="hero-copy">
       <div class="hero-meta">
         <span>Terminal-native</span>
@@ -163,12 +194,15 @@ const layers = [
         <span>Apache 2.0</span>
       </div>
       <p class="hero-kicker">Composable multi-agent runtime for software engineering</p>
-      <h1>One Runtime.<br />Every Agent.</h1>
+      <h1 id="landing-title">One Runtime.<br />Every Agent.</h1>
       <p class="hero-summary">
-        PanCode orchestrates coding agents across local models, cloud APIs, and mixed fleets from one
-        serious terminal control plane.
+        PanCode is a composable coding agent runtime for multi-agent orchestration across local LLMs,
+        cloud APIs, and mixed fleets from one serious terminal control plane.
       </p>
-      <p class="hero-assertion">Not a chatbot. Not a plugin. The runtime.</p>
+      <p class="hero-assertion">
+        Not a chatbot. Not a plugin. The runtime. PanCode is not just a Claude Code alternative. It is
+        the orchestration layer above Claude Code, Codex CLI, Gemini CLI, and local workers.
+      </p>
       <div class="hero-actions">
         <a class="button button--primary" href="/getting-started/installation/">Get Started</a>
         <a
@@ -182,8 +216,12 @@ const layers = [
       </div>
     </div>
 
-    <div class="hero-console">
-      <div class="terminal-window terminal-window--hero">
+    <figure class="hero-console" aria-labelledby="hero-console-caption">
+      <div
+        class="terminal-window terminal-window--hero"
+        role="img"
+        aria-label="Terminal output showing PanCode discovering coding agents and booting a multi-agent runtime"
+      >
         <div class="terminal-window__chrome">
           <div class="terminal-window__controls" aria-hidden="true">
             <span></span>
@@ -217,33 +255,36 @@ agents dispatch safety prompts session observability scheduling configure ui
 <span class="terminal-mode">[build]</span> dispatch ready <span class="terminal-cursor"></span></code></pre>
         </div>
       </div>
-      <p class="hero-console__caption">
+      <figcaption id="hero-console-caption" class="hero-console__caption">
         Discovered on boot: Claude Code, Codex, Gemini CLI, OpenCode, Cline, Copilot CLI, and native
-        workers.
-      </p>
+        workers in one local-first fleet.
+      </figcaption>
+    </figure>
+  </header>
+
+  <section class="stats-ribbon" aria-label="PanCode runtime metrics">
+    <div class="landing-boundary">
+      <ul class="stats-ribbon__inner" role="list">
+        {
+          stats.map((stat) => (
+            <li class="stats-ribbon__item">
+              <strong>{stat.value}</strong>
+              <span>{stat.label}</span>
+            </li>
+          ))
+        }
+      </ul>
     </div>
   </section>
 
-  <section class="stats-ribbon">
-    <div class="landing-boundary stats-ribbon__inner">
-      {
-        stats.map((stat) => (
-          <div class="stats-ribbon__item">
-            <strong>{stat.value}</strong>
-            <span>{stat.label}</span>
-          </div>
-        ))
-      }
-    </div>
-  </section>
-
-  <section class="landing-boundary landing-section" id="taxonomy">
+  <section class="landing-boundary landing-section" id="taxonomy" aria-labelledby="taxonomy-title">
     <div class="section-intro">
       <p class="section-kicker">The Pan Taxonomy</p>
-      <h2>Six dimensions of universality.</h2>
+      <h2 id="taxonomy-title">Multi-agent orchestration needs a shared operating model.</h2>
       <p>
         PanCode does not win by being one more agent. It wins by giving heterogeneous agent fleets one
-        runtime, one policy model, and one operational surface.
+        runtime, one policy model, and one operational surface for local LLM orchestration and
+        cross-provider dispatch.
       </p>
     </div>
     <div class="taxonomy-grid">
@@ -259,32 +300,33 @@ agents dispatch safety prompts session observability scheduling configure ui
     </div>
   </section>
 
-  <section class="landing-boundary landing-section" id="workflow">
+  <section class="landing-boundary landing-section" id="workflow" aria-labelledby="workflow-title">
     <div class="section-intro">
       <p class="section-kicker">How PanCode Works</p>
-      <h2>One pipeline from discovery to observability.</h2>
+      <h2 id="workflow-title">A coding agent runtime from discovery to observability.</h2>
       <p>
         The system is designed like infrastructure, not like a chat window. Each step narrows ambiguity
-        and increases operator control.
+        and increases operator control across multi-agent orchestration, safety policy, and agent
+        dispatch.
       </p>
     </div>
-    <div class="workflow-grid">
+    <ol class="workflow-grid">
       {
         workflow.map((item) => (
-          <article class="workflow-step">
+          <li class="workflow-step">
             <span class="workflow-step__index">{item.step}</span>
             <h3>{item.title}</h3>
             <p>{item.description}</p>
-          </article>
+          </li>
         ))
       }
-    </div>
+    </ol>
   </section>
 
-  <section class="landing-boundary landing-section" id="highlights">
+  <section class="landing-boundary landing-section" id="highlights" aria-labelledby="highlights-title">
     <div class="section-intro">
       <p class="section-kicker">Feature Highlights</p>
-      <h2>The capabilities that make the runtime defensible.</h2>
+      <h2 id="highlights-title">The capabilities that make the runtime defensible.</h2>
       <p>
         PanCode is opinionated where the orchestration layer has to be opinionated: policy, dispatch, and
         stateful control over the fleet.
@@ -311,29 +353,33 @@ agents dispatch safety prompts session observability scheduling configure ui
     </div>
   </section>
 
-  <section class="landing-boundary landing-section" id="architecture">
+  <section
+    class="landing-boundary landing-section"
+    id="architecture"
+    aria-labelledby="architecture-title"
+  >
     <div class="section-intro">
       <p class="section-kicker">Architecture</p>
-      <h2>Five layers. Clear boundaries.</h2>
+      <h2 id="architecture-title">Five layers. Clear boundaries.</h2>
       <p>
         The stack is composable by design. CLI entry, core orchestration, and runtime integration stay
         separate so the system scales without becoming opaque.
       </p>
     </div>
     <div class="architecture-layout">
-      <div class="architecture-stack">
+      <ol class="architecture-stack">
         {
           layers.map((layer, index) => (
-            <div class="architecture-layer" style={`--layer-offset: ${index * 1.15}rem;`}>
+            <li class="architecture-layer" style={`--layer-offset: ${index * 1.15}rem;`}>
               <span class="architecture-layer__index">{String(index + 1).padStart(2, "0")}</span>
               <div>
                 <h3>{layer.name}</h3>
                 <p>{layer.detail}</p>
               </div>
-            </div>
+            </li>
           ))
         }
-      </div>
+      </ol>
       <div class="architecture-notes">
         <p>
           Engine imports stay behind a single boundary. Worker processes stay isolated. Domains load in
@@ -343,17 +389,22 @@ agents dispatch safety prompts session observability scheduling configure ui
     </div>
   </section>
 
-  <section class="landing-boundary landing-section" id="quickstart">
+  <section class="landing-boundary landing-section" id="quickstart" aria-labelledby="quickstart-title">
     <div class="quickstart-panel">
       <div class="quickstart-copy">
         <p class="section-kicker">Quick Start</p>
-        <h2>Running in 60 seconds.</h2>
+        <h2 id="quickstart-title">Local LLM fleet management in 60 seconds.</h2>
         <p>
-          Install the runtime, boot a local preset, and reattach whenever you want. Node.js 20+ and tmux
-          are the only prerequisites.
+          Install the runtime, boot a local preset, and manage a local LLM fleet without giving up
+          receipts, safety modes, or provider-agnostic dispatch. Node.js 20+ and tmux are the only
+          prerequisites.
         </p>
       </div>
-      <div class="terminal-window terminal-window--compact">
+      <div
+        class="terminal-window terminal-window--compact"
+        role="img"
+        aria-label="Quick start terminal commands for installing and starting PanCode"
+      >
         <div class="terminal-window__chrome">
           <div class="terminal-window__controls" aria-hidden="true">
             <span></span>
@@ -373,7 +424,7 @@ agents dispatch safety prompts session observability scheduling configure ui
   </section>
 
   <footer class="landing-boundary landing-footer">
-    <p>pancode-exp / Experimental Preview / Apache 2.0 / Built by Anthony Kougkas</p>
+    <p>pancode.dev / Experimental Preview / Apache 2.0 / Built by Anthony Kougkas</p>
     <div class="landing-footer__links">
       <a href="https://github.com/akougkas/pancode" target="_blank" rel="noopener noreferrer">GitHub</a>
       <a href="/getting-started/installation/">Docs</a>
@@ -382,4 +433,4 @@ agents dispatch safety prompts session observability scheduling configure ui
       </a>
     </div>
   </footer>
-</div>
+</article>

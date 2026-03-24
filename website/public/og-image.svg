@@ -1,0 +1,38 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="630" fill="#09090B" />
+  <rect width="1200" height="630" fill="url(#bg-glow)" opacity="0.9" />
+  <rect x="53" y="53" width="1094" height="524" rx="36" fill="#0C171B" stroke="rgba(244,247,246,0.08)" />
+  <rect x="84" y="84" width="1032" height="108" rx="24" fill="#101C21" stroke="rgba(244,247,246,0.07)" />
+  <rect x="84" y="224" width="612" height="279" rx="28" fill="#071015" stroke="rgba(244,247,246,0.08)" />
+  <rect x="728" y="224" width="388" height="279" rx="28" fill="#101C21" stroke="rgba(244,247,246,0.08)" />
+  <circle cx="126" cy="138" r="10" fill="#16C858" />
+  <circle cx="158" cy="138" r="10" fill="#335F43" />
+  <circle cx="190" cy="138" r="10" fill="#253239" />
+  <rect x="226" y="122" width="156" height="32" rx="16" fill="#0F181D" />
+  <text x="244" y="144" fill="#99A8AF" font-size="16" font-family="Arial, Helvetica, sans-serif" letter-spacing="1.6">pancode.dev</text>
+  <rect x="760" y="118" width="153" height="40" rx="20" fill="#10311D" stroke="#1D7E42" />
+  <text x="784" y="144" fill="#BBF3CB" font-size="16" font-family="Courier New, monospace" letter-spacing="1.6">LOCAL-FIRST</text>
+  <text x="112" y="300" fill="#16C858" font-size="18" font-family="Courier New, monospace" letter-spacing="3.6">PAN CODE</text>
+  <text x="112" y="382" fill="#F4F7F6" font-size="68" font-weight="700" font-family="Arial, Helvetica, sans-serif">Composable Multi-Agent</text>
+  <text x="112" y="454" fill="#F4F7F6" font-size="68" font-weight="700" font-family="Arial, Helvetica, sans-serif">Runtime</text>
+  <text x="112" y="518" fill="#99A8AF" font-size="28" font-family="Arial, Helvetica, sans-serif">Discover, dispatch, and observe coding agent fleets from one terminal.</text>
+  <text x="762" y="276" fill="#16C858" font-size="16" font-family="Courier New, monospace" letter-spacing="3.2">runtime.boot</text>
+  <text x="762" y="320" fill="#D7DEE1" font-size="22" font-family="Courier New, monospace">$ pancode --preset hybrid</text>
+  <text x="762" y="356" fill="#708087" font-size="18" font-family="Courier New, monospace">discover   claude-code   codex   gemini-cli</text>
+  <text x="762" y="388" fill="#708087" font-size="18" font-family="Courier New, monospace">fleet      local workers  cloud APIs  receipts</text>
+  <text x="762" y="420" fill="#708087" font-size="18" font-family="Courier New, monospace">policy     safety modes   scopes      budgets</text>
+  <text x="762" y="472" fill="#16C858" font-size="20" font-family="Courier New, monospace">ready</text>
+  <rect x="760" y="525" width="258" height="2" fill="url(#scanline)" />
+  <defs>
+    <radialGradient id="bg-glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(860 120) rotate(141.887) scale(713.577 1213.6)">
+      <stop stop-color="#16C858" stop-opacity="0.18" />
+      <stop offset="0.48" stop-color="#16C858" stop-opacity="0.02" />
+      <stop offset="1" stop-color="#09090B" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="scanline" x1="760" y1="526" x2="1018" y2="526" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#16C858" stop-opacity="0" />
+      <stop offset="0.5" stop-color="#16C858" />
+      <stop offset="1" stop-color="#16C858" stop-opacity="0" />
+    </linearGradient>
+  </defs>
+</svg>

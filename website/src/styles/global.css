@@ -1,4 +1,3 @@
-@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Instrument+Sans:wght@400;500;600;700;800&family=Schibsted+Grotesk:wght@500;600;700;800&display=swap");
 @import "tailwindcss";
 
 :root {
@@ -326,6 +325,44 @@ starlight-theme-select {
   color: var(--pan-accent);
 }
 
+.section-nav {
+  padding-top: 1rem;
+}
+
+.section-nav__list,
+.stats-ribbon__inner,
+.workflow-grid,
+.architecture-stack {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.section-nav__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.section-nav__list a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.5rem;
+  padding: 0.55rem 0.9rem;
+  border: 1px solid var(--pan-line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--pan-text-muted);
+  font-size: 0.9rem;
+  text-decoration: none;
+}
+
+.section-nav__list a:hover {
+  border-color: var(--pan-line-strong);
+  color: var(--pan-text);
+  background: rgba(255, 255, 255, 0.04);
+}
+
 .preview-pill,
 .section-kicker,
 .hero-kicker,
@@ -472,6 +509,7 @@ starlight-theme-select {
 }
 
 .hero-console {
+  margin: 0;
   display: grid;
   gap: 1rem;
 }
