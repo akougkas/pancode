@@ -19,7 +19,7 @@ import type { PanCodeReasoningPreference } from "./thinking";
 export interface Preset {
   name: string;
   description: string;
-  model: string;
+  model: string | null;
   workerModel: string | null;
   scoutModel: string | null;
   reasoning: PanCodeReasoningPreference;
@@ -107,11 +107,10 @@ function isValidReasoning(value: unknown): value is PanCodeReasoningPreference {
 }
 
 function parseEntry(name: string, entry: PresetFileEntry): Preset | null {
-  if (!entry.model || typeof entry.model !== "string") return null;
   return {
     name,
     description: entry.description ?? name,
-    model: entry.model,
+    model: typeof entry.model === "string" ? entry.model : null,
     workerModel: typeof entry.workerModel === "string" ? entry.workerModel : null,
     scoutModel: typeof entry.scoutModel === "string" ? entry.scoutModel : null,
     reasoning: isValidReasoning(entry.reasoning) ? entry.reasoning : "medium",

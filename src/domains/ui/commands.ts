@@ -936,7 +936,7 @@ export function createCommandHandlers(state: UiCommandState, cb: UiCommandCallba
       const marker = name === current ? "*" : "-";
       presetLines.push(`  ${marker} ${name.padEnd(14)} ${preset.description}`);
       presetLines.push(
-        `    model: ${preset.model}  worker: ${preset.workerModel ?? "(same)"}  scout: ${preset.scoutModel ?? preset.model}  reasoning: ${preset.reasoning}  safety: ${preset.safety}`,
+        `    model: ${preset.model ?? "(not set)"}  worker: ${preset.workerModel ?? "(same)"}  scout: ${preset.scoutModel ?? preset.model ?? "(not set)"}  reasoning: ${preset.reasoning}  safety: ${preset.safety}`,
       );
     }
 

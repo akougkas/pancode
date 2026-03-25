@@ -146,7 +146,10 @@ export function getConfigDir(): string {
 /**
  * Returns the agent-engine subdirectory within the data directory.
  * PI_CODING_AGENT_DIR should be set to this path for Pi SDK compatibility.
+ * Also creates the sessions/ subdirectory that the Pi SDK expects for JSONL history.
  */
 export function getAgentEngineDir(): string {
-  return ensureDir(join(getDataDir(), "agent-engine"));
+  const dir = ensureDir(join(getDataDir(), "agent-engine"));
+  ensureDir(join(dir, "sessions"));
+  return dir;
 }
