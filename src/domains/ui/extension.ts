@@ -1060,14 +1060,6 @@ export const extension = defineExtension((pi) => {
     },
   });
 
-  pi.registerCommand("status", {
-    description: "Show the PanCode session summary",
-    handler: async (args, ctx) => {
-      setView("dashboard");
-      await handlers.showDashboard(args, ctx);
-    },
-  });
-
   pi.registerCommand("theme", {
     description: "Inspect or change the active PanCode theme",
     handler: handlers.handleThemeCommand,
