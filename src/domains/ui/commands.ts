@@ -550,29 +550,37 @@ const MODEL_HINT_SHORTCUTS = ["shift+tab:mode", "alt+a:admin"] as const;
 
 export function createCommandHandlers(state: UiCommandState, cb: UiCommandCallbacks): CommandHandlers {
   const handleThemeCommand: CommandHandler = async (args, ctx) => {
-    const request = args.trim();
+    const request = args.trim().toLowerCase();
     const themes = ctx.ui
       .getAllThemes()
       .map((themeInfo) => themeInfo.name)
       .sort();
 
+    // Apply theme if a valid name was provided
+    if (request && request !== "list" && themes.includes(request)) {
+      process.env.PANCODE_THEME = request;
+      state.currentThemeName = request;
+      persistSettings({ theme: request }, (msg, lvl) => ctx.ui.notify(msg, lvl));
+      ctx.ui.notify(`Theme set to "${request}".`, "info");
+      return;
+    }
+
     const currentTheme = ctx.ui.theme.name ?? state.currentThemeName;
     const themeRows: PanelRow[] = themes.map((name) => text(`${name === currentTheme ? "*" : "-"} ${name}`));
 
     const sections: PanelSection[] = [
-      { rows: [text(readOnlyBanner())] },
       { rows: [kv("Current:", `${currentTheme}  ${inlineHint("switch to dark theme")}`)] },
       { heading: "Available:", rows: themeRows },
     ];
 
     if (request && request !== "list") {
       sections.push({
-        rows: [text(`To apply "${request}", ask Panos: "switch to ${request} theme"`)],
+        rows: [text(`Unknown theme "${request}". Use one of the names listed above.`)],
       });
     }
 
     sections.push({
-      rows: [text(settingHint(["use dark theme", "switch to light theme"], ["shift+tab:mode", "alt+a:admin"]))],
+      rows: [text(settingHint(["use dark theme", "/theme dark"], ["shift+tab:mode", "alt+a:admin"]))],
     });
 
     sendPanelSpec(cb.emitPanel, { title: `${PANCODE_PRODUCT_NAME} Themes`, sections });
