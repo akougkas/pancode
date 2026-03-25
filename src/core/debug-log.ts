@@ -1,5 +1,5 @@
-import { appendFileSync } from "node:fs";
-import { join } from "node:path";
+import { appendFileSync, mkdirSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { getDataDir } from "./xdg";
 
 let initialized = false;
@@ -28,6 +28,11 @@ export function initDebugLog(): void {
   if (process.env.PANCODE_WORKER === "1") return;
 
   const logPath = getDebugLogPath();
+
+  // Ensure the parent directory exists. getDataDir() caches its result after the
+  // first call, so the directory could be deleted between initialization and a
+  // subsequent log write. Explicit mkdirSync here guarantees the path is valid.
+  mkdirSync(dirname(logPath), { recursive: true });
 
   // Capture original methods before patching.
   const originalError = console.error;

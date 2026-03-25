@@ -1,5 +1,6 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
+import { atomicWriteJsonSync } from "./config-writer";
 import { getDataDir } from "./xdg";
 
 interface LockInfo {
@@ -65,7 +66,7 @@ export function acquireSessionLock(sessionId: string): void {
     pid: process.pid,
     acquiredAt: new Date().toISOString(),
   };
-  writeFileSync(path, JSON.stringify(info, null, 2), "utf8");
+  atomicWriteJsonSync(path, info);
 }
 
 /**
