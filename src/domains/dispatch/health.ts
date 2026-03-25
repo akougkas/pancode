@@ -21,6 +21,8 @@ interface HealthEntry {
   state: HealthState;
   lastHeartbeatAt: number;
   heartbeatCount: number;
+  /** True when recordProcessExit() confirmed the process is gone. */
+  exitConfirmed: boolean;
 }
 
 /** Default heartbeat interval: 10 seconds. Workers emit at this frequency. */
@@ -62,7 +64,7 @@ export class WorkerHealthMonitor {
     const now = Date.now();
     let entry = this.workers.get(runId);
     if (!entry) {
-      entry = { runId, state: "healthy", lastHeartbeatAt: now, heartbeatCount: 0 };
+      entry = { runId, state: "healthy", lastHeartbeatAt: now, heartbeatCount: 0, exitConfirmed: false };
       this.workers.set(runId, entry);
       this.ensureChecker();
       return "healthy";
@@ -79,8 +81,15 @@ export class WorkerHealthMonitor {
       // Second heartbeat after recovery: back to healthy.
       this.transition(entry, "healthy");
     } else if (prev === "dead") {
-      // Resurrections are ignored. Once dead, a worker stays dead.
-      return "dead";
+      if (entry.exitConfirmed) {
+        // Process exited. Ignore late buffered heartbeats.
+        return "dead";
+      }
+      // Heartbeat received after heartbeat-timeout death classification.
+      // A process that sends heartbeats is alive. Under GPU contention
+      // (multiple workers sharing a single llama-server), heartbeat gaps
+      // can exceed the dead threshold without the worker actually failing.
+      this.transition(entry, "recovered");
     }
     // If already healthy, no state change needed.
 
@@ -90,8 +99,11 @@ export class WorkerHealthMonitor {
   /** Mark a worker as dead because its process exited. */
   recordProcessExit(runId: string): void {
     const entry = this.workers.get(runId);
-    if (entry && entry.state !== "dead") {
-      this.transition(entry, "dead");
+    if (entry) {
+      entry.exitConfirmed = true;
+      if (entry.state !== "dead") {
+        this.transition(entry, "dead");
+      }
     }
   }
 
