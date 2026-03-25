@@ -873,8 +873,16 @@ export const extension = defineExtension((pi) => {
       // Replace Pi SDK's shift+tab (cycleThinkingLevel) with PanCode mode cycling.
       // The actionHandlers map is keyed by AppAction strings. We replace the handler
       // rather than delete it, so shift+tab still routes through the keybinding system.
-      const editorHandlers = pancodeEditor.actionHandlers as Map<string, () => void>;
-      editorHandlers.set("cycleThinkingLevel", () => {
+      // Guard: if actionHandlers is not a Map or lacks the expected key, log a
+      // warning and skip. A Pi TUI update could rename or restructure this.
+      const editorHandlers = pancodeEditor.actionHandlers as Map<string, () => void> | undefined;
+      if (!(editorHandlers instanceof Map) || !editorHandlers.has("cycleThinkingLevel")) {
+        console.error(
+          "[pancode] WARNING: PanCodeEditor.actionHandlers missing or 'cycleThinkingLevel' not found. " +
+            "Shift+Tab mode cycling will not work.",
+        );
+      }
+      editorHandlers?.set("cycleThinkingLevel", () => {
         const prev = getCurrentMode();
         const def = cycleModeTo();
         // Only auto-apply the mode's default reasoning if the user has not
