@@ -71,7 +71,6 @@
     "@pancode/pi-tui": "file:packages/pi-tui",
     "@silvia-odwyer/photon-node": "^0.3.4",
     "@sinclair/typebox": "^0.34.48",
-    "@types/mime-types": "^2.1.4",
     "ajv": "^8.17.1",
     "ajv-formats": "^3.0.1",
     "chalk": "^5.6.2",
@@ -84,7 +83,6 @@
     "hosted-git-info": "^9.0.2",
     "ignore": "^7.0.5",
     "marked": "^15.0.12",
-    "mime-types": "^3.0.1",
     "minimatch": "^10.2.3",
     "ollama": "^0.6.3",
     "openai": "6.26.0",
@@ -93,8 +91,7 @@
     "proxy-agent": "^6.5.0",
     "strip-ansi": "^7.1.0",
     "undici": "^7.19.1",
-    "yaml": "^2.8.2",
-    "zod-to-json-schema": "^3.24.6"
+    "yaml": "^2.8.2"
   },
   "optionalDependencies": {
     "@mariozechner/clipboard": "^0.3.2",
