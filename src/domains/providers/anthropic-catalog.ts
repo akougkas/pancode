@@ -123,12 +123,13 @@ export function registerAnthropicModels(modelRegistry: InstanceType<typeof Model
     return { registered: [], auth: null };
   }
 
-  // Register under provider "anthropic" with the Anthropic Messages API format.
-  // These models are accessed via cli:claude-code runtime, not direct API calls.
-  // The baseUrl is informational only; actual requests go through the Claude CLI.
+  // Register under provider "anthropic" for catalog visibility and metadata.
+  // These models are accessed exclusively via cli:claude-code runtime, never by
+  // direct API calls. The empty apiKey prevents the Pi SDK from attempting
+  // direct Anthropic API requests. Worker dispatch in routing.ts infers the
+  // cli:claude-code runtime from the "anthropic" provider prefix.
   modelRegistry.registerProvider("anthropic", {
-    baseUrl: "https://api.anthropic.com/v1",
-    apiKey: "claude-cli",
+    apiKey: "",
     api: "anthropic-messages",
     models: ANTHROPIC_MODELS.map((m) => ({
       id: m.id,
