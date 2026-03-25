@@ -47,7 +47,7 @@ export const extension = defineExtension((pi) => {
     if (!packageRoot) {
       console.error("[pancode:observability] PANCODE_PACKAGE_ROOT is not set. Domain state will not persist.");
     }
-    const runtimeRoot = packageRoot ? `${packageRoot}/.pancode` : ".pancode";
+    const runtimeRoot = packageRoot ? `${packageRoot}/.pancode/state` : ".pancode/state";
     metricsLedger = new MetricsLedger(runtimeRoot);
     dispatchLedger = new DispatchLedger(runtimeRoot);
     auditTrail = createAuditTrail(1000);
@@ -328,7 +328,7 @@ export const extension = defineExtension((pi) => {
     description: "Run diagnostic health checks",
     async handler(_args, _ctx) {
       const packageRoot = process.env.PANCODE_PACKAGE_ROOT;
-      const runtimeRoot = packageRoot ? `${packageRoot}/.pancode/runtime` : ".pancode/runtime";
+      const runtimeRoot = packageRoot ? `${packageRoot}/.pancode/state` : ".pancode/state";
 
       let activeWorkerCount = 0;
       let runs: Array<{ status: string; startedAt: string }> = [];

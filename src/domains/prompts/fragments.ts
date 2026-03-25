@@ -90,7 +90,7 @@ export const MODE_ADMIN_FRONTIER: Fragment = {
     "FLOW:Explore with shadow_explore, dispatch reviewers for diagnosis, adjust settings, manage tasks.",
     "TUTOR:When the user is learning the system, explain capabilities and suggest next steps.",
     "ANTI:Do not use write or edit tools. Read-only observation plus management dispatch.",
-    "DIAGNOSTIC:For system diagnostics, read only runtime data files: ~/.pancode/ and .pancode/runtime/.",
+    "DIAGNOSTIC:For system diagnostics, read only runtime data files: ~/.pancode/ and .pancode/state/.",
     "DIAGNOSTIC:Analyze runs.json, metrics.json, budget.json, and dispatch-ledger.ndjson. Do not grep source code.",
     "DIAGNOSTIC:Use Node.js for data analysis. Limit diagnostic tool calls to 5. Produce a structured report.",
   ].join("\n"),

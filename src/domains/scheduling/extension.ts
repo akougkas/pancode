@@ -33,7 +33,7 @@ export const extension = defineExtension((pi) => {
     if (!packageRoot) {
       console.error("[pancode:scheduling] PANCODE_PACKAGE_ROOT is not set. Domain state will not persist.");
     }
-    const runtimeRoot = packageRoot ? `${packageRoot}/.pancode` : ".pancode";
+    const runtimeRoot = packageRoot ? `${packageRoot}/.pancode/state` : ".pancode/state";
     const ceiling = Number.parseFloat(process.env.PANCODE_BUDGET_CEILING ?? "10.0") || 10.0;
     budgetTracker = new BudgetTracker(runtimeRoot, ceiling);
     budgetTracker.resetSession();

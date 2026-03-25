@@ -1,5 +1,5 @@
 // Prompt version persistence.
-// Tracks compilation manifests in .pancode/runtime/prompt-versions/ for
+// Tracks compilation manifests in .pancode/state/prompt-versions/ for
 // development iteration, debugging, and regression detection.
 
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";

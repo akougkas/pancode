@@ -67,8 +67,7 @@ export const extension = defineExtension((pi) => {
 
   pi.on(PiEvent.SESSION_START, (_event, _ctx) => {
     const runtimeRoot =
-      process.env.PANCODE_RUNTIME_ROOT ??
-      join(process.env.PANCODE_PACKAGE_ROOT ?? process.cwd(), ".pancode", "runtime");
+      process.env.PANCODE_RUNTIME_ROOT ?? join(process.env.PANCODE_PACKAGE_ROOT ?? process.cwd(), ".pancode", "state");
     contextRegistry = createContextRegistry(runtimeRoot);
     sharedBoard = createSharedBoard(runtimeRoot);
     sessionMemory = createSessionMemory(runtimeRoot, contextRegistry);

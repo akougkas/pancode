@@ -58,7 +58,7 @@ export const extension = defineExtension((pi) => {
   pi.registerCommand("prompt-version", {
     description: "Show prompt compilation version history",
     async handler(args, _ctx) {
-      const runtimeRoot = process.env.PANCODE_RUNTIME_ROOT ?? ".pancode/runtime";
+      const runtimeRoot = process.env.PANCODE_RUNTIME_ROOT ?? ".pancode/state";
 
       if (args === "latest") {
         const orch = loadLatestManifest(runtimeRoot, "orchestrator");

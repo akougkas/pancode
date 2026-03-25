@@ -137,9 +137,9 @@ function cleanupStaleArtifacts(): void {
   }
 
   // 2. Clean worker result files
-  const runtimeRoot = process.env.PANCODE_RUNTIME_ROOT;
-  if (runtimeRoot) {
-    cleanupDir(runtimeRoot, cutoff, /^worker-.*\.result\.json$/);
+  const resultsDir = process.env.PANCODE_RESULTS_DIR;
+  if (resultsDir) {
+    cleanupDir(resultsDir, cutoff, /^worker-.*\.result\.json$/);
   }
 }
 
@@ -200,9 +200,9 @@ export const extension = defineExtension((pi) => {
     if (!packageRoot) {
       console.error("[pancode:dispatch] PANCODE_PACKAGE_ROOT is not set. Domain state will not persist.");
     }
-    const runtimeRoot = packageRoot ? `${packageRoot}/.pancode` : ".pancode";
-    ledger = new RunLedger(runtimeRoot);
-    initTaskStore(runtimeRoot);
+    const stateRoot = packageRoot ? `${packageRoot}/.pancode/state` : ".pancode/state";
+    ledger = new RunLedger(stateRoot);
+    initTaskStore(stateRoot);
     draining = false;
 
     // Session boundary marker
@@ -213,7 +213,7 @@ export const extension = defineExtension((pi) => {
 
     // Listen for session reset events (/new command). Clear task store and session memory.
     sharedBus.on(BusChannel.SESSION_RESET, () => {
-      initTaskStore(runtimeRoot);
+      initTaskStore(stateRoot);
       clearSessionStore();
       if (process.env.PANCODE_VERBOSE) {
         console.error("[pancode:dispatch] Task store and session memory reset for new session.");

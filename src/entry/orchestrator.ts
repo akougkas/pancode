@@ -363,6 +363,7 @@ export async function runOrchestratorEntry(): Promise<void> {
   process.env.PANCODE_REASONING = config.reasoningPreference;
   process.env.PANCODE_THEME = config.theme;
   process.env.PANCODE_RUNTIME_ROOT = config.runtimeRoot;
+  process.env.PANCODE_RESULTS_DIR = config.resultsDir;
 
   // --fresh: wipe runtime state before boot so the dashboard starts clean.
   if (args.fresh) {
@@ -375,8 +376,8 @@ export async function runOrchestratorEntry(): Promise<void> {
   // Reap orphaned runs from a previous session before domains initialize.
   // Any runs left in "running" or "pending" from a crashed or killed session
   // are marked "interrupted" so the ledger is accurate at boot.
-  // RunLedger stores runs.json in <packageRoot>/.pancode/ (not the runtime/ subdir).
-  reapOrphanRuns(join(config.packageRoot, ".pancode"));
+  // RunLedger stores runs.json in .pancode/state/.
+  reapOrphanRuns(config.runtimeRoot);
 
   const bootPhases: BootPhase[] = [];
 

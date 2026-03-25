@@ -1,69 +1,59 @@
 import { existsSync, readdirSync, rmSync, unlinkSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
+import { getDataDir } from "../core/xdg.js";
 import { EXIT_SUCCESS } from "./shared";
 
-/** Files in <project>/.pancode/ that are runtime state (safe to delete). */
-const PROJECT_RUNTIME_FILES = ["runs.json", "metrics.json", "budget.json", "tasks.json"];
+/**
+ * Remove all files inside a directory without deleting the directory itself.
+ * Recurses into subdirectories. Returns the number of items removed.
+ */
+function clearDirContents(dir: string, log: (msg: string) => void): number {
+  if (!existsSync(dir)) return 0;
+  let removed = 0;
+  const entries = readdirSync(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    const entryPath = join(dir, entry.name);
+    if (entry.isFile()) {
+      unlinkSync(entryPath);
+      log(`  removed ${entryPath}`);
+      removed++;
+    } else if (entry.isDirectory()) {
+      rmSync(entryPath, { recursive: true, force: true });
+      log(`  removed ${entryPath}/`);
+      removed++;
+    }
+  }
+  return removed;
+}
 
 /**
- * Wipe PanCode runtime state while preserving user configuration.
+ * Wipe PanCode runtime state while preserving user and project configuration.
  *
  * Clears:
- *   <project>/.pancode/runs.json, metrics.json, budget.json, tasks.json
- *   <project>/.pancode/runtime/ (board.json, worker-*.result.json)
- *   ~/.pancode/agent-engine/sessions/
+ *   <project>/.pancode/state/   (board, runs, metrics, budget, tasks)
+ *   <project>/.pancode/results/ (worker-*.result.json)
+ *   $DATA_DIR/agent-engine/sessions/
  *
  * Preserves:
- *   ~/.pancode/panpresets.yaml, panagents.yaml, panproviders.yaml
- *   ~/.pancode/settings.json, model-cache.yaml
- *   ~/.pancode/agent-engine/auth.json
+ *   <project>/.pancode/config/  (project settings)
+ *   All global XDG dirs (settings, presets, agents, auth)
  */
 export function resetRuntimeState(projectRoot: string, opts?: { quiet?: boolean }): number {
   const quiet = opts?.quiet ?? false;
   const log = quiet ? (_msg: string) => {} : (msg: string) => console.log(msg);
   let cleaned = 0;
 
-  // 1. Project-local runtime files
-  const projectPancode = join(projectRoot, ".pancode");
-  if (existsSync(projectPancode)) {
-    for (const file of PROJECT_RUNTIME_FILES) {
-      const filePath = join(projectPancode, file);
-      if (existsSync(filePath)) {
-        unlinkSync(filePath);
-        log(`  removed ${projectPancode}/${file}`);
-        cleaned++;
-      }
-    }
+  // 1. Clear .pancode/state/ contents
+  const stateDir = join(projectRoot, ".pancode", "state");
+  cleaned += clearDirContents(stateDir, log);
 
-    // 2. Project-local runtime directory (board.json, worker results)
-    const runtimeDir = join(projectPancode, "runtime");
-    if (existsSync(runtimeDir)) {
-      const entries = readdirSync(runtimeDir, { withFileTypes: true });
-      for (const entry of entries) {
-        if (entry.isFile()) {
-          unlinkSync(join(runtimeDir, entry.name));
-          log(`  removed ${runtimeDir}/${entry.name}`);
-          cleaned++;
-        } else if (entry.isDirectory()) {
-          // Recurse into subdirectories (e.g. runtime/results/)
-          const subDir = join(runtimeDir, entry.name);
-          const subEntries = readdirSync(subDir, { withFileTypes: true });
-          for (const sub of subEntries) {
-            if (sub.isFile()) {
-              unlinkSync(join(subDir, sub.name));
-              log(`  removed ${subDir}/${sub.name}`);
-              cleaned++;
-            }
-          }
-        }
-      }
-    }
-  }
+  // 2. Clear .pancode/results/ contents
+  const resultsDir = join(projectRoot, ".pancode", "results");
+  cleaned += clearDirContents(resultsDir, log);
 
   // 3. Pi SDK session history
-  const pancodeHome = process.env.PANCODE_HOME?.trim() || join(homedir(), ".pancode");
-  const sessionsDir = join(pancodeHome, "agent-engine", "sessions");
+  const dataDir = getDataDir();
+  const sessionsDir = join(dataDir, "agent-engine", "sessions");
   if (existsSync(sessionsDir)) {
     const sessionEntries = readdirSync(sessionsDir, { withFileTypes: true });
     let sessionCount = 0;

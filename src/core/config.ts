@@ -95,32 +95,33 @@ function readDefaultModelFile(packageRoot: string): string | null {
 // ---------------------------------------------------------------------------
 // Persistence model
 // ---------------------------------------------------------------------------
-// ~/.pancode/ holds user configuration that survives reinstall:
-//   panpresets.yaml, panagents.yaml, panproviders.yaml, settings.json,
-//   model-cache.yaml, and agent-engine/auth.json.
+// XDG dirs hold user configuration that survives reinstall:
+//   $DATA_DIR/settings.json, $CONFIG_DIR/panpresets.yaml, panagents.yaml,
+//   $CACHE_DIR/panproviders.yaml, panmodels.yaml, $DATA_DIR/agent-engine/.
 //
-// <project>/.pancode/ holds per-project runtime state and project-level
-//   settings overrides: settings.json, runs.json, metrics.json, budget.json,
-//   tasks.json, and the runtime/ subdirectory (board.json, worker-*.result.json).
+// <project>/.pancode/ holds per-project state, config, and results:
+//   config/settings.json        Project-level overrides
+//   state/                      board, runs, metrics, budget, tasks
+//   results/                    worker-*.result.json
 //
-// ~/.pancode/agent-engine/sessions/ holds Pi SDK session history.
+// $DATA_DIR/agent-engine/sessions/ holds Pi SDK session history.
 //
-// "pancode reset" or the "--fresh" boot flag clears all runtime state
-// (project-local and sessions) while preserving user configuration.
+// "pancode reset" or the "--fresh" boot flag clears state/ and results/
+// while preserving config/ and user configuration.
 //
 // Config resolution order (highest priority first):
 //   runtime overrides (/settings) > env vars (PANCODE_*) >
-//   project config (.pancode/settings.json) > global config
-//   (~/.pancode/settings.json) > defaults (src/core/defaults.ts)
+//   project config (.pancode/config/settings.json) > global config
+//   ($DATA_DIR/settings.json) > defaults (src/core/defaults.ts)
 // ---------------------------------------------------------------------------
 
 /**
- * Load project-level settings from <cwd>/.pancode/settings.json.
+ * Load project-level settings from <cwd>/.pancode/config/settings.json.
  * Returns an empty object if the file is missing, empty, or corrupt.
  * Corrupt files produce a warning on stderr.
  */
 function loadProjectSettingsFile(projectRoot: string): Record<string, unknown> {
-  const settingsPath = join(projectRoot, ".pancode", "settings.json");
+  const settingsPath = join(projectRoot, ".pancode", "config", "settings.json");
   if (!existsSync(settingsPath)) return {};
 
   try {
@@ -138,7 +139,7 @@ function loadProjectSettingsFile(projectRoot: string): Record<string, unknown> {
 
 export function loadConfig(overrides: ConfigOverrides = {}): PanCodeConfig {
   const packageRoot = resolvePackageRoot(import.meta.url);
-  const runtimeRoot = join(packageRoot, ".pancode", "runtime");
+  const runtimeRoot = join(packageRoot, ".pancode", "state");
   const globalSettings = loadPanCodeSettings();
   const cwd = resolve(packageRoot, overrides.cwd ?? getFirstEnvValue("PANCODE_PROJECT") ?? ".");
   const projectSettings = loadProjectSettingsFile(cwd);
@@ -194,6 +195,6 @@ export function loadConfig(overrides: ConfigOverrides = {}): PanCodeConfig {
     tools: overrides.tools ?? getFirstEnvValue("PANCODE_TOOLS", "PANCODE_PHASE0_TOOLS") ?? DEFAULT_TOOLS,
     timeoutMs: overrides.timeoutMs ?? parseTimeoutMs(process.env.PANCODE_TIMEOUT_MS),
     runtimeRoot,
-    resultsDir: join(runtimeRoot, "results"),
+    resultsDir: join(packageRoot, ".pancode", "results"),
   };
 }

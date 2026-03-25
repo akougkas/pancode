@@ -59,10 +59,11 @@ export class PiRuntime implements AgentRuntime {
   buildSpawnConfig(config: RuntimeTaskConfig): SpawnConfig {
     const entryPath = resolveWorkerEntryPath();
     const runtimeRoot =
-      process.env.PANCODE_RUNTIME_ROOT ??
-      join(process.env.PANCODE_PACKAGE_ROOT ?? process.cwd(), ".pancode", "runtime");
+      process.env.PANCODE_RUNTIME_ROOT ?? join(process.env.PANCODE_PACKAGE_ROOT ?? process.cwd(), ".pancode", "state");
+    const resultsDir =
+      process.env.PANCODE_RESULTS_DIR ?? join(process.env.PANCODE_PACKAGE_ROOT ?? process.cwd(), ".pancode", "results");
     const runId = config.runId ?? randomUUID().slice(0, 8);
-    const resultFile = join(runtimeRoot, `worker-${runId}.result.json`);
+    const resultFile = join(resultsDir, `worker-${runId}.result.json`);
 
     const isDev = entryPath.endsWith(".ts");
     const workerArgs: string[] = [
