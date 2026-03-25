@@ -50,10 +50,12 @@
     "prepublishOnly": "npm run build"
   },
   "files": [
-    "dist/",
-    "packages/",
+    "dist/**/*.js",
+    "packages/*/dist/**/*.js",
+    "packages/*/package.json",
+    "packages/pi-ai/bedrock-provider.js",
     "models/",
-    "scripts/"
+    "scripts/link-workspace-packages.cjs"
   ],
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.81",
