@@ -120,7 +120,6 @@ Run statuses:
 ```
 /cost                 # Per-run cost breakdown
 /metrics              # Aggregate statistics (total runs, cost, tokens)
-/dispatch-insights    # Analytics with rule evaluation and provider health
 ```
 
 ## Reproducibility Receipts

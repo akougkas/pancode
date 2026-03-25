@@ -118,10 +118,7 @@ You: Audit all domain extensions for boundary violations, one task per domain.
 /budget        # Total session spend
 /metrics       # Per-dispatch timing and token usage
 
-# 5. Check domain-specific results
-/dispatch-insights  # Agent selection and routing decisions
-
-# 6. Verify boot performance
+# 5. Verify boot performance
 /perf          # Boot phase timing breakdown
 ```
 
@@ -203,28 +200,4 @@ provider connectivity, configuration validity, domain registration, file
 system access, and environment variable resolution.
 
 
----
----
-
-
-# Claude: 
-===
-The `claude` binary is the product. It's a CLI tool. The Agent SDK is just a better control plane for that same CLI tool. Under the hood, `query()` spawns the `claude` binary as a subprocess, exactly like our `cli:claude-code` does. The difference is how we talk to that subprocess:
-
-- **Old way** (`cli:claude-code` current): `claude -p "task" --json` → parse stdout JSON
-- **New way** (what we built): SDK `query()` → typed async stream from the same `claude` process
-
-Both are CLI runtime. Both run `claude`. The SDK is not a separate provider or a separate runtime tier. It's a better implementation of the same `cli:claude-code` runtime.
-
-So the correct architecture is:
-
-```
-cli:claude-code runtime
-  ├── Implementation A: subprocess JSON (current, claude-code.ts)
-  └── Implementation B: Agent SDK control (claude-sdk.ts) ← replaces A
-```
-
-Not two separate runtimes. One runtime, upgraded implementation.
-
-What I built wrong: I created `sdk:claude-code` as a separate runtime with tier `"sdk"`, separate registration, separate discovery, separate routing. That's wrong. It should have been an upgrade to `cli:claude-code` itself, keeping the same runtime ID, same tier, same registration. The user configures `runtime: cli:claude-code` (or gets it by default), and PanCode internally uses the SDK control plane when available, falling back to JSON scraping when not.
 
