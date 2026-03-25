@@ -12,8 +12,8 @@ import { createSafeEventBus } from "../core/event-bus";
 import { ensureProjectRuntime } from "../core/init";
 import { resolvePackageRoot } from "../core/package-root";
 import { ensurePresetsFile, loadPreset } from "../core/presets";
-import { acquireSessionLock } from "../core/session-lock.js";
-import { installSigintDoubleTap, shutdownCoordinator } from "../core/termination";
+import { acquireSessionLock, releaseSessionLock, sweepStaleLocks } from "../core/session-lock.js";
+import { installSigintDoubleTap, installTermSignalHandlers, shutdownCoordinator } from "../core/termination";
 import { type PanCodeReasoningPreference, resolveThinkingLevelForPreference } from "../core/thinking";
 import { getConfigDir, getDataDir } from "../core/xdg";
 import { DOMAIN_REGISTRY } from "../domains";
@@ -376,12 +376,26 @@ export async function runOrchestratorEntry(): Promise<void> {
 
   ensureProjectRuntime(config);
 
+  // Sweep stale locks from previous sessions that exited ungracefully
+  // (e.g. SIGKILL, power loss). This handles the edge case where neither
+  // SIGTERM/SIGHUP nor `pancode down` had a chance to clean up.
+  const staleLocks = sweepStaleLocks();
+  if (staleLocks > 0) {
+    console.error(`[pancode:boot] Swept ${staleLocks} stale lock(s) from previous session(s).`);
+  }
+
   // Acquire a session lock so concurrent instances targeting the same project
-  // are detected. The lock is released by releaseAllSessionLocks() in the exit
-  // handler (wired in loader.ts). Use the preset name if available, otherwise
-  // fall back to the PID to guarantee uniqueness.
+  // are detected. Use the preset name if available, otherwise fall back to the
+  // PID to guarantee uniqueness. The lock is released during the
+  // ShutdownCoordinator persist phase (registered below).
   const sessionId = process.env.PANCODE_PRESET ?? process.pid.toString();
   acquireSessionLock(sessionId);
+
+  // Register lock release in the ShutdownCoordinator persist phase so it runs
+  // during graceful shutdown alongside other state persistence handlers.
+  shutdownCoordinator.onPersist(() => {
+    releaseSessionLock(sessionId);
+  });
 
   // Reap orphaned runs from a previous session before domains initialize.
   // Any runs left in "running" or "pending" from a crashed or killed session
@@ -639,19 +653,14 @@ export async function runOrchestratorEntry(): Promise<void> {
     shell.stop();
   });
 
-  let sigTermHandled = false;
-  const handleSigterm = async () => {
-    if (sigTermHandled) return;
-    sigTermHandled = true;
-    await shutdownCoordinator.execute();
-    process.exit(0);
-  };
-
   // Install SIGINT double-tap: first Ctrl+C gracefully shuts down,
   // second Ctrl+C within 3 seconds forces immediate exit.
   const removeSigintHandler = installSigintDoubleTap(shutdownCoordinator);
 
-  process.on("SIGTERM", handleSigterm);
+  // Install SIGTERM/SIGHUP handlers so tmux session kills and external
+  // termination signals trigger the same graceful shutdown sequence.
+  const removeTermHandlers = installTermSignalHandlers(shutdownCoordinator);
+
   try {
     await shell.run();
   } catch (sessionErr) {
@@ -672,7 +681,7 @@ export async function runOrchestratorEntry(): Promise<void> {
     }
   } finally {
     removeSigintHandler();
-    process.off("SIGTERM", handleSigterm);
+    removeTermHandlers();
     if (!shutdownCoordinator.isDraining()) {
       await shutdownCoordinator.execute();
     }

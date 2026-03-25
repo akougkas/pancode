@@ -2,7 +2,6 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolvePackageRoot } from "./core/package-root";
-import { releaseAllSessionLocks } from "./core/session-lock";
 import { getAgentEngineDir, getCacheDir, getConfigDir, getDataDir } from "./core/xdg";
 
 type LoaderTarget = "orchestrator" | "worker" | "cli" | "tmux-start";
@@ -61,15 +60,6 @@ function initializeEnvironment(): string {
   if (!process.env.PANCODE_HOME?.trim()) {
     process.env.PANCODE_HOME = dataDir;
   }
-
-  // Register cleanup handler to release session locks on exit.
-  process.on("exit", () => {
-    try {
-      releaseAllSessionLocks();
-    } catch {
-      // Best-effort cleanup during exit. Do not throw.
-    }
-  });
 
   return packageRoot;
 }

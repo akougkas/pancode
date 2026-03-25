@@ -1,4 +1,5 @@
 import { execSync } from "node:child_process";
+import { sweepStaleLocks } from "../core/session-lock";
 import { EXIT_FAILURE, EXIT_SUCCESS, isTmuxAvailable, listPancodeSessions } from "./shared";
 
 /**
@@ -20,6 +21,8 @@ export function down(args: string[]): number {
     return EXIT_SUCCESS;
   }
 
+  let result: number;
+
   // pancode down --all
   if (args.includes("--all")) {
     let failed = 0;
@@ -27,22 +30,30 @@ export function down(args: string[]): number {
       if (!killSession(s.name)) failed++;
     }
     console.log(`Killed ${sessions.length - failed} of ${sessions.length} sessions.`);
-    return failed > 0 ? EXIT_FAILURE : EXIT_SUCCESS;
-  }
-
-  // pancode down <name>
-  if (args.length > 0 && !args[0].startsWith("-")) {
+    result = failed > 0 ? EXIT_FAILURE : EXIT_SUCCESS;
+  } else if (args.length > 0 && !args[0].startsWith("-")) {
+    // pancode down <name>
     const requested = args[0];
     const match = sessions.find((s) => s.name === requested);
     if (!match) {
       console.error(`[pancode] Session "${requested}" not found.`);
       return EXIT_FAILURE;
     }
-    return killSession(match.name) ? EXIT_SUCCESS : EXIT_FAILURE;
+    result = killSession(match.name) ? EXIT_SUCCESS : EXIT_FAILURE;
+  } else {
+    // pancode down (most recent)
+    result = killSession(sessions[0].name) ? EXIT_SUCCESS : EXIT_FAILURE;
   }
 
-  // pancode down (most recent)
-  return killSession(sessions[0].name) ? EXIT_SUCCESS : EXIT_FAILURE;
+  // Sweep stale lock files left by processes that did not clean up gracefully.
+  // This runs after session kills to catch locks from processes that were
+  // force-killed (SIGKILL) or exited before the ShutdownCoordinator ran.
+  const swept = sweepStaleLocks();
+  if (swept > 0) {
+    console.log(`Swept ${swept} stale lock(s).`);
+  }
+
+  return result;
 }
 
 /** Grace period (ms) after sending Ctrl+C before forcibly killing the session. */

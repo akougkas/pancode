@@ -110,3 +110,43 @@ export function releaseAllSessionLocks(): void {
     }
   }
 }
+
+/**
+ * Remove all lock files whose owning process is no longer alive.
+ *
+ * Called during `pancode down` (post-kill cleanup) and on orchestrator boot
+ * (catch SIGKILL or other ungraceful exits from previous sessions).
+ *
+ * Returns the number of stale locks removed.
+ */
+export function sweepStaleLocks(): number {
+  const dir = getLocksDir();
+  let files: string[];
+  try {
+    files = readdirSync(dir).filter((f) => f.endsWith(".lock"));
+  } catch {
+    return 0;
+  }
+
+  let swept = 0;
+  for (const file of files) {
+    const fullPath = join(dir, file);
+    try {
+      const raw = readFileSync(fullPath, "utf8");
+      const info: LockInfo = JSON.parse(raw);
+      if (!isPidAlive(info.pid)) {
+        unlinkSync(fullPath);
+        swept++;
+      }
+    } catch {
+      // Corrupted or unreadable lock file. Remove it.
+      try {
+        unlinkSync(fullPath);
+        swept++;
+      } catch {
+        // Ignore ENOENT if another process already removed it.
+      }
+    }
+  }
+  return swept;
+}

@@ -182,3 +182,37 @@ export function installSigintDoubleTap(coordinator: ShutdownCoordinator, windowM
     process.off("SIGINT", handler);
   };
 }
+
+/**
+ * Install SIGTERM and SIGHUP handlers that trigger graceful shutdown.
+ *
+ * tmux sends SIGHUP (and sometimes SIGTERM) to the process group when a
+ * session is killed. Both signals trigger the same ShutdownCoordinator
+ * sequence used by SIGINT, ensuring workers are terminated and state is
+ * persisted before the process exits.
+ *
+ * Returns a cleanup function that removes both listeners.
+ */
+export function installTermSignalHandlers(coordinator: ShutdownCoordinator): () => void {
+  let handled = false;
+
+  const handler = (signal: string) => {
+    if (handled) return;
+    handled = true;
+    console.error(`\n[pancode] Received ${signal}. Shutting down gracefully.`);
+    coordinator.execute().then(() => {
+      process.exit(0);
+    });
+  };
+
+  const onSigterm = () => handler("SIGTERM");
+  const onSighup = () => handler("SIGHUP");
+
+  process.on("SIGTERM", onSigterm);
+  process.on("SIGHUP", onSighup);
+
+  return () => {
+    process.off("SIGTERM", onSigterm);
+    process.off("SIGHUP", onSighup);
+  };
+}
