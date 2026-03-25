@@ -139,9 +139,9 @@ function loadProjectSettingsFile(projectRoot: string): Record<string, unknown> {
 
 export function loadConfig(overrides: ConfigOverrides = {}): PanCodeConfig {
   const packageRoot = resolvePackageRoot(import.meta.url);
-  const runtimeRoot = join(packageRoot, ".pancode", "state");
   const globalSettings = loadPanCodeSettings();
   const cwd = resolve(packageRoot, overrides.cwd ?? getFirstEnvValue("PANCODE_PROJECT") ?? ".");
+  const runtimeRoot = join(cwd, ".pancode", "state");
   const projectSettings = loadProjectSettingsFile(cwd);
   const defaultModel = getFirstEnvValue("PANCODE_MODEL", "PANCODE_DEFAULT_MODEL") ?? readDefaultModelFile(packageRoot);
   const domains = [...(overrides.domains ?? overrides.extensions ?? DEFAULT_ENABLED_DOMAINS)];
@@ -195,6 +195,6 @@ export function loadConfig(overrides: ConfigOverrides = {}): PanCodeConfig {
     tools: overrides.tools ?? getFirstEnvValue("PANCODE_TOOLS", "PANCODE_PHASE0_TOOLS") ?? DEFAULT_TOOLS,
     timeoutMs: overrides.timeoutMs ?? parseTimeoutMs(process.env.PANCODE_TIMEOUT_MS),
     runtimeRoot,
-    resultsDir: join(packageRoot, ".pancode", "results"),
+    resultsDir: join(cwd, ".pancode", "results"),
   };
 }
