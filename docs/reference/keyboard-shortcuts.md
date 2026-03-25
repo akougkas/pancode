@@ -4,14 +4,45 @@ PanCode registers keyboard shortcuts for common operations. These work inside th
 
 ## Shortcut Reference
 
-| Shortcut | Action | Description |
-|----------|--------|-------------|
-| Shift+Tab | Cycle modes | Rotates through Plan, Build, Review |
-| Alt+A | Toggle Admin | Enters or exits God Mode |
-| Ctrl+Y | Cycle safety | Rotates through suggest, auto-edit, full-auto |
-| Ctrl+D | Exit | Exit PanCode (Pi SDK built-in) |
-| Ctrl+O | Expand tools | Expand tool output display (Pi SDK built-in) |
-| Ctrl+T | Toggle thinking | Show/hide reasoning output (Pi SDK built-in) |
+Organized into four categories matching the `/hotkeys` command output.
+
+### PanCode Shortcuts
+
+| Shortcut | Action |
+|----------|--------|
+| Shift+Tab | Cycle mode (Plan, Build, Review). Auto-sets reasoning per mode unless explicitly overridden. |
+| Alt+A | Toggle Admin (God) mode |
+| Ctrl+Y | Cycle safety level (suggest, auto-edit, full-auto) |
+
+### Navigation and Input
+
+| Shortcut | Action |
+|----------|--------|
+| Ctrl+C | Interrupt current generation |
+| Ctrl+D | Exit PanCode |
+| Escape | Cancel current input or dismiss |
+| Shift+Enter | Insert new line without submitting |
+| Alt+Enter | Submit follow-up message |
+| Ctrl+V | Paste image from clipboard |
+
+### Model and Thinking
+
+| Shortcut | Action |
+|----------|--------|
+| Ctrl+P | Cycle model forward |
+| Shift+Ctrl+P | Cycle model backward |
+| Ctrl+L | Select model (interactive) |
+| Ctrl+T | Toggle thinking display |
+| Ctrl+O | Expand tool details |
+
+### Editor
+
+| Shortcut | Action |
+|----------|--------|
+| Ctrl+G | Open external editor |
+| Ctrl+K | Delete to end of line |
+| Alt+Up | Dequeue last message |
+| Ctrl+Z | Suspend to shell (fg to resume) |
 
 ## Mode Cycling (Shift+Tab)
 
@@ -57,16 +88,6 @@ suggest -> auto-edit -> full-auto -> suggest -> ...
 ```
 
 The change takes effect immediately for all subsequent tool calls and dispatch operations.
-
-## Pi SDK Shortcuts
-
-These shortcuts are built into the Pi SDK and cannot be overridden:
-
-| Shortcut | Action |
-|----------|--------|
-| Ctrl+D | Exit the application |
-| Ctrl+O | Expand tool output |
-| Ctrl+T | Toggle thinking/reasoning visibility |
 
 ## tmux Requirements
 
