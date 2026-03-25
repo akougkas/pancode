@@ -1,4 +1,6 @@
 import { execSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 import { EXIT_FAILURE, EXIT_SUCCESS, isTmuxAvailable, nextSessionName } from "./shared";
 
 /**
@@ -26,10 +28,37 @@ function ensureTmuxExtendedKeys(): void {
  *
  * All forwarded args (--preset, --model, etc.) are passed to the inner loader.
  */
+/**
+ * Extract the value of --cwd from forwarded CLI args, if present.
+ * Handles both "--cwd /path" (space-separated) and "--cwd=/path" (equals) forms.
+ */
+function extractCwd(args: string[]): string | undefined {
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === "--cwd" && i + 1 < args.length) {
+      return args[i + 1];
+    }
+    if (arg.startsWith("--cwd=")) {
+      return arg.slice("--cwd=".length);
+    }
+  }
+  return undefined;
+}
+
 export function start(forwardedArgs: string[]): number {
   if (!isTmuxAvailable()) {
     console.error("[pancode] tmux is not installed. Install tmux to use PanCode.");
     return EXIT_FAILURE;
+  }
+
+  // Validate --cwd before launching the tmux session so the user sees the error directly.
+  const cwdArg = extractCwd(forwardedArgs);
+  if (cwdArg !== undefined) {
+    const resolved = resolve(cwdArg);
+    if (!existsSync(resolved)) {
+      process.stderr.write(`[pancode] Fatal: Working directory "${resolved}" does not exist.\n`);
+      return EXIT_FAILURE;
+    }
   }
 
   const sessionName = nextSessionName(process.cwd());
