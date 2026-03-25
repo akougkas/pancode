@@ -449,7 +449,7 @@ export async function runOrchestratorEntry(): Promise<void> {
 
   // === Phase 4: Agent config ===
   const p4 = phase("Phase 4", "agents");
-  ensureAgentsYaml(getDataDir());
+  ensureAgentsYaml(configDir);
   p4.end();
 
   // === Phase 5: Model resolution ===

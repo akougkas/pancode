@@ -4,7 +4,7 @@ import YAML from "yaml";
 import { BusChannel } from "../../core/bus-events";
 import { PanMessageType } from "../../core/message-types";
 import { sharedBus } from "../../core/shared-bus";
-import { getDataDir } from "../../core/xdg.js";
+import { getConfigDir } from "../../core/xdg.js";
 import { PiEvent } from "../../engine/events";
 import { defineExtension } from "../../engine/extensions";
 import { discoverAndRegisterRuntimes } from "../../engine/runtimes/discovery";
@@ -27,7 +27,7 @@ const RUNTIME_AGENT_SUGGESTIONS: Record<string, { name: string; description: str
 };
 
 function persistAgentChange(agentName: string, field: string, value: string): void {
-  const filePath = join(getDataDir(), "panagents.yaml");
+  const filePath = join(getConfigDir(), "panagents.yaml");
   try {
     const content = readFileSync(filePath, "utf8");
     const doc = YAML.parseDocument(content);
@@ -85,7 +85,7 @@ export const extension = defineExtension((pi) => {
     const discovery = discoverAndRegisterRuntimes();
     sharedBus.emit(BusChannel.RUNTIMES_DISCOVERED, discovery);
 
-    const specs = loadAgentsFromYaml(getDataDir());
+    const specs = loadAgentsFromYaml(getConfigDir());
     for (const spec of specs) {
       if (!agentRegistry.has(spec.name)) {
         agentRegistry.register(spec);
