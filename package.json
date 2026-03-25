@@ -26,7 +26,7 @@
     "packages/*"
   ],
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=22.0.0"
   },
   "bin": {
     "pancode": "dist/loader.js"
