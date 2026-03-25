@@ -54,6 +54,9 @@
     "packages/*/dist/**/*.js",
     "packages/*/package.json",
     "packages/pi-ai/bedrock-provider.js",
+    "packages/pi-coding-agent/dist/modes/interactive/theme/*.json",
+    "packages/pi-coding-agent/dist/core/export-html/template.html",
+    "packages/pi-coding-agent/dist/core/export-html/template.css",
     "models/",
     "scripts/link-workspace-packages.cjs"
   ],
