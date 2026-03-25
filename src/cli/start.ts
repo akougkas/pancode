@@ -45,6 +45,28 @@ function extractCwd(args: string[]): string | undefined {
   return undefined;
 }
 
+/**
+ * Collect environment variables that should be forwarded into the nested tmux session.
+ * Returns an array of tmux-compatible `-e KEY=VALUE` flag pairs.
+ * Includes all PANCODE_* and PI_* vars plus well-known provider API key vars when set.
+ */
+function collectTmuxEnvFlags(): string[] {
+  const wellKnownKeys = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GOOGLE_API_KEY", "DEEPSEEK_API_KEY"];
+  const flags: string[] = [];
+
+  for (const [key, value] of Object.entries(process.env)) {
+    if (value === undefined) continue;
+    const forward = key.startsWith("PANCODE_") || key.startsWith("PI_") || wellKnownKeys.includes(key);
+    if (forward) {
+      // Shell-escape single quotes in values by ending the quote, adding an escaped quote, and reopening.
+      const escaped = value.replace(/'/g, "'\\''");
+      flags.push("-e", `${key}='${escaped}'`);
+    }
+  }
+
+  return flags;
+}
+
 export function start(forwardedArgs: string[]): number {
   if (!isTmuxAvailable()) {
     console.error("[pancode] tmux is not installed. Install tmux to use PanCode.");
@@ -66,11 +88,13 @@ export function start(forwardedArgs: string[]): number {
   const isTsx = binPath.endsWith(".ts");
   const nodePrefix = isTsx ? "node --import tsx" : "node";
   const extraArgs = forwardedArgs.length > 0 ? ` ${forwardedArgs.join(" ")}` : "";
-  const cmd = `PANCODE_INSIDE_TMUX=1 ${nodePrefix} ${binPath}${extraArgs}`;
+  const envFlags = collectTmuxEnvFlags();
+  const envFlagsStr = envFlags.length > 0 ? ` ${envFlags.join(" ")}` : "";
+  const innerCmd = `PANCODE_INSIDE_TMUX=1 ${nodePrefix} ${binPath}${extraArgs}`;
 
   console.log(`Starting PanCode session "${sessionName}"...`);
   try {
-    execSync(`tmux new-session -d -s ${sessionName} '${cmd}'`, { stdio: "pipe" });
+    execSync(`tmux new-session -d -s ${sessionName}${envFlagsStr} '${innerCmd}'`, { stdio: "pipe" });
     // Auto-configure extended-keys after the session exists (tmux server is running).
     ensureTmuxExtendedKeys();
     execSync(`tmux attach-session -t ${sessionName}`, { stdio: "inherit" });
