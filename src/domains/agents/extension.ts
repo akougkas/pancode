@@ -59,7 +59,7 @@ function suggestAgentsForUnconfiguredRuntimes(): void {
     const description = suggestion?.description ?? `${rt.id} agent`;
     const version = rt.getVersion() ?? "unknown";
 
-    console.error(
+    console.warn(
       `[pancode:agents] Discovered ${rt.id} (v${version}) with no matching agent.\n  Add to panagents.yaml:\n    ${agentName}:\n      runtime: ${rt.id}\n      description: "${description}"\n      readonly: true`,
     );
   }
