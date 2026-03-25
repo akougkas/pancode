@@ -86,7 +86,7 @@ export function resetRuntimeState(projectRoot: string, opts?: { quiet?: boolean 
  * CLI entry point for "pancode reset".
  */
 export function reset(_args: string[]): number {
-  const projectRoot = process.env.PANCODE_PACKAGE_ROOT ?? process.cwd();
+  const projectRoot = process.cwd();
   console.log("[pancode] Resetting runtime state...");
   return resetRuntimeState(projectRoot);
 }

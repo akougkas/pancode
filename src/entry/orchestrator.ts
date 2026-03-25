@@ -371,7 +371,7 @@ export async function runOrchestratorEntry(): Promise<void> {
   // --fresh: wipe runtime state before boot so the dashboard starts clean.
   if (args.fresh) {
     console.log("[pancode] --fresh: clearing runtime state...");
-    resetRuntimeState(config.packageRoot, { quiet: false });
+    resetRuntimeState(config.cwd, { quiet: false });
   }
 
   ensureProjectRuntime(config);
