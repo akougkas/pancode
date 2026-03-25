@@ -38,7 +38,7 @@ Each mode defines exactly which tools the LLM can see:
 | Shadow explore | Yes | Yes | Yes | Yes |
 | Task tools (task_write, task_check, etc.) | Yes | Yes | Yes | No |
 | Dispatch (dispatch_agent, batch_dispatch, chain) | Yes | No | Yes | Yes |
-| Config (pan_read_config, pan_apply_config) | Yes | Yes | Yes | Yes |
+| Config (pan_read_config, pan_apply_config) | Yes | Yes | Yes | Read only |
 
 ### Reasoning Levels
 

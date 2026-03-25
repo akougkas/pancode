@@ -108,7 +108,7 @@ export function getToolsetForMode(mode: OrchestratorMode): string[] {
     case "admin":  return [...readonly, ...shadow, ...tasks, ...dispatch, ...config];
     case "plan":   return [...readonly, ...shadow, ...tasks, ...config];
     case "build":  return [...mutable, ...shadow, ...tasks, ...dispatch, ...config];
-    case "review": return [...readonly, ...shadow, ...dispatch, ...config];
+    case "review": return [...readonly, ...shadow, ...dispatch, ...configReadOnly];
   }
 }
 ```

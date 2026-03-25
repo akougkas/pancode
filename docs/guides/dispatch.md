@@ -330,7 +330,6 @@ The dispatch domain registers several slash commands:
 - `/cost`: show session cost summary (total cost, tokens, runs)
 - `/runs`: list dispatch runs with filtering options
 - `/batches`: list batch dispatch operations
-- `/dispatch-insights`: analysis of dispatch patterns and performance
 
 ## Event Flow
 
