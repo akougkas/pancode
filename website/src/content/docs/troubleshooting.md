@@ -39,7 +39,6 @@ Health Report: 7 pass, 1 warn, 0 fail
 /perf              # Boot phase timing breakdown
 /session           # Session state summary
 /audit             # Structured audit trail
-/dispatch-insights # Dispatch analytics and provider health
 /metrics           # Aggregate dispatch statistics
 ```
 
@@ -151,7 +150,7 @@ Slowest phase: discovery (3100ms).
 /runs              # View dispatch history and status
 /audit dispatch    # Dispatch-specific audit entries
 /audit error       # Error entries only
-/dispatch-insights # Provider health and backoff state
+/doctor            # System diagnostics including provider health
 ```
 
 **Common causes:**

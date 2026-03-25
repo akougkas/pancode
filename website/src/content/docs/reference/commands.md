@@ -154,16 +154,6 @@ Show per-run cost breakdown.
 
 Displays a table of all dispatches with cost, tokens, duration, and status.
 
-#### /dispatch-insights
-
-Show dispatch analytics and rule evaluation.
-
-```
-/dispatch-insights
-```
-
-Displays rule evaluation results, backoff state, resilience tracking, and provider health.
-
 #### /runs
 
 Show dispatch run history.
@@ -317,10 +307,6 @@ Open the PanCode dashboard.
 
 Displays a visual summary with mode badge, active dispatches, session statistics, context window bar, and budget status.
 
-### /status
-
-Alias for `/dashboard`.
-
 ### /theme
 
 Inspect or change the active PanCode theme.
@@ -339,16 +325,6 @@ List PanCode-visible models or switch model.
 /models provider/model-id      # Switch to specific model
 ```
 
-### /preferences
-
-Show or change PanCode preferences.
-
-```
-/preferences
-```
-
-Alias: `/settings`
-
 ### /reasoning
 
 Inspect or change the reasoning preference.
@@ -357,8 +333,6 @@ Inspect or change the reasoning preference.
 /reasoning              # Show current level
 /reasoning <level>      # Set level: off|minimal|low|medium|high|xhigh
 ```
-
-Alias: `/thinking`
 
 ### /modes
 
