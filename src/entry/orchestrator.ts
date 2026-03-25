@@ -12,6 +12,7 @@ import { createSafeEventBus } from "../core/event-bus";
 import { ensureProjectRuntime } from "../core/init";
 import { resolvePackageRoot } from "../core/package-root";
 import { ensurePresetsFile, loadPreset } from "../core/presets";
+import { acquireSessionLock } from "../core/session-lock.js";
 import { installSigintDoubleTap, shutdownCoordinator } from "../core/termination";
 import { type PanCodeReasoningPreference, resolveThinkingLevelForPreference } from "../core/thinking";
 import { getConfigDir, getDataDir } from "../core/xdg";
@@ -374,6 +375,13 @@ export async function runOrchestratorEntry(): Promise<void> {
   }
 
   ensureProjectRuntime(config);
+
+  // Acquire a session lock so concurrent instances targeting the same project
+  // are detected. The lock is released by releaseAllSessionLocks() in the exit
+  // handler (wired in loader.ts). Use the preset name if available, otherwise
+  // fall back to the PID to guarantee uniqueness.
+  const sessionId = process.env.PANCODE_PRESET ?? process.pid.toString();
+  acquireSessionLock(sessionId);
 
   // Reap orphaned runs from a previous session before domains initialize.
   // Any runs left in "running" or "pending" from a crashed or killed session
