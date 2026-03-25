@@ -9,8 +9,10 @@ export class PanCodeInteractiveShell {
   readonly productName = PANCODE_PRODUCT_NAME;
   private readonly mode: InstanceType<typeof InteractiveMode>;
 
+  private readonly initPromise: Promise<void>;
+
   constructor(session: AgentSession, options: PanCodeInteractiveShellOptions = {}) {
-    installPanCodeShellOverrides();
+    this.initPromise = installPanCodeShellOverrides();
     this.mode = new InteractiveMode(session, {
       verbose: false,
       ...options,
@@ -18,6 +20,7 @@ export class PanCodeInteractiveShell {
   }
 
   async run(): Promise<void> {
+    await this.initPromise;
     await this.mode.run();
   }
 

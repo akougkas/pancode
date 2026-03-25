@@ -8,6 +8,25 @@ import { ensureProjectRuntime } from "../core/init";
 import { redact } from "../core/redaction";
 import { buildWorkerModelArgs, createWorkerEnvironment } from "./provider-bridge";
 
+/** Logged once per worker when NDJSON usage fields are missing from a Pi SDK event. */
+let ndjsonUsageWarned = false;
+
+function extractWorkerUsageField(usage: Record<string, unknown>, primary: string, ...fallbacks: string[]): number {
+  const val = usage[primary];
+  if (typeof val === "number") return val;
+  for (const fb of fallbacks) {
+    const fbVal = usage[fb];
+    if (typeof fbVal === "number") return fbVal;
+  }
+  if (!ndjsonUsageWarned && Object.keys(usage).length > 0) {
+    ndjsonUsageWarned = true;
+    console.warn(
+      `[pancode:worker] NDJSON event missing expected usage.${primary} field. Token tracking may be inaccurate. Pi SDK usage schema may have changed.`,
+    );
+  }
+  return 0;
+}
+
 interface WorkerArgs {
   prompt: string | null;
   resultFile: string | null;
@@ -168,12 +187,30 @@ function collectAssistantStateFromEvent(event: any, state: AssistantState): void
     if (message?.role === "assistant") {
       state.usage.turns++;
       const usage = message.usage;
-      if (usage) {
-        state.usage.inputTokens += usage.input ?? 0;
-        state.usage.outputTokens += usage.output ?? 0;
-        state.usage.cacheReadTokens += usage.cacheRead ?? 0;
-        state.usage.cacheWriteTokens += usage.cacheWrite ?? 0;
-        state.usage.cost += usage.cost?.total ?? 0;
+      if (usage && typeof usage === "object") {
+        state.usage.inputTokens += extractWorkerUsageField(usage, "input", "inputTokens", "input_tokens");
+        state.usage.outputTokens += extractWorkerUsageField(usage, "output", "outputTokens", "output_tokens");
+        state.usage.cacheReadTokens += extractWorkerUsageField(
+          usage,
+          "cacheRead",
+          "cacheReadTokens",
+          "cache_read_input_tokens",
+        );
+        state.usage.cacheWriteTokens += extractWorkerUsageField(
+          usage,
+          "cacheWrite",
+          "cacheWriteTokens",
+          "cache_creation_input_tokens",
+        );
+        const costObj = usage.cost;
+        state.usage.cost +=
+          typeof costObj === "object" && costObj !== null
+            ? (((costObj as Record<string, unknown>).total as number) ??
+              ((costObj as Record<string, unknown>).usd as number) ??
+              0)
+            : typeof costObj === "number"
+              ? costObj
+              : 0;
       }
       if (message.stopReason === "error" && typeof message.errorMessage === "string") {
         state.assistantError = message.errorMessage;

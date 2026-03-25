@@ -188,6 +188,9 @@ function isWorkerActionAllowed(mode: string, action: ActionClass): boolean {
 const safetyExtension: ExtensionFactory = (pi) => {
   const autonomyMode = process.env.PANCODE_SAFETY ?? "auto-edit";
 
+  // Track tool call IDs that were blocked. Used to verify the SDK honored the block.
+  const blockedToolCalls = new Set<string>();
+
   // Safety gating: enforce full policy matrix on tool calls.
   // Workers inherit the orchestrator's autonomy mode and cannot exceed it.
   pi.on("tool_call", (event: ToolCallEvent): { block?: boolean; reason?: string } | undefined => {
@@ -196,6 +199,7 @@ const safetyExtension: ExtensionFactory = (pi) => {
 
     // Check base action class against policy
     if (!isWorkerActionAllowed(autonomyMode, actionClass)) {
+      blockedToolCalls.add(event.toolCallId ?? event.toolName);
       return {
         block: true,
         reason: `[pancode:worker-safety] Safety level "${autonomyMode}" blocks ${actionClass}`,
@@ -209,6 +213,7 @@ const safetyExtension: ExtensionFactory = (pi) => {
       if (command) {
         const bashAction = classifyWorkerBashCommand(command);
         if (!isWorkerActionAllowed(autonomyMode, bashAction)) {
+          blockedToolCalls.add(event.toolCallId ?? event.toolName);
           return {
             block: true,
             reason: `[pancode:worker-safety] Safety level "${autonomyMode}" blocks ${bashAction}`,
@@ -218,6 +223,19 @@ const safetyExtension: ExtensionFactory = (pi) => {
     }
 
     return undefined;
+  });
+
+  // Verification guard: if a blocked tool starts executing anyway, the SDK is
+  // not honoring tool_call return values. Log a CRITICAL warning so operators
+  // know safety gating has failed open.
+  pi.on("tool_execution_start", (event) => {
+    const id = event.toolCallId ?? event.toolName;
+    if (blockedToolCalls.has(id)) {
+      console.error(
+        `[pancode:safety] CRITICAL: Tool "${event.toolName}" executed despite block. Pi SDK may not honor tool_call return values. Safety gating may be ineffective.`,
+      );
+      blockedToolCalls.delete(id);
+    }
   });
 
   // Coordination tools: register only if env vars are present

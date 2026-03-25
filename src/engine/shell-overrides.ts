@@ -26,11 +26,31 @@
  *    actionHandlers becomes private or the action name changes, the override
  *    silently fails and Shift+Tab reverts to Pi's thinking level cycling.
  */
-import { BUILTIN_SLASH_COMMANDS } from "@pancode/pi-coding-agent/core/slash-commands.js";
 import { BusChannel } from "../core/bus-events";
 import { sharedBus } from "../core/shared-bus";
 import { PANCODE_PRODUCT_NAME } from "../core/shell-metadata";
 import { InteractiveMode } from "./session";
+
+/**
+ * Loaded dynamically to avoid hard failure if Pi SDK restructures internal modules.
+ * When null, built-in command hiding is unavailable but PanCode still boots.
+ */
+let BUILTIN_SLASH_COMMANDS: Array<{ name: string; description: string }> | null = null;
+
+async function loadBuiltinSlashCommands(): Promise<void> {
+  try {
+    const mod = await import("@pancode/pi-coding-agent/core/slash-commands.js");
+    if (Array.isArray(mod.BUILTIN_SLASH_COMMANDS)) {
+      BUILTIN_SLASH_COMMANDS = mod.BUILTIN_SLASH_COMMANDS as Array<{ name: string; description: string }>;
+    } else {
+      console.warn("[pancode] BUILTIN_SLASH_COMMANDS is not an array. Built-in command hiding unavailable.");
+    }
+  } catch {
+    console.warn(
+      "[pancode] Pi SDK internal path core/slash-commands.js not found. Built-in command hiding unavailable.",
+    );
+  }
+}
 
 interface ShellPatchedInteractiveMode {
   session: {
@@ -81,12 +101,10 @@ const HIDDEN_BUILTIN_NAMES = new Set([
 ]);
 
 function patchBuiltinCommands(): void {
+  if (!BUILTIN_SLASH_COMMANDS) return;
+
   // BUILTIN_SLASH_COMMANDS is typed ReadonlyArray but is a plain JS array at runtime.
   // Mutating it is the only way to control what Pi SDK exposes in autocomplete and help.
-  if (!Array.isArray(BUILTIN_SLASH_COMMANDS)) {
-    console.error("[pancode] WARNING: BUILTIN_SLASH_COMMANDS is not an array. Builtin command hiding skipped.");
-    return;
-  }
   const commands = BUILTIN_SLASH_COMMANDS as unknown as Array<{ name: string; description: string }>;
 
   // Remove all commands PanCode shadows. Iterate backwards to avoid index shift.
@@ -106,10 +124,11 @@ async function routeToShellCommand(mode: ShellPatchedInteractiveMode, command: s
 
 let installed = false;
 
-export function installPanCodeShellOverrides(): void {
+export async function installPanCodeShellOverrides(): Promise<void> {
   if (installed) return;
   installed = true;
 
+  await loadBuiltinSlashCommands();
   patchBuiltinCommands();
 
   const prototype = InteractiveMode.prototype as unknown as {
@@ -132,13 +151,17 @@ export function installPanCodeShellOverrides(): void {
     shutdown?: () => Promise<void>;
   };
 
+  let patchCount = 0;
+  const totalPatches = 7;
+
   // === Settings ===
   if (typeof prototype.showSettingsSelector === "function") {
     prototype.showSettingsSelector = function showSettingsSelector(this: ShellPatchedInteractiveMode) {
       void routeToShellCommand(this, "/settings");
     };
+    patchCount++;
   } else {
-    console.error("[pancode] WARNING: InteractiveMode.showSettingsSelector not found. Settings patch skipped.");
+    console.warn("[pancode] InteractiveMode.showSettingsSelector not found. Settings patch skipped.");
   }
 
   // === Models ===
@@ -165,14 +188,18 @@ export function installPanCodeShellOverrides(): void {
       const suffix = trimmed ? ` ${trimmed}` : "";
       await routeToShellCommand(this, `/models${suffix}`);
     };
+    patchCount++;
   } else {
-    console.error("[pancode] WARNING: InteractiveMode.handleModelCommand not found. Model command patch skipped.");
+    console.warn("[pancode] InteractiveMode.handleModelCommand not found. Model command patch skipped.");
   }
 
   if (typeof prototype.showModelsSelector === "function") {
     prototype.showModelsSelector = async function showModelsSelector(this: ShellPatchedInteractiveMode) {
       await routeToShellCommand(this, "/models");
     };
+    patchCount++;
+  } else {
+    console.warn("[pancode] InteractiveMode.showModelsSelector not found. Models selector patch skipped.");
   }
 
   // === /new: emit reset event before Pi creates a new session ===
@@ -184,6 +211,9 @@ export function installPanCodeShellOverrides(): void {
         await originalClear.call(this);
       }
     };
+    patchCount++;
+  } else {
+    console.warn("[pancode] InteractiveMode.handleClearCommand not found. Clear command patch skipped.");
   }
 
   // === /compact: emit compaction event, then call Pi's handler ===
@@ -198,6 +228,9 @@ export function installPanCodeShellOverrides(): void {
         await originalCompact.call(this, customInstructions);
       }
     };
+    patchCount++;
+  } else {
+    console.warn("[pancode] InteractiveMode.handleCompactCommand not found. Compact command patch skipped.");
   }
 
   // === /reload: emit event, then call Pi's handler ===
@@ -209,6 +242,9 @@ export function installPanCodeShellOverrides(): void {
       }
       sharedBus.emit(BusChannel.EXTENSIONS_RELOADED, {});
     };
+    patchCount++;
+  } else {
+    console.warn("[pancode] InteractiveMode.handleReloadCommand not found. Reload command patch skipped.");
   }
 
   // === /session: route to PanCode wrapper that adds domain state summary ===
@@ -223,6 +259,16 @@ export function installPanCodeShellOverrides(): void {
     prototype.handleHotkeysCommand = function handleHotkeysCommand(this: ShellPatchedInteractiveMode) {
       void routeToShellCommand(this, "/hotkeys");
     };
+  }
+
+  // Summary: warn if no patches applied (SDK incompatible) or partial success.
+  if (patchCount === 0) {
+    console.error(
+      "[pancode] WARNING: No Pi SDK shell overrides could be applied. PanCode commands may not work correctly. " +
+        "Pi SDK version may be incompatible.",
+    );
+  } else if (patchCount < totalPatches) {
+    console.warn(`[pancode] ${patchCount}/${totalPatches} shell overrides applied. Some commands may use Pi defaults.`);
   }
 
   // Pass-through commands: Pi's hardcoded routing calls these methods directly.

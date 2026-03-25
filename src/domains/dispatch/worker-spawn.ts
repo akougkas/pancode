@@ -13,6 +13,29 @@ import type {
 import { isSdkRuntime } from "../../engine/runtimes/types";
 import { healthMonitor } from "./health";
 
+/** Logged once per process when NDJSON usage fields are missing from a Pi SDK event. */
+let ndjsonUsageWarned = false;
+
+/**
+ * Extract a numeric usage field with fallback alternative field names.
+ * Warns once per session if the expected field is missing and no fallback matches.
+ */
+function extractUsageField(usage: Record<string, unknown>, primary: string, ...fallbacks: string[]): number {
+  const val = usage[primary];
+  if (typeof val === "number") return val;
+  for (const fb of fallbacks) {
+    const fbVal = usage[fb];
+    if (typeof fbVal === "number") return fbVal;
+  }
+  if (!ndjsonUsageWarned && Object.keys(usage).length > 0) {
+    ndjsonUsageWarned = true;
+    console.warn(
+      `[pancode] NDJSON event missing expected usage.${primary} field. Token tracking may be inaccurate. Pi SDK usage schema may have changed.`,
+    );
+  }
+  return 0;
+}
+
 export interface WorkerResult {
   exitCode: number;
   result: string;
@@ -417,12 +440,20 @@ function spawnWorkerNdjsonPath(
 
       accTurns++;
       const usage = msg.usage;
-      if (usage) {
-        accInputTokens += usage.input ?? 0;
-        accOutputTokens += usage.output ?? 0;
-        accCacheRead += usage.cacheRead ?? 0;
-        accCacheWrite += usage.cacheWrite ?? 0;
-        accCost += usage.cost?.total ?? 0;
+      if (usage && typeof usage === "object") {
+        accInputTokens += extractUsageField(usage, "input", "inputTokens", "input_tokens");
+        accOutputTokens += extractUsageField(usage, "output", "outputTokens", "output_tokens");
+        accCacheRead += extractUsageField(usage, "cacheRead", "cacheReadTokens", "cache_read_input_tokens");
+        accCacheWrite += extractUsageField(usage, "cacheWrite", "cacheWriteTokens", "cache_creation_input_tokens");
+        const costObj = usage.cost;
+        accCost +=
+          typeof costObj === "object" && costObj !== null
+            ? (((costObj as Record<string, unknown>).total as number) ??
+              ((costObj as Record<string, unknown>).usd as number) ??
+              0)
+            : typeof costObj === "number"
+              ? costObj
+              : 0;
       }
 
       // Per-run budget cap: kill the worker if accumulated cost exceeds the cap.

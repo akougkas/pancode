@@ -153,21 +153,37 @@ async function runSingleScout(query: string, options: ScoutRunOptions): Promise<
         // Soft budget: steer the scout to wrap up with return budget guidance.
         if (toolCalls >= softBudget && !steered) {
           steered = true;
-          agent.steer({
-            role: "user",
-            content: [
-              {
-                type: "text",
-                text: `BUDGET REACHED (${toolCalls} tool calls). Stop exploring. ${RETURN_BUDGET_GUIDANCE[returnBudget]} Write your REPORT: section now.`,
-              },
-            ],
-            timestamp: Date.now(),
-          });
+          try {
+            agent.steer({
+              role: "user",
+              content: [
+                {
+                  type: "text",
+                  text: `BUDGET REACHED (${toolCalls} tool calls). Stop exploring. ${RETURN_BUDGET_GUIDANCE[returnBudget]} Write your REPORT: section now.`,
+                },
+              ],
+              timestamp: Date.now(),
+            });
+          } catch (err) {
+            if (err instanceof TypeError && String(err).includes("is not a function")) {
+              console.error("[pancode:shadow] Agent.steer() not available. Pi SDK agent-core API may have changed.");
+            } else {
+              throw err;
+            }
+          }
         }
 
         // Hard safety cap: abort if the model ignores the steer entirely.
         if (toolCalls >= hardCap) {
-          agent.abort();
+          try {
+            agent.abort();
+          } catch (err) {
+            if (err instanceof TypeError && String(err).includes("is not a function")) {
+              console.error("[pancode:shadow] Agent.abort() not available. Pi SDK agent-core API may have changed.");
+            } else {
+              throw err;
+            }
+          }
         }
 
         return undefined;
@@ -182,27 +198,56 @@ async function runSingleScout(query: string, options: ScoutRunOptions): Promise<
     // Collect ALL text responses across turns. The scout may produce partial
     // observations between tool calls, plus a final structured report after steer.
     const textParts: string[] = [];
-    agent.subscribe((event) => {
-      if (event.type === "message_end" && "message" in event) {
-        const msg = event.message;
-        if (msg?.role === "assistant" && Array.isArray(msg.content)) {
-          for (const part of msg.content) {
-            if (part && typeof part === "object" && "type" in part && part.type === "text" && "text" in part) {
-              const text = String(part.text).trim();
-              if (text.length > 0) {
-                textParts.push(text);
+    try {
+      agent.subscribe((event) => {
+        if (event.type === "message_end" && "message" in event) {
+          const msg = event.message;
+          if (msg?.role === "assistant" && Array.isArray(msg.content)) {
+            for (const part of msg.content) {
+              if (part && typeof part === "object" && "type" in part && part.type === "text" && "text" in part) {
+                const text = String(part.text).trim();
+                if (text.length > 0) {
+                  textParts.push(text);
+                }
               }
             }
           }
         }
+      });
+    } catch (err) {
+      if (err instanceof TypeError && String(err).includes("is not a function")) {
+        console.error("[pancode:shadow] Agent.subscribe() not available. Pi SDK agent-core API may have changed.");
+      } else {
+        throw err;
       }
-    });
+    }
 
-    const abortHandler = () => agent.abort();
+    const abortHandler = () => {
+      try {
+        agent.abort();
+      } catch (err) {
+        if (err instanceof TypeError && String(err).includes("is not a function")) {
+          console.error("[pancode:shadow] Agent.abort() not available. Pi SDK agent-core API may have changed.");
+        }
+        // Swallow: abort handler is best-effort on external signal.
+      }
+    };
     options.signal?.addEventListener("abort", abortHandler, { once: true });
 
     try {
       await agent.prompt(query);
+    } catch (err) {
+      if (err instanceof TypeError && String(err).includes("is not a function")) {
+        console.error("[pancode:shadow] Agent.prompt() not available. Pi SDK agent-core API may have changed.");
+        return {
+          query,
+          response: "",
+          toolCalls: 0,
+          durationMs: Date.now() - startTime,
+          error: "Agent.prompt() not available. Pi SDK agent-core API may have changed.",
+        };
+      }
+      throw err;
     } finally {
       options.signal?.removeEventListener("abort", abortHandler);
     }
