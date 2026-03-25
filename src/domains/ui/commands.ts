@@ -550,29 +550,37 @@ const MODEL_HINT_SHORTCUTS = ["shift+tab:mode", "alt+a:admin"] as const;
 
 export function createCommandHandlers(state: UiCommandState, cb: UiCommandCallbacks): CommandHandlers {
   const handleThemeCommand: CommandHandler = async (args, ctx) => {
-    const request = args.trim();
+    const request = args.trim().toLowerCase();
     const themes = ctx.ui
       .getAllThemes()
       .map((themeInfo) => themeInfo.name)
       .sort();
 
+    // Apply theme if a valid name was provided
+    if (request && request !== "list" && themes.includes(request)) {
+      process.env.PANCODE_THEME = request;
+      state.currentThemeName = request;
+      persistSettings({ theme: request }, (msg, lvl) => ctx.ui.notify(msg, lvl));
+      ctx.ui.notify(`Theme set to "${request}".`, "info");
+      return;
+    }
+
     const currentTheme = ctx.ui.theme.name ?? state.currentThemeName;
     const themeRows: PanelRow[] = themes.map((name) => text(`${name === currentTheme ? "*" : "-"} ${name}`));
 
     const sections: PanelSection[] = [
-      { rows: [text(readOnlyBanner())] },
       { rows: [kv("Current:", `${currentTheme}  ${inlineHint("switch to dark theme")}`)] },
       { heading: "Available:", rows: themeRows },
     ];
 
     if (request && request !== "list") {
       sections.push({
-        rows: [text(`To apply "${request}", ask Panos: "switch to ${request} theme"`)],
+        rows: [text(`Unknown theme "${request}". Use one of the names listed above.`)],
       });
     }
 
     sections.push({
-      rows: [text(settingHint(["use dark theme", "switch to light theme"], ["shift+tab:mode", "alt+a:admin"]))],
+      rows: [text(settingHint(["use dark theme", "/theme dark"], ["shift+tab:mode", "alt+a:admin"]))],
     });
 
     sendPanelSpec(cb.emitPanel, { title: `${PANCODE_PRODUCT_NAME} Themes`, sections });
@@ -1036,22 +1044,42 @@ export function createCommandHandlers(state: UiCommandState, cb: UiCommandCallba
       {
         heading: "PanCode Shortcuts",
         rows: [
-          kv("shift+tab", "Cycle mode (Plan, Build, Review)"),
+          kv(
+            "shift+tab",
+            "Cycle mode (Plan > Build > Review). Auto-sets reasoning per mode unless explicitly overridden.",
+          ),
           kv("alt+a", "Toggle Admin (God) mode"),
-          kv("ctrl+y", "Cycle safety level (suggest, auto-edit, full-auto)"),
+          kv("ctrl+y", "Cycle safety level (suggest > auto-edit > full-auto). Replaces Emacs yank (kill-ring paste)."),
         ],
       },
       {
-        heading: "Pi SDK Shortcuts",
+        heading: "Navigation and Input",
         rows: [
           kv("ctrl+c", "Interrupt current generation"),
           kv("ctrl+d", "Exit PanCode"),
-          kv("escape", "Cancel current input"),
-          kv("ctrl+o", "Expand tool details"),
-          kv("ctrl+t", "Toggle thinking display"),
-          kv("ctrl+p", "Cycle model forward"),
-          kv("ctrl+l", "Select model"),
+          kv("escape", "Cancel current input or dismiss"),
+          kv("shift+enter", "Insert new line without submitting"),
           kv("alt+enter", "Submit follow-up message"),
+          kv("ctrl+v", "Paste image from clipboard"),
+        ],
+      },
+      {
+        heading: "Model and Thinking",
+        rows: [
+          kv("ctrl+p", "Cycle model forward"),
+          kv("shift+ctrl+p", "Cycle model backward"),
+          kv("ctrl+l", "Select model (interactive)"),
+          kv("ctrl+t", "Toggle thinking display"),
+          kv("ctrl+o", "Expand tool details"),
+        ],
+      },
+      {
+        heading: "Editor",
+        rows: [
+          kv("ctrl+g", "Open external editor"),
+          kv("ctrl+k", "Delete to end of line"),
+          kv("alt+up", "Dequeue last message"),
+          kv("ctrl+z", "Suspend to shell (fg to resume)"),
         ],
       },
     ];

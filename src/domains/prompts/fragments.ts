@@ -370,8 +370,8 @@ export const TOOL_LANGUAGE_PREFERENCE: Fragment = {
   category: "tool-guidance",
   estimatedTokens: 15,
   text: [
-    "TOOLS:For data analysis and scripting, use Node.js (node) not Python.",
-    "TOOLS:The runtime environment always has Node.js available. Python may not be installed.",
+    "TOOLS:For data analysis and scripting, always use Node.js (`node -e` or `node -`). Never use `python` or `python3`.",
+    "TOOLS:The PanCode runtime guarantees Node.js is available. Python is NOT installed. Do not attempt Python commands.",
   ].join("\n"),
 };
 

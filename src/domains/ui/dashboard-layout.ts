@@ -168,7 +168,7 @@ function renderStandardDashboard(state: DashboardState, width: number, height: n
   // Dispatch table + Log viewer (main column, split 45:55 with consistent 2-char gap)
   const dispatchWidth = Math.max(30, Math.floor((mainWidth - COLUMN_GAP) * 0.45));
   const logWidth = mainWidth - dispatchWidth - COLUMN_GAP;
-  const maxLogRows = 8;
+  const maxLogRows = 10;
 
   const dispatchPanel = renderDispatchTable(state.tasks, dispatchWidth, maxLogRows, c);
   const logPanel = renderLogViewer(state.logs, logWidth, maxLogRows, c);
@@ -273,7 +273,7 @@ function renderWideDashboard(state: DashboardState, width: number, height: numbe
   // Dispatch table + Log viewer (main column, split 45:55 with consistent 2-char gap)
   const dispatchWidth = Math.max(30, Math.floor((mainWidth - COLUMN_GAP) * 0.45));
   const logWidth = mainWidth - dispatchWidth - COLUMN_GAP;
-  const maxLogRows = 8;
+  const maxLogRows = 10;
 
   const dispatchPanel = renderDispatchTable(state.tasks, dispatchWidth, maxLogRows, c);
   const logPanel = renderLogViewer(state.logs, logWidth, maxLogRows, c);

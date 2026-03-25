@@ -3,7 +3,7 @@
  *
  * Platinum: full structured output with all usage fields (Pi native).
  * Gold: structured JSON with tokens, cost, model, and turns (Claude Code, OpenCode).
- * Silver: partial structured output, some fields missing (Codex, Gemini, Cline).
+ * Silver: partial structured output, some fields missing (Codex, Gemini).
  * Bronze: text-only output, no usage extraction (Copilot CLI).
  */
 export type TelemetryTier = "platinum" | "gold" | "silver" | "bronze";

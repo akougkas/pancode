@@ -1,3 +1,31 @@
+/**
+ * PI SDK UPGRADE CHECKLIST
+ *
+ * This file patches Pi SDK internals that are not part of any public API.
+ * When upgrading the Pi SDK, verify all of the following:
+ *
+ * 1. BUILTIN_SLASH_COMMANDS is still an Array (not frozen, not a Proxy).
+ *    patchBuiltinCommands() casts ReadonlyArray to Array and splices entries.
+ *    If the SDK freezes this array or uses a getter, splicing will throw or
+ *    silently fail. The guard at line ~56 logs a warning if the type changes.
+ *
+ * 2. InteractiveMode.prototype method names have not been renamed:
+ *    - showSettingsSelector, handleModelCommand, showModelsSelector
+ *    - handleClearCommand, handleCompactCommand, handleReloadCommand
+ *    - handleSessionCommand, handleHotkeysCommand
+ *    Each patch has a typeof guard that logs a warning if the method is
+ *    missing. Search for "WARNING:" in this file to find all guards.
+ *
+ * 3. Pi SDK's hardcoded command dispatch in the submit handler still routes
+ *    to the prototype methods listed above. If the SDK changes its routing
+ *    (e.g., to a command registry), the prototype patches will stop working
+ *    even though the typeof guards pass.
+ *
+ * 4. CustomEditor.actionHandlers is still a public Map<string, () => void>.
+ *    The UI extension replaces the "cycleThinkingLevel" action handler. If
+ *    actionHandlers becomes private or the action name changes, the override
+ *    silently fails and Shift+Tab reverts to Pi's thinking level cycling.
+ */
 import { BUILTIN_SLASH_COMMANDS } from "@pancode/pi-coding-agent/core/slash-commands.js";
 import { BusChannel } from "../core/bus-events";
 import { sharedBus } from "../core/shared-bus";
@@ -28,7 +56,9 @@ interface ShellPatchedInteractiveMode {
  */
 const HIDDEN_BUILTIN_NAMES = new Set([
   "model",
-  "scoped-models",
+  // "scoped-models" is NOT hidden. Pi's /scoped-models controls Ctrl+P model
+  // cycling scope. Users need access to configure which models appear in the
+  // cycle. Pass-through to Pi's native handler.
   "settings",
   "export",
   "share",
@@ -43,8 +73,10 @@ const HIDDEN_BUILTIN_NAMES = new Set([
   "logout",
   "new",
   "compact",
-  "resume",
-  "quit",
+  // "resume" is NOT hidden. Pi's /resume enables session switching. Users may
+  // want to resume a previous session. Pass-through to Pi's native handler.
+  // "quit" is NOT hidden. Pi's /quit provides a native exit command that users
+  // expect. PanCode's /exit is an alias registered via the UI domain.
   "reload",
 ]);
 

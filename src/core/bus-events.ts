@@ -154,3 +154,27 @@ export interface BusEventMap {
   [BusChannel.PROMPT_COMPILED]: PromptCompiledEvent;
   [BusChannel.CONFIG_CHANGED]: ConfigChangedEvent;
 }
+
+// ---------------------------------------------------------------------------
+// Typed bus helpers
+// ---------------------------------------------------------------------------
+// The underlying SafeEventBus accepts plain strings and unknown payloads.
+// These wrappers provide compile-time type checking for channel/payload
+// pairs, preventing typos in channel names and payload shape mismatches.
+// New code should prefer these over raw sharedBus.emit/on calls.
+
+import type { SafeEventBus } from "./event-bus";
+
+/** Type-safe emit: the payload must match BusEventMap[channel]. */
+export function typedEmit<K extends keyof BusEventMap>(bus: SafeEventBus, channel: K, payload: BusEventMap[K]): void {
+  bus.emit(channel, payload);
+}
+
+/** Type-safe subscribe: the listener receives the correctly typed payload. */
+export function typedOn<K extends keyof BusEventMap>(
+  bus: SafeEventBus,
+  channel: K,
+  listener: (payload: BusEventMap[K]) => void | Promise<void>,
+): () => void {
+  return bus.on(channel, listener as (payload: unknown) => void | Promise<void>);
+}

@@ -215,6 +215,12 @@ export const extension = defineExtension((pi) => {
   let adminPreviousSafety: SafetyLevel | null = null;
   let adminPreviousReasoning: PanCodeReasoningPreference | null = null;
 
+  // When true, mode transitions (Shift+Tab) will not auto-apply the mode's
+  // default reasoning level. Set to true when the user explicitly changes
+  // reasoning via pan_apply_config or (future) /reasoning command. Cleared
+  // on session reset so fresh sessions start with mode-driven reasoning.
+  let reasoningExplicitlySet = false;
+
   const handlers = createCommandHandlers(state, {
     emitPanel,
     getThinkingLevel: () => pi.getThinkingLevel(),
@@ -296,10 +302,13 @@ export const extension = defineExtension((pi) => {
           // restore previous values on Admin exit. Ensures chat-based mode changes
           // ("enter admin mode") trigger the same expansion as the Alt+A shortcut.
           if (newMode === "admin" && previousMode !== "admin") {
+            adminPreviousMode = previousMode;
             adminPreviousSafety = (process.env.PANCODE_SAFETY ?? DEFAULT_SAFETY) as SafetyLevel;
             adminPreviousReasoning = state.currentReasoningPreference;
+            // Set full-auto in the runtime env but do NOT persist to disk.
+            // If PanCode crashes during admin mode, the next boot will use the
+            // previously persisted (safe) value instead of full-auto.
             process.env.PANCODE_SAFETY = "full-auto";
-            persistSettings({ safetyMode: "full-auto" }, (m, l) => ctx.ui.notify(m, l));
             applyReasoningLevel("xhigh", ctx.model, (m, l) => ctx.ui.notify(m, l));
             emitPanel(
               [
@@ -313,12 +322,16 @@ export const extension = defineExtension((pi) => {
           } else if (previousMode === "admin" && newMode !== "admin") {
             if (adminPreviousSafety !== null) {
               process.env.PANCODE_SAFETY = adminPreviousSafety;
+              // Persist the restored safety on admin exit. This is the only
+              // admin-related safety persistence, ensuring a crash during admin
+              // never leaves full-auto on disk.
               persistSettings({ safetyMode: adminPreviousSafety }, (m, l) => ctx.ui.notify(m, l));
             }
             if (adminPreviousReasoning !== null) {
               applyReasoningLevel(adminPreviousReasoning, ctx.model, (m, l) => ctx.ui.notify(m, l));
             }
             emitPanel(`[GOD MODE] Admin deactivated. Restored to ${modeDef.name} mode.`, "God Mode");
+            adminPreviousMode = null;
             adminPreviousSafety = null;
             adminPreviousReasoning = null;
           }
@@ -331,6 +344,7 @@ export const extension = defineExtension((pi) => {
           break;
         }
         case "runtime.reasoning": {
+          reasoningExplicitlySet = true;
           applyReasoningLevel(event.newValue as PanCodeReasoningPreference, ctx.model, (m, l) => ctx.ui.notify(m, l));
           break;
         }
@@ -339,6 +353,11 @@ export const extension = defineExtension((pi) => {
           break;
         }
         default:
+          // Keys intentionally not handled by the UI domain:
+          //   runtime.intelligence, models.*, budget.*, dispatch.*, preset.*
+          // These are consumed by their respective domains (scheduling,
+          // dispatch, panconfigure). If a new runtime.* key is added to
+          // config-schema.ts, add a case here to update the TUI display.
           break;
       }
       syncEditorDisplay();
@@ -812,6 +831,7 @@ export const extension = defineExtension((pi) => {
     });
 
     sharedBus.on(BusChannel.SESSION_RESET, () => {
+      reasoningExplicitlySet = false;
       logNow("Session reset", "warn", true);
     });
 
@@ -853,13 +873,31 @@ export const extension = defineExtension((pi) => {
       // Replace Pi SDK's shift+tab (cycleThinkingLevel) with PanCode mode cycling.
       // The actionHandlers map is keyed by AppAction strings. We replace the handler
       // rather than delete it, so shift+tab still routes through the keybinding system.
-      const editorHandlers = pancodeEditor.actionHandlers as Map<string, () => void>;
-      editorHandlers.set("cycleThinkingLevel", () => {
+      // Guard: if actionHandlers is not a Map or lacks the expected key, log a
+      // warning and skip. A Pi TUI update could rename or restructure this.
+      const editorHandlers = pancodeEditor.actionHandlers as Map<string, () => void> | undefined;
+      if (!(editorHandlers instanceof Map) || !editorHandlers.has("cycleThinkingLevel")) {
+        console.error(
+          "[pancode] WARNING: PanCodeEditor.actionHandlers missing or 'cycleThinkingLevel' not found. " +
+            "Shift+Tab mode cycling will not work.",
+        );
+      }
+      editorHandlers?.set("cycleThinkingLevel", () => {
+        const prev = getCurrentMode();
         const def = cycleModeTo();
-        applyReasoningLevel(def.reasoningLevel, ctx.model, (m, l) => ctx.ui.notify(m, l));
-        ctx.ui.setStatus("mode", `[${def.name}]`);
-        emitModeTransition(def);
-        syncEditorDisplay();
+        // Only auto-apply the mode's default reasoning if the user has not
+        // explicitly overridden reasoning via pan_apply_config or /reasoning.
+        if (!reasoningExplicitlySet) {
+          applyReasoningLevel(def.reasoningLevel, ctx.model, (m, l) => ctx.ui.notify(m, l));
+        }
+        // Emit CONFIG_CHANGED so all subscribers (including this domain's own
+        // handler) are notified. The handler sets status, emits the mode
+        // transition message, and syncs the editor display.
+        sharedBus.emit(BusChannel.CONFIG_CHANGED, {
+          key: "runtime.mode",
+          previousValue: prev,
+          newValue: def.id,
+        } as ConfigChangedEvent);
       });
     }
     syncEditorDisplay();
@@ -896,11 +934,18 @@ export const extension = defineExtension((pi) => {
   pi.registerShortcut("ctrl+y", {
     description: "Cycle safety level (suggest, auto-edit, full-auto)",
     handler: async (ctx) => {
+      const prev = (process.env.PANCODE_SAFETY ?? DEFAULT_SAFETY) as SafetyLevel;
       const next = cycleSafety();
       process.env.PANCODE_SAFETY = next;
       persistSettings({ safetyMode: next }, (message, level) => ctx.ui.notify(message, level));
-      ctx.ui.notify(`Safety: ${next}`, "info");
       syncEditorDisplay();
+      // Emit CONFIG_CHANGED so all subscribers are notified. The handler
+      // for runtime.safety displays the notification to the user.
+      sharedBus.emit(BusChannel.CONFIG_CHANGED, {
+        key: "runtime.safety",
+        previousValue: prev,
+        newValue: next,
+      } as ConfigChangedEvent);
     },
   });
 
@@ -938,8 +983,10 @@ export const extension = defineExtension((pi) => {
         setCurrentMode("admin");
         pi.setActiveTools(getToolsetForMode("admin"));
         const adminDef = getModeDefinition("admin");
+        // Set full-auto in the runtime env but do NOT persist to disk.
+        // If PanCode crashes during admin mode, the next boot will use the
+        // previously persisted (safe) value instead of full-auto.
         process.env.PANCODE_SAFETY = "full-auto";
-        persistSettings({ safetyMode: "full-auto" }, (m, l) => ctx.ui.notify(m, l));
         applyReasoningLevel("xhigh", ctx.model, (m, l) => ctx.ui.notify(m, l));
         ctx.ui.setStatus("mode", `[${adminDef.name}]`);
         emitPanel(
@@ -993,6 +1040,10 @@ export const extension = defineExtension((pi) => {
       messages: event.messages.filter((m) => {
         const ct = (m as MsgWithCustomType).customType;
         if (ct === PanMessageType.PANEL) return false;
+        // Mode transition messages are visual indicators for the user. They
+        // accumulate in context with every Shift+Tab press, consuming tokens
+        // and confusing models that interpret "[MODE SWITCH]" as instructions.
+        if (ct === PanMessageType.MODE_TRANSITION) return false;
         return true;
       }),
     };
@@ -1009,14 +1060,6 @@ export const extension = defineExtension((pi) => {
     },
   });
 
-  pi.registerCommand("status", {
-    description: "Show the PanCode session summary",
-    handler: async (args, ctx) => {
-      setView("dashboard");
-      await handlers.showDashboard(args, ctx);
-    },
-  });
-
   pi.registerCommand("theme", {
     description: "Inspect or change the active PanCode theme",
     handler: handlers.handleThemeCommand,
@@ -1027,11 +1070,12 @@ export const extension = defineExtension((pi) => {
     handler: handlers.handleModelsCommand,
   });
 
-  pi.registerCommand("preferences", {
-    description: "Show or change PanCode preferences",
-    handler: handlers.handlePreferencesCommand,
-  });
+  // /preferences removed (redundant with /settings). The handlePreferencesCommand
+  // handler remains available through /settings.
 
+  // NOTE: /settings uses the same name as Pi's built-in SettingsSelectorComponent.
+  // This registration only works because shell-overrides.ts hides the Pi built-in
+  // first. If shell-overrides fails, this registration is silently skipped.
   pi.registerCommand("settings", {
     description: "Show or change PanCode configuration",
     handler: handlers.handlePreferencesCommand,
@@ -1042,10 +1086,7 @@ export const extension = defineExtension((pi) => {
     handler: handlers.handleReasoningCommand,
   });
 
-  pi.registerCommand("thinking", {
-    description: "Backward-compatible alias for /reasoning",
-    handler: handlers.handleReasoningCommand,
-  });
+  // /thinking removed (redundant with /reasoning).
 
   pi.registerCommand("modes", {
     description: "Switch orchestrator mode (admin, plan, build, review)",
@@ -1077,6 +1118,10 @@ export const extension = defineExtension((pi) => {
     handler: handlers.handleExitCommand,
   });
 
+  // NOTE: /hotkeys uses the same name as Pi's built-in hotkeys display.
+  // This registration only works because shell-overrides.ts hides the Pi
+  // built-in first. If shell-overrides fails, this registration is silently
+  // skipped and Pi's native hotkeys display runs instead.
   pi.registerCommand("hotkeys", {
     description: "Show keyboard shortcuts",
     handler: handlers.handleHotkeysCommand,

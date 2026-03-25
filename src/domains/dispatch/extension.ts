@@ -25,9 +25,9 @@ import { dispatchChain, runParallel } from "./primitives";
 import { type ResilienceTracker, createResilienceTracker } from "./resilience";
 import { resolveWorkerRouting } from "./routing";
 import { DEFAULT_DISPATCH_RULES, type DispatchRule, evaluateRules } from "./rules";
+import { clearSessionStore, getContinuationArgs, storeSessionMeta } from "./session-continuity";
 import { RunLedger, createRunEnvelope } from "./state";
 import { initTaskStore, taskCheck, taskList, taskUpdate, taskWrite } from "./task-tools";
-import { clearSessionStore, getContinuationArgs, storeSessionMeta } from "./session-continuity";
 import { liveWorkerProcesses, spawnWorker, stopAllWorkers, workerProcessByRunId } from "./worker-spawn";
 
 function textResult(text: string): AgentToolResult<unknown> {
@@ -879,9 +879,7 @@ export const extension = defineExtension((pi) => {
 
           const chainContinuationArgs = getContinuationArgs(agent, routing.runtime, routing.runtimeArgs);
           const chainEffectiveArgs =
-            chainContinuationArgs.length > 0
-              ? [...routing.runtimeArgs, ...chainContinuationArgs]
-              : routing.runtimeArgs;
+            chainContinuationArgs.length > 0 ? [...routing.runtimeArgs, ...chainContinuationArgs] : routing.runtimeArgs;
 
           const result = await spawnWorker({
             task,
@@ -1130,109 +1128,8 @@ export const extension = defineExtension((pi) => {
     },
   });
 
-  pi.registerCommand("dispatch-insights", {
-    description: "Show dispatch analytics and rule evaluation",
-    async handler(_args, _ctx) {
-      if (!ledger) {
-        pi.sendMessage({
-          customType: PanMessageType.PANEL,
-          content: "Dispatch ledger not initialized.",
-          display: true,
-          details: { title: "PanCode Dispatch Insights" },
-        });
-        return;
-      }
-
-      const allRuns = ledger.getAll();
-      if (allRuns.length === 0) {
-        pi.sendMessage({
-          customType: PanMessageType.PANEL,
-          content: "No dispatch history.",
-          display: true,
-          details: { title: "PanCode Dispatch Insights" },
-        });
-        return;
-      }
-
-      // Aggregate stats by agent and runtime
-      const byAgent = new Map<string, { runs: number; ok: number; errored: number; totalMs: number }>();
-      const byRuntime = new Map<string, { runs: number; cost: number; totalMs: number; hasCosts: boolean }>();
-      for (const run of allRuns) {
-        const agentStats = byAgent.get(run.agent) ?? { runs: 0, ok: 0, errored: 0, totalMs: 0 };
-        agentStats.runs++;
-        if (run.status === "done") agentStats.ok++;
-        if (run.status === "error") agentStats.errored++;
-        const dMs =
-          run.completedAt && run.startedAt
-            ? new Date(run.completedAt).getTime() - new Date(run.startedAt).getTime()
-            : 0;
-        agentStats.totalMs += dMs;
-        byAgent.set(run.agent, agentStats);
-
-        const runtimeKey = run.runtime ?? "pi";
-        const rtStats = byRuntime.get(runtimeKey) ?? { runs: 0, cost: 0, totalMs: 0, hasCosts: false };
-        rtStats.runs++;
-        rtStats.cost += run.usage.cost ?? 0;
-        rtStats.totalMs += dMs;
-        if (run.usage.cost != null && run.usage.cost > 0) rtStats.hasCosts = true;
-        byRuntime.set(runtimeKey, rtStats);
-      }
-
-      const lines: string[] = [
-        `Dispatch Insights (${allRuns.length} total runs)`,
-        "",
-        `${"AGENT".padEnd(12)} ${"RUNS".padEnd(6)} ${"OK".padEnd(6)} ${"ERR".padEnd(6)} ${"ERR%".padEnd(8)} AVG TIME`,
-        `${"-----".padEnd(12)} ${"----".padEnd(6)} ${"--".padEnd(6)} ${"---".padEnd(6)} ${"----".padEnd(8)} --------`,
-      ];
-
-      for (const [agent, stats] of [...byAgent.entries()].sort((a, b) => b[1].runs - a[1].runs)) {
-        const errPct = stats.runs > 0 ? ((stats.errored / stats.runs) * 100).toFixed(0) : "0";
-        const avgMs = stats.runs > 0 ? stats.totalMs / stats.runs : 0;
-        const avgStr = avgMs > 60000 ? `${(avgMs / 60000).toFixed(1)}m` : `${(avgMs / 1000).toFixed(1)}s`;
-        lines.push(
-          `${agent.padEnd(12)} ${String(stats.runs).padEnd(6)} ${String(stats.ok).padEnd(6)} ${String(stats.errored).padEnd(6)} ${`${errPct}%`.padEnd(8)} ${avgStr}`,
-        );
-      }
-
-      // Runtime breakdown
-      if (byRuntime.size > 0) {
-        lines.push("", "RUNTIME BREAKDOWN");
-        for (const [runtime, stats] of [...byRuntime.entries()].sort((a, b) => b[1].runs - a[1].runs)) {
-          const runsLabel = stats.runs === 1 ? "1 run " : `${stats.runs} runs`;
-          const costStr = stats.hasCosts ? `$${stats.cost.toFixed(2)}` : "\u2014".padEnd(5);
-          const avgMs = stats.runs > 0 ? stats.totalMs / stats.runs : 0;
-          const avgStr = avgMs > 60000 ? `avg ${(avgMs / 60000).toFixed(1)}m` : `avg ${(avgMs / 1000).toFixed(1)}s`;
-          lines.push(`  ${runtime.padEnd(16)} ${runsLabel.padEnd(8)} ${costStr.padEnd(8)} ${avgStr}`);
-        }
-      }
-
-      // Recent runs
-      const recent = allRuns.slice(-5);
-      lines.push("", "Last 5 dispatches:");
-      for (const run of recent) {
-        const durationMs =
-          run.completedAt && run.startedAt
-            ? new Date(run.completedAt).getTime() - new Date(run.startedAt).getTime()
-            : 0;
-        const durStr = durationMs > 0 ? ` ${(durationMs / 1000).toFixed(1)}s` : "";
-        const truncatedTask = run.task.length > 40 ? `${run.task.slice(0, 37)}...` : run.task;
-        lines.push(`  [${run.id}] ${run.status.padEnd(9)} ${run.agent.padEnd(8)} ${truncatedTask}${durStr}`);
-      }
-
-      // Active dispatch rules
-      lines.push("", `Active dispatch rules: ${dispatchRules.length}`);
-      for (const rule of dispatchRules.slice(0, 5)) {
-        lines.push(`  ${rule.name}`);
-      }
-
-      pi.sendMessage({
-        customType: PanMessageType.PANEL,
-        content: lines.join("\n"),
-        display: true,
-        details: { title: "PanCode Dispatch Insights" },
-      });
-    },
-  });
+  // /dispatch-insights removed per locked decision #7. Use /cost for
+  // per-run cost breakdown and /runs for dispatch history.
 
   pi.registerCommand("runs", {
     description: "Show dispatch run history",

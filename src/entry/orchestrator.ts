@@ -272,7 +272,7 @@ export async function runOrchestratorEntry(): Promise<void> {
   });
 
   process.on("unhandledRejection", (reason) => {
-    const msg = `[pancode:crash] Unhandled rejection: ${reason instanceof Error ? reason.stack ?? reason.message : String(reason)}`;
+    const msg = `[pancode:crash] Unhandled rejection: ${reason instanceof Error ? (reason.stack ?? reason.message) : String(reason)}`;
     process.stderr.write(`${msg}\n`);
     try {
       appendFileSync(crashLogPath, `\n[${new Date().toISOString()}] ${msg}\n`);
@@ -454,9 +454,7 @@ export async function runOrchestratorEntry(): Promise<void> {
       try {
         model = resolveConfiguredModel(modelRegistry, {});
         const ref = `${model.provider}/${model.id}`;
-        bootFallbackMessage =
-          `Configured model unavailable. Using API fallback: ${ref}. ` +
-          "Run /models to see all available models.";
+        bootFallbackMessage = `Configured model unavailable. Using API fallback: ${ref}. Run /models to see all available models.`;
         console.warn(`[pancode:orchestrator] No local models; using API fallback: ${ref}`);
       } catch {
         // Broader resolution also failed (e.g. auth issue). Fall through to degraded mode.

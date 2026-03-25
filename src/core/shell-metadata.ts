@@ -37,11 +37,11 @@ export const PANCODE_SHELL_COMMANDS: readonly PanCodeShellCommand[] = [
   { name: "batches", description: "Show batch dispatch history", category: "dispatch" },
   { name: "stoprun", args: "<run-id>", description: "Stop a running dispatch", category: "dispatch" },
   { name: "cost", description: "Show per-run cost breakdown", category: "dispatch" },
-  { name: "dispatch-insights", description: "Dispatch rule evaluation log", category: "dispatch" },
 
   // AGENTS
   { name: "agents", description: "List registered PanCode agent specs", category: "agents" },
   { name: "runtimes", description: "List agent runtimes with availability status", category: "agents" },
+  { name: "workers", description: "Show the worker pool with scores", category: "agents" },
   { name: "skills", description: "List agent skills", category: "agents" },
 
   // OBSERVE
@@ -61,7 +61,6 @@ export const PANCODE_SHELL_COMMANDS: readonly PanCodeShellCommand[] = [
 
   // DISPLAY
   { name: "dashboard", description: "Open the PanCode dashboard", category: "display" },
-  { name: "status", description: "Show the PanCode session summary", category: "display" },
   {
     name: "models",
     args: "[provider | all]",
@@ -69,7 +68,7 @@ export const PANCODE_SHELL_COMMANDS: readonly PanCodeShellCommand[] = [
     category: "display",
   },
   { name: "settings", description: "Show PanCode configuration", category: "display" },
-  { name: "theme", args: "[list]", description: "Show current theme and available themes", category: "display" },
+  { name: "theme", args: "[name]", description: "Show or switch the active theme", category: "display" },
   {
     name: "modes",
     description: "Show orchestrator behavior modes",
@@ -83,6 +82,7 @@ export const PANCODE_SHELL_COMMANDS: readonly PanCodeShellCommand[] = [
   },
   { name: "help", description: "Show PanCode commands", category: "display" },
   { name: "exit", description: "Exit PanCode", category: "display" },
+  { name: "quit", description: "Exit PanCode (Pi built-in)", category: "display" },
 
   // UTILITY
   {

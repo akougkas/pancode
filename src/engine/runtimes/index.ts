@@ -21,7 +21,6 @@ export { ClaudeSdkRuntime } from "./adapters/claude-sdk";
 export { CodexRuntime } from "./adapters/codex";
 export { GeminiRuntime } from "./adapters/gemini";
 export { OpencodeRuntime } from "./adapters/opencode";
-export { ClineRuntime } from "./adapters/cline";
 export { CopilotCliRuntime } from "./adapters/copilot-cli";
 export {
   RemoteSdkRuntime,

@@ -51,16 +51,11 @@ export function storeSessionMeta(
  * or the user already specified continuation flags in runtimeArgs.
  *
  * Runtime-specific arg generation:
- *   cli:cline       -> ["--continue", "-T", taskId]
  *   cli:opencode    -> ["--continue", "--session", sessionId]
  *   cli:claude-code -> ["--resume", sessionId]
  *   sdk:claude-code -> ["--resume", sessionId]
  */
-export function getContinuationArgs(
-  agentName: string,
-  runtimeId: string,
-  existingRuntimeArgs: string[],
-): string[] {
+export function getContinuationArgs(agentName: string, runtimeId: string, existingRuntimeArgs: string[]): string[] {
   const entry = store.get(makeKey(agentName, runtimeId));
   if (!entry) return [];
 
@@ -80,9 +75,6 @@ export function getContinuationArgs(
   }
 
   switch (runtimeId) {
-    case "cli:cline":
-      if (entry.taskId) return ["--continue", "-T", entry.taskId];
-      break;
     case "cli:opencode":
       if (entry.sessionId) return ["--continue", "--session", entry.sessionId];
       break;
