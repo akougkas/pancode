@@ -202,8 +202,8 @@ export function renderAgentRegistry(
 
   lines.push(boxTop("AGENT_REGISTRY", panelWidth, c));
 
-  // Column headers (plain text, then dim)
-  const statusCol = 7;
+  // Column headers: statusCol sized for the longest state label ("ACTIVE" = 6).
+  const statusCol = 6;
   const nameCol = Math.max(1, inner - statusCol);
   const headerPlain = padRight("NAME", nameCol) + padRight("STATE", statusCol);
   lines.push(boxLine(c.dim(headerPlain), panelWidth, c));
@@ -212,8 +212,11 @@ export function renderAgentRegistry(
   if (agents.length === 0) {
     lines.push(boxLine(c.dim("Run /help to see available commands"), panelWidth, c));
   } else {
+    // Reserve 1 row for overflow indicator when agents exceed maxHeight.
     const maxRows = Math.max(0, maxHeight - 3);
-    const visible = agents.slice(0, maxRows);
+    const needsOverflow = agents.length > maxRows && maxRows > 0;
+    const displayRows = needsOverflow ? maxRows - 1 : Math.min(agents.length, maxRows);
+    const visible = agents.slice(0, displayRows);
     for (const agent of visible) {
       const rowPlain = padRight(truncate(agent.name, nameCol - 1), nameCol) + padRight(agent.status, statusCol);
       const colored =
@@ -225,6 +228,10 @@ export function renderAgentRegistry(
               ? c.warning(rowPlain)
               : c.dim(rowPlain);
       lines.push(boxLine(colored, panelWidth, c));
+    }
+    if (needsOverflow) {
+      const remaining = agents.length - displayRows;
+      lines.push(boxLine(c.dim(`+${remaining} more`), panelWidth, c));
     }
   }
 
@@ -297,9 +304,13 @@ function renderContextPanel(state: DashboardState, width: number, c: TuiColorize
     state.contextWindow > 0 ? `${tokUsed} / ${formatTokenCount(state.contextWindow)} [${pct}%]` : `${tokUsed} tokens`;
   lines.push(boxLine(tokLabel, width, c));
 
-  const barWidth = Math.max(8, inner);
-  const bar = renderProgressBar(state.contextPercent, 100, barWidth, c);
-  lines.push(boxLine(bar, width, c));
+  // Only render the progress bar when the context window limit is known.
+  // An empty bar is meaningless and looks like a rendering bug (#87).
+  if (state.contextWindow > 0) {
+    const barWidth = Math.max(8, inner);
+    const bar = renderProgressBar(state.contextPercent, 100, barWidth, c);
+    lines.push(boxLine(bar, width, c));
+  }
 
   lines.push(boxEmpty(width, c));
   lines.push(boxBottom(width, c));
@@ -619,8 +630,10 @@ export function renderExpandedMetricsPanel(state: DashboardState, width: number,
   const ctxLabel =
     state.contextWindow > 0 ? `${tokUsed} / ${formatTokenCount(state.contextWindow)} [${pct}%]` : `${tokUsed} tokens`;
   lines.push(boxLine(ctxLabel, width, c));
-  const barWidth = Math.max(8, inner);
-  lines.push(boxLine(renderProgressBar(state.contextPercent, 100, barWidth, c), width, c));
+  if (state.contextWindow > 0) {
+    const barWidth = Math.max(8, inner);
+    lines.push(boxLine(renderProgressBar(state.contextPercent, 100, barWidth, c), width, c));
+  }
   lines.push(boxEmpty(width, c));
 
   // Worker status section
