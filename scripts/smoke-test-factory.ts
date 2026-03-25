@@ -40,7 +40,6 @@ const EXPECTED_FLAGS: Record<string, string[]> = {
   "cli:codex": ["--json", "--cd"],
   "cli:gemini": ["--output-format", "--allowed-tools"],
   "cli:opencode": ["--format", "--dir", "--agent"],
-  "cli:cline": ["--json", "-c"],
   "cli:copilot-cli": ["--autopilot", "--no-color"],
 };
 

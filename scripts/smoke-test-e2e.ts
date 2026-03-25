@@ -275,7 +275,6 @@ async function phase3(): Promise<void> {
     { name: "codex:readonly", runtime: "cli:codex", runtimeArgs: [] as string[] },
     { name: "gemini:readonly", runtime: "cli:gemini", runtimeArgs: [] as string[] },
     { name: "opencode:readonly", runtime: "cli:opencode", runtimeArgs: [] as string[] },
-    { name: "cline:readonly", runtime: "cli:cline", runtimeArgs: [] as string[] },
     { name: "copilot-cli:readonly", runtime: "cli:copilot-cli", runtimeArgs: [] as string[] },
   ];
 
@@ -309,7 +308,6 @@ async function phase4(): Promise<void> {
     { name: "codex:mutable", runtime: "cli:codex", runtimeArgs: [] as string[] },
     { name: "gemini:mutable", runtime: "cli:gemini", runtimeArgs: [] as string[] },
     { name: "opencode:mutable", runtime: "cli:opencode", runtimeArgs: [] as string[] },
-    { name: "cline:mutable", runtime: "cli:cline", runtimeArgs: [] as string[] },
     { name: "copilot-cli:mutable", runtime: "cli:copilot-cli", runtimeArgs: [] as string[] },
   ];
 

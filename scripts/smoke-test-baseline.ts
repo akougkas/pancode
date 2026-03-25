@@ -353,7 +353,6 @@ function phase3(): void {
     prompts: ["prompt-debug", "prompt-version", "prompt-workers"],
     ui: [
       "dashboard",
-      "status",
       "theme",
       "models",
       "preferences",
@@ -457,7 +456,7 @@ function phase4(): void {
   });
 
   // Verify each CLI adapter has correct structure
-  const cliRuntimes = ["cli:claude-code", "cli:codex", "cli:gemini", "cli:opencode", "cli:cline", "cli:copilot-cli"];
+  const cliRuntimes = ["cli:claude-code", "cli:codex", "cli:gemini", "cli:opencode", "cli:copilot-cli"];
   for (const id of cliRuntimes) {
     check("runtimes", `Adapter ${id}`, () => {
       const rt = runtimeRegistry.get(id);
@@ -666,7 +665,6 @@ function phase6(): void {
       /gemini\s*cli/i,
       /copilot\s*cli/i,
       /github\s*copilot/i,
-      /cline\s*cli/i,
       /opencode/i,
     ];
 

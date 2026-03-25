@@ -22,7 +22,6 @@ const RUNTIME_AGENT_SUGGESTIONS: Record<string, { name: string; description: str
   "cli:codex": { name: "codex-dev", description: "Codex for development tasks" },
   "cli:gemini": { name: "gemini-reviewer", description: "Gemini CLI for code review" },
   "cli:opencode": { name: "opencode-scout", description: "opencode for codebase exploration" },
-  "cli:cline": { name: "cline-planner", description: "Cline CLI for planning" },
   "cli:copilot-cli": { name: "copilot-reviewer", description: "GitHub Copilot CLI for code review" },
 };
 

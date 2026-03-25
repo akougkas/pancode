@@ -1,6 +1,5 @@
 import { ClaudeCodeRuntime } from "./adapters/claude-code";
 import { ClaudeSdkRuntime } from "./adapters/claude-sdk";
-import { ClineRuntime } from "./adapters/cline";
 import { CodexRuntime } from "./adapters/codex";
 import { CopilotCliRuntime } from "./adapters/copilot-cli";
 import { GeminiRuntime } from "./adapters/gemini";
@@ -14,7 +13,6 @@ const CLI_RUNTIMES = [
   new CodexRuntime(),
   new GeminiRuntime(),
   new OpencodeRuntime(),
-  new ClineRuntime(),
   new CopilotCliRuntime(),
 ];
 
