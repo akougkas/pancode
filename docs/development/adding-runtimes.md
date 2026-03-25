@@ -20,7 +20,6 @@ src/engine/runtimes/
     codex.ts
     gemini.ts
     opencode.ts
-    cline.ts
     copilot-cli.ts
 ```
 

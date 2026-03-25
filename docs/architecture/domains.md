@@ -241,8 +241,8 @@ manages the run lifecycle, and tracks results.
 - `health.ts`: worker health monitoring (heartbeat-based)
 - `task-tools.ts`: task board tools (task_write, task_check, task_update, task_list)
 
-**Commands:** `/cost` (show session cost), `/dispatch-insights` (dispatch
-analysis), `/runs` (list runs), `/batches` (list batch dispatches)
+**Commands:** `/cost` (show session cost), `/runs` (list runs), `/batches`
+(list batch dispatches)
 
 **Tools:** `dispatch_agent` (single dispatch), `batch_dispatch` (parallel
 dispatch), `dispatch_chain` (sequential pipeline), `stoprun` (cancel a running
@@ -395,9 +395,8 @@ registers its own commands.
 - `Ctrl+Y`: cycle safety level (suggest, auto-edit, full-auto)
 - `Alt+A`: toggle Admin (God) mode
 
-**Commands:** `/dashboard`, `/status`, `/theme`, `/models`, `/preferences`,
-`/settings`, `/reasoning`, `/thinking`, `/modes`, `/help`, `/preset`, `/perf`,
-`/safety`, `/exit`, `/hotkeys`
+**Commands:** `/dashboard`, `/theme`, `/models`, `/settings`, `/reasoning`,
+`/modes`, `/help`, `/preset`, `/perf`, `/safety`, `/exit`, `/hotkeys`
 
 **Tools:** none
 
