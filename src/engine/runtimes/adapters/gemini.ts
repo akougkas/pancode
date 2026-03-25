@@ -127,11 +127,7 @@ export class GeminiRuntime extends CliRuntime {
     // Sandbox for mutable agents: containerized tool execution prevents
     // destructive actions from escaping isolation. Skip if user explicitly
     // controls sandbox behavior via runtimeArgs.
-    if (
-      !config.readonly &&
-      !config.runtimeArgs.includes("--sandbox") &&
-      !config.runtimeArgs.includes("--no-sandbox")
-    ) {
+    if (!config.readonly && !config.runtimeArgs.includes("--sandbox") && !config.runtimeArgs.includes("--no-sandbox")) {
       args.push("--sandbox");
     }
 

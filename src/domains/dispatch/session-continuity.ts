@@ -56,11 +56,7 @@ export function storeSessionMeta(
  *   cli:claude-code -> ["--resume", sessionId]
  *   sdk:claude-code -> ["--resume", sessionId]
  */
-export function getContinuationArgs(
-  agentName: string,
-  runtimeId: string,
-  existingRuntimeArgs: string[],
-): string[] {
+export function getContinuationArgs(agentName: string, runtimeId: string, existingRuntimeArgs: string[]): string[] {
   const entry = store.get(makeKey(agentName, runtimeId));
   if (!entry) return [];
 

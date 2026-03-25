@@ -25,9 +25,9 @@ import { dispatchChain, runParallel } from "./primitives";
 import { type ResilienceTracker, createResilienceTracker } from "./resilience";
 import { resolveWorkerRouting } from "./routing";
 import { DEFAULT_DISPATCH_RULES, type DispatchRule, evaluateRules } from "./rules";
+import { clearSessionStore, getContinuationArgs, storeSessionMeta } from "./session-continuity";
 import { RunLedger, createRunEnvelope } from "./state";
 import { initTaskStore, taskCheck, taskList, taskUpdate, taskWrite } from "./task-tools";
-import { clearSessionStore, getContinuationArgs, storeSessionMeta } from "./session-continuity";
 import { liveWorkerProcesses, spawnWorker, stopAllWorkers, workerProcessByRunId } from "./worker-spawn";
 
 function textResult(text: string): AgentToolResult<unknown> {
@@ -879,9 +879,7 @@ export const extension = defineExtension((pi) => {
 
           const chainContinuationArgs = getContinuationArgs(agent, routing.runtime, routing.runtimeArgs);
           const chainEffectiveArgs =
-            chainContinuationArgs.length > 0
-              ? [...routing.runtimeArgs, ...chainContinuationArgs]
-              : routing.runtimeArgs;
+            chainContinuationArgs.length > 0 ? [...routing.runtimeArgs, ...chainContinuationArgs] : routing.runtimeArgs;
 
           const result = await spawnWorker({
             task,
