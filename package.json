@@ -58,10 +58,10 @@
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.81",
     "@lmstudio/sdk": "^1.5.0",
-    "@pancode/pi-agent-core": "*",
-    "@pancode/pi-ai": "*",
-    "@pancode/pi-coding-agent": "*",
-    "@pancode/pi-tui": "*",
+    "@pancode/pi-agent-core": "file:packages/pi-agent-core",
+    "@pancode/pi-ai": "file:packages/pi-ai",
+    "@pancode/pi-coding-agent": "file:packages/pi-coding-agent",
+    "@pancode/pi-tui": "file:packages/pi-tui",
     "@sinclair/typebox": "^0.34.48",
     "ollama": "^0.6.3",
     "yaml": "^2.8.2"
