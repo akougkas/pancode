@@ -280,13 +280,19 @@ function normalizeOldFormat(obj: Record<string, unknown>): PanCodeSettings {
 
 export function loadPanCodeSettings(): PanCodeSettings {
   if (!existsSync(PANCODE_SETTINGS_PATH)) {
-    return normalizeSettings({});
+    const defaults = normalizeSettings({});
+    atomicWriteJsonSync(PANCODE_SETTINGS_PATH, defaults);
+    return defaults;
   }
 
   try {
     const content = readFileSync(PANCODE_SETTINGS_PATH, "utf8");
     const trimmed = content.trim();
-    if (!trimmed) return normalizeSettings({});
+    if (!trimmed) {
+      const defaults = normalizeSettings({});
+      atomicWriteJsonSync(PANCODE_SETTINGS_PATH, defaults);
+      return defaults;
+    }
     return normalizeSettings(JSON.parse(trimmed));
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
