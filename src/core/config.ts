@@ -141,6 +141,10 @@ export function loadConfig(overrides: ConfigOverrides = {}): PanCodeConfig {
   const packageRoot = resolvePackageRoot(import.meta.url);
   const globalSettings = loadPanCodeSettings();
   const cwd = resolve(packageRoot, overrides.cwd ?? getFirstEnvValue("PANCODE_PROJECT") ?? ".");
+  if (!existsSync(cwd)) {
+    process.stderr.write(`[pancode] Fatal: Working directory "${cwd}" does not exist.\n`);
+    process.exit(1);
+  }
   const runtimeRoot = join(cwd, ".pancode", "state");
   const projectSettings = loadProjectSettingsFile(cwd);
   const defaultModel = getFirstEnvValue("PANCODE_MODEL", "PANCODE_DEFAULT_MODEL") ?? readDefaultModelFile(packageRoot);

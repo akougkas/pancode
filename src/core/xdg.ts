@@ -1,10 +1,16 @@
-import { mkdirSync } from "node:fs";
+import { mkdirSync, statSync } from "node:fs";
 import { homedir, platform } from "node:os";
 import { join } from "node:path";
 
 let cachedDataDir: string | undefined;
 let cachedCacheDir: string | undefined;
 let cachedConfigDir: string | undefined;
+
+/** Read a PANCODE_* env var, treating empty or whitespace-only values as unset. */
+function envOrNull(key: string): string | null {
+  const val = process.env[key]?.trim();
+  return val && val.length > 0 ? val : null;
+}
 
 function home(): string {
   return homedir();
@@ -49,7 +55,32 @@ function platformDefaults(): { data: string; cache: string; config: string } {
 }
 
 function ensureDir(dir: string): string {
-  mkdirSync(dir, { recursive: true });
+  try {
+    mkdirSync(dir, { recursive: true });
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === "EEXIST" || code === "ENOTDIR") {
+      try {
+        const stat = statSync(dir);
+        if (!stat.isDirectory()) {
+          process.stderr.write(
+            `[pancode] Fatal: "${dir}" exists but is not a directory. Check your PANCODE_*_HOME env vars.\n`,
+          );
+          process.exit(1);
+        }
+      } catch {
+        process.stderr.write(
+          `[pancode] Fatal: "${dir}" exists but is not a directory. Check your PANCODE_*_HOME env vars.\n`,
+        );
+        process.exit(1);
+      }
+    }
+    if (code === "EACCES") {
+      process.stderr.write(`[pancode] Fatal: No write permission for "${dir}". Check directory permissions.\n`);
+      process.exit(1);
+    }
+    throw err;
+  }
   return dir;
 }
 
@@ -60,14 +91,14 @@ function ensureDir(dir: string): string {
  * 3. Platform XDG defaults
  */
 function resolve(): { data: string; cache: string; config: string } {
-  const specificData = process.env.PANCODE_DATA_HOME;
-  const specificCache = process.env.PANCODE_CACHE_HOME;
-  const specificConfig = process.env.PANCODE_CONFIG_HOME;
+  const specificData = envOrNull("PANCODE_DATA_HOME");
+  const specificCache = envOrNull("PANCODE_CACHE_HOME");
+  const specificConfig = envOrNull("PANCODE_CONFIG_HOME");
 
   // If any specific override is set, use it for that directory and fall through for the rest.
   const hasSpecific = specificData || specificCache || specificConfig;
 
-  const legacyHome = process.env.PANCODE_HOME;
+  const legacyHome = envOrNull("PANCODE_HOME");
 
   let base: { data: string; cache: string; config: string };
   if (legacyHome && !hasSpecific) {
