@@ -210,7 +210,7 @@ function describeReasoningCapability(
         reasoning?: boolean;
         compat?: {
           supportsReasoningEffort?: boolean;
-          thinkingFormat?: "openai" | "zai" | "qwen" | "qwen-chat-template";
+          thinkingFormat?: "openai" | "openrouter" | "zai" | "qwen" | "qwen-chat-template";
         };
       }
     | null

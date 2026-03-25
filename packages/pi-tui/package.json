@@ -1,6 +1,6 @@
 {
   "name": "@pancode/pi-tui",
-  "version": "0.58.1",
+  "version": "0.62.0",
   "description": "Terminal User Interface library (vendored from pi-mono)",
   "type": "module",
   "main": "./dist/index.js",

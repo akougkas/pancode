@@ -1,6 +1,6 @@
 {
   "name": "@pancode/pi-agent-core",
-  "version": "0.58.1",
+  "version": "0.62.0",
   "description": "General-purpose agent core (vendored from pi-mono)",
   "type": "module",
   "main": "./dist/index.js",
