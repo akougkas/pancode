@@ -9,7 +9,10 @@
     "type": "git",
     "url": "https://github.com/akougkas/pancode.git"
   },
-  "homepage": "https://github.com/akougkas/pancode",
+  "homepage": "https://pancode.dev",
+  "bugs": {
+    "url": "https://github.com/akougkas/pancode/issues"
+  },
   "keywords": [
     "multi-agent",
     "coding-agent",

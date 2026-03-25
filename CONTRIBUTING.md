@@ -3,13 +3,13 @@
 Welcome to PanCode. We appreciate contributions of all kinds, from bug reports to
 code changes to documentation improvements. PanCode is licensed under Apache 2.0.
 By contributing, you agree that your contributions will be licensed under the same
-terms. Please read our [Code of Conduct](CODE_OF_CONDUCT.md) before participating.
+terms.
 
 ## Getting Started
 
 ### Prerequisites
 
-- Node.js 22 or later
+- Node.js 20 or later
 - npm
 - tmux
 - git
