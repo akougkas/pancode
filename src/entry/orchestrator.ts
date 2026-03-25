@@ -13,11 +13,11 @@ import { resolvePackageRoot } from "../core/package-root";
 import { ensurePresetsFile, loadPreset } from "../core/presets";
 import { installSigintDoubleTap, shutdownCoordinator } from "../core/termination";
 import { type PanCodeReasoningPreference, resolveThinkingLevelForPreference } from "../core/thinking";
+import { getDataDir } from "../core/xdg.js";
 import { DOMAIN_REGISTRY } from "../domains";
 import { ensureAgentsYaml } from "../domains/agents/spec-registry";
 import {
   type MergedModelProfile,
-  PANCODE_HOME,
   createSharedAuth,
   discoverEngines,
   loadModelKnowledgeBase,
@@ -189,7 +189,7 @@ function printBootTimingTable(mode: "warm" | "cold", phases: BootPhase[]): void 
 // Used by cold boot and background refresh.
 async function runFullDiscovery(): Promise<{ results: DiscoveryResult[]; profiles: MergedModelProfile[] }> {
   const results = await discoverEngines();
-  writeProvidersYaml(results, PANCODE_HOME);
+  writeProvidersYaml(results);
 
   const packageRoot = resolvePackageRoot(import.meta.url);
   const modelsDir = join(packageRoot, "models");
@@ -199,7 +199,7 @@ async function runFullDiscovery(): Promise<{ results: DiscoveryResult[]; profile
 
   const allModels = results.flatMap((r) => r.models);
   const profiles = matchAllModels(allModels, knowledgeBase, registry);
-  writeModelCacheYaml(profiles, PANCODE_HOME);
+  writeModelCacheYaml(profiles, getDataDir());
 
   return { results, profiles };
 }
@@ -409,7 +409,7 @@ export async function runOrchestratorEntry(): Promise<void> {
   let discoveryConnections: DiscoveryResult[] = [];
   let bootMode: "warm" | "cold";
 
-  const cachedProfiles = args.rediscover ? null : readModelCacheYaml(PANCODE_HOME);
+  const cachedProfiles = args.rediscover ? null : readModelCacheYaml(getDataDir());
 
   if (cachedProfiles) {
     bootMode = "warm";
@@ -446,7 +446,7 @@ export async function runOrchestratorEntry(): Promise<void> {
 
   // === Phase 4: Agent config ===
   const p4 = phase("Phase 4", "agents");
-  ensureAgentsYaml(PANCODE_HOME);
+  ensureAgentsYaml(getDataDir());
   p4.end();
 
   // === Phase 5: Model resolution ===

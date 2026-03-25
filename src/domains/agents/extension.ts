@@ -4,11 +4,12 @@ import YAML from "yaml";
 import { BusChannel } from "../../core/bus-events";
 import { PanMessageType } from "../../core/message-types";
 import { sharedBus } from "../../core/shared-bus";
+import { getDataDir } from "../../core/xdg.js";
 import { PiEvent } from "../../engine/events";
 import { defineExtension } from "../../engine/extensions";
 import { discoverAndRegisterRuntimes } from "../../engine/runtimes/discovery";
 import { runtimeRegistry } from "../../engine/runtimes/registry";
-import { PANCODE_HOME, getModelProfileCache } from "../providers";
+import { getModelProfileCache } from "../providers";
 import { type PanelSection, kv, sendPanelSpec, text } from "../ui/panel-renderer";
 import { registerShadowExplore } from "./shadow-explore";
 import { type SkillDefinition, discoverSkills, validateSkillTools } from "./skills";
@@ -26,7 +27,7 @@ const RUNTIME_AGENT_SUGGESTIONS: Record<string, { name: string; description: str
 };
 
 function persistAgentChange(agentName: string, field: string, value: string): void {
-  const filePath = join(PANCODE_HOME, "panagents.yaml");
+  const filePath = join(getDataDir(), "panagents.yaml");
   try {
     const content = readFileSync(filePath, "utf8");
     const doc = YAML.parseDocument(content);
@@ -84,7 +85,7 @@ export const extension = defineExtension((pi) => {
     const discovery = discoverAndRegisterRuntimes();
     sharedBus.emit(BusChannel.RUNTIMES_DISCOVERED, discovery);
 
-    const specs = loadAgentsFromYaml(PANCODE_HOME);
+    const specs = loadAgentsFromYaml(getDataDir());
     for (const spec of specs) {
       if (!agentRegistry.has(spec.name)) {
         agentRegistry.register(spec);

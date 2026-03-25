@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import YAML from "yaml";
+import { getCacheDir } from "../../core/xdg.js";
 import { createLlamaCppConnection } from "./engines/llamacpp";
 import { createLmStudioConnection } from "./engines/lmstudio";
 import { createOllamaConnection } from "./engines/ollama";
@@ -100,10 +101,7 @@ const FAST_PROBE_TIMEOUT_MS = 500;
 const DEFAULT_PROBE_TIMEOUT_MS = 1000;
 
 function loadCachedProviderUrls(): Set<string> {
-  const pancodeHome = process.env.PANCODE_HOME;
-  if (!pancodeHome) return new Set();
-
-  const filePath = join(pancodeHome, "panproviders.yaml");
+  const filePath = join(getCacheDir(), "panproviders.yaml");
   try {
     const content = readFileSync(filePath, "utf8");
     const parsed = YAML.parse(content) as { providers?: Array<{ baseUrl?: string }> };
@@ -161,7 +159,7 @@ export async function discoverEngines(): Promise<DiscoveryResult[]> {
   return results;
 }
 
-export function writeProvidersYaml(results: DiscoveryResult[], pancodeHome: string): void {
+export function writeProvidersYaml(results: DiscoveryResult[]): void {
   const providers = results.map((r) => ({
     providerId: r.providerId,
     engine: r.engine,
@@ -171,7 +169,7 @@ export function writeProvidersYaml(results: DiscoveryResult[], pancodeHome: stri
     discoveredAt: new Date().toISOString(),
   }));
 
-  const filePath = join(pancodeHome, "panproviders.yaml");
+  const filePath = join(getCacheDir(), "panproviders.yaml");
   const tempPath = `${filePath}.tmp`;
   mkdirSync(dirname(filePath), { recursive: true });
   writeFileSync(tempPath, YAML.stringify({ providers }), "utf8");

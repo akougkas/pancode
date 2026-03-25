@@ -37,8 +37,6 @@ export {
 } from "./model-perf";
 export { registerDiscoveredModels } from "./registry";
 export {
-  PANCODE_AGENT_DIR,
-  PANCODE_HOME,
   buildModelArgs,
   createSharedAuth,
   resolveConfiguredModel,

@@ -6,8 +6,8 @@
  */
 
 import { existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
+import { getAgentEngineDir } from "../../core/xdg.js";
 import { binaryExists } from "../../engine/runtimes/cli-base";
 import type { ModelRegistry } from "../../engine/session";
 
@@ -88,8 +88,7 @@ export function detectOpenAICodexAuth(): OpenAICodexAuthStatus | null {
   if (!binaryExists("codex")) return null;
 
   // Check auth.json for openai-codex OAuth entry
-  const agentDir =
-    process.env.PI_CODING_AGENT_DIR ?? join(process.env.PANCODE_HOME ?? join(homedir(), ".pancode"), "agent-engine");
+  const agentDir = process.env.PI_CODING_AGENT_DIR ?? getAgentEngineDir();
   const authPath = join(agentDir, "auth.json");
 
   try {

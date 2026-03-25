@@ -1,7 +1,8 @@
-import { copyFileSync, existsSync, mkdirSync } from "node:fs";
+import { copyFileSync, existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { PanCodeConfig } from "../../core/config";
+import { getAgentEngineDir } from "../../core/xdg.js";
 import { AuthStorage, ModelRegistry } from "../../engine/session";
 import type { Api, Model } from "../../engine/types";
 
@@ -11,37 +12,29 @@ export interface SharedAuth {
   modelRegistry: InstanceType<typeof ModelRegistry>;
 }
 
-// Set by loader.ts at boot
-const pancodeHome = process.env.PANCODE_HOME;
-if (!pancodeHome) {
-  throw new Error("PANCODE_HOME must be set before loading providers/shared");
-}
-
-export const PANCODE_HOME = pancodeHome;
-export const PANCODE_AGENT_DIR = join(PANCODE_HOME, "agent-engine");
-
 function copyLegacyFileIfMissing(fileName: string): void {
+  const agentDir = getAgentEngineDir();
   const legacyPiDir = join(homedir(), ".pi", "agent");
   const sourcePath = join(legacyPiDir, fileName);
-  const targetPath = join(PANCODE_AGENT_DIR, fileName);
+  const targetPath = join(agentDir, fileName);
   if (existsSync(sourcePath) && !existsSync(targetPath)) {
     copyFileSync(sourcePath, targetPath);
   }
 }
 
 export async function createSharedAuth(): Promise<SharedAuth> {
-  mkdirSync(PANCODE_AGENT_DIR, { recursive: true });
+  const agentDir = getAgentEngineDir();
   copyLegacyFileIfMissing("auth.json");
   copyLegacyFileIfMissing("models.json");
   copyLegacyFileIfMissing("settings.json");
 
-  process.env.PI_CODING_AGENT_DIR = PANCODE_AGENT_DIR;
+  process.env.PI_CODING_AGENT_DIR = agentDir;
 
-  const authStorage = AuthStorage.create(join(PANCODE_AGENT_DIR, "auth.json"));
-  const modelRegistry = new ModelRegistry(authStorage, join(PANCODE_AGENT_DIR, "models.json"));
+  const authStorage = AuthStorage.create(join(agentDir, "auth.json"));
+  const modelRegistry = new ModelRegistry(authStorage, join(agentDir, "models.json"));
 
   return {
-    agentDir: PANCODE_AGENT_DIR,
+    agentDir,
     authStorage,
     modelRegistry,
   };
