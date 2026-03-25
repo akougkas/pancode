@@ -123,7 +123,7 @@ breaking changes to a single directory. See
 
 The engine layer also contains the runtime adapter system
 (`src/engine/runtimes/`) which abstracts the differences between Pi SDK native
-agents, CLI headless agents (Claude Code, Codex, Gemini CLI, OpenCode, Cline,
+agents, CLI headless agents (Claude Code, Codex, Gemini CLI, OpenCode,
 Copilot CLI), and SDK programmatic agents.
 
 ### Worker Layer

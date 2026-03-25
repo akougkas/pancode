@@ -160,7 +160,6 @@ PanCode discovers CLI agents at boot by scanning PATH. Supported runtimes:
 | `cli:codex` | `codex` |
 | `cli:gemini` | `gemini` |
 | `cli:opencode` | `opencode` |
-| `cli:cline` | `cline` |
 | `cli:copilot-cli` | `github-copilot-cli` |
 
 ### Step 2: Define an Agent Using That Runtime

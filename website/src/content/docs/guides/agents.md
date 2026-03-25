@@ -152,7 +152,6 @@ PanCode supports multiple runtime backends. Each agent specifies which runtime t
 | `cli:codex` | cli | OpenAI Codex CLI |
 | `cli:gemini` | cli | Gemini CLI |
 | `cli:opencode` | cli | opencode CLI |
-| `cli:cline` | cli | Cline CLI |
 | `cli:copilot-cli` | cli | GitHub Copilot CLI |
 
 Discovery at boot scans PATH for known binaries and registers them automatically.

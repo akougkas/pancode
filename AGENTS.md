@@ -4,7 +4,7 @@ Instructions for AI coding agents working on the PanCode codebase.
 
 ## What is PanCode
 
-PanCode is a composable multi-agent runtime for software engineering. It orchestrates coding agents (Claude Code, Codex, Gemini CLI, OpenCode, Cline, Copilot CLI, and native workers) through a unified dispatch, safety, and observability layer. The codebase is TypeScript strict mode, built on a vendored SDK with a strict engine boundary that isolates all SDK imports to `src/engine/`.
+PanCode is a composable multi-agent runtime for software engineering. It orchestrates coding agents (Claude Code, Codex, Gemini CLI, OpenCode, Copilot CLI, and native workers) through a unified dispatch, safety, and observability layer. The codebase is TypeScript strict mode, built on a vendored SDK with a strict engine boundary that isolates all SDK imports to `src/engine/`.
 
 ## Quick Setup
 
@@ -25,10 +25,10 @@ npm run typecheck
 | `npm run dev` | Runs in dev mode with tsx, skips tmux |
 | `npm run typecheck` | Builds SDK packages, runs boundary check, runs prompt check, runs tsc --noEmit |
 | `npm run check-boundaries` | Verifies engine boundary and worker isolation invariants |
-| `npm run check-constitution` | Audits constitutional prompt fragments |
+| `npm run check-constitution` | Audits constitutional prompt fragments across all role/tier/mode combinations |
 | `npm run check-prompts` | Validates prompt fragment references |
 | `npm run lint` | Runs Biome linter on src/ |
-| `npm run smoke-test` | 7-phase baseline smoke test |
+| `npm run smoke-test` | Baseline smoke test |
 | `npm run verify-tui` | TUI width-safety regression harness |
 
 ## Architecture Rules
@@ -39,7 +39,7 @@ npm run typecheck
 
 ### Worker Isolation
 
-`src/worker/` is physically isolated. It cannot import from `src/domains/`. Every worker runs as a separate subprocess. The `check-boundaries` script also enforces this.
+`src/worker/` is physically isolated. It cannot import from `src/domains/`. Every worker runs as a separate subprocess with no shared memory, event loop, or file descriptors. The `check-boundaries` script also enforces this.
 
 ### Domain Independence
 
@@ -60,22 +60,23 @@ src/
   cli/            CLI commands (start, up, down, sessions, login, version, reset)
   core/           Foundation (config, modes, event bus, presets, agent profiles)
   domains/        10 composable domains, each with manifest.ts + extension.ts
-    agents/       Agent fleet management and discovery
-    dispatch/     Worker dispatch pipeline, receipts, batching
-    intelligence/ Intelligence gating and routing
-    observability/ Cost tracking, metrics, token counting
+    agents/       Agent fleet management, worker pool, discovery
+    dispatch/     Worker dispatch pipeline, receipts, batching, health monitoring
+    intelligence/ Intelligence gating and routing (experimental)
+    observability/ Cost tracking, metrics, token counting, dispatch ledger
     panconfigure/ Conversational configuration tools
-    prompts/      Constitutional prompt compilation
-    providers/    Provider registry and model matching
-    safety/       Safety levels, action classification, scope contracts
-    scheduling/   Task scheduling
-    session/      Session lifecycle and persistence
-    ui/           TUI dashboard, panels, footer, responsive layout
+    prompts/      Constitutional prompt compilation (fragments, compiler, tiering)
+    providers/    Provider registry, model matching, engine discovery
+    safety/       Safety levels, action classification, scope contracts, audit trail
+    scheduling/   Budget tracking and task scheduling
+    session/      Session lifecycle, checkpoints, persistence
+    ui/           TUI dashboard, panels, footer, editor, responsive layout
   engine/         SOLE SDK IMPORT BOUNDARY
     runtimes/     Runtime abstraction layer
-      adapters/   CLI adapters (claude-code, codex, gemini, opencode, cline, copilot-cli)
-  entry/          Orchestrator entry point
-  worker/         ISOLATED worker subprocess entry point
+      adapters/   CLI adapters (claude-code, codex, gemini, opencode, copilot-cli)
+                  SDK adapters (claude-sdk, claude-sdk-remote)
+  entry/          Orchestrator entry point and bootstrap
+  worker/         ISOLATED worker subprocess entry point and safety extension
 ```
 
 ## Adding Features
@@ -90,8 +91,8 @@ src/
 ### New Runtime Adapter
 
 1. Create a new file in `src/engine/runtimes/adapters/<name>.ts`.
-2. Implement the adapter interface matching existing adapters (see `claude-code.ts` for reference).
-3. Register the adapter in the runtime discovery system.
+2. Implement the `AgentRuntime` interface (see `claude-code.ts` for CLI adapters or `claude-sdk.ts` for SDK adapters).
+3. Register the adapter in `src/engine/runtimes/discovery.ts`.
 
 ### New Slash Command
 

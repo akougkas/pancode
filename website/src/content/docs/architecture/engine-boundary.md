@@ -54,7 +54,6 @@ src/engine/
       codex.ts
       gemini.ts
       opencode.ts
-      cline.ts
       copilot-cli.ts
 ```
 
@@ -179,7 +178,6 @@ Each CLI adapter file implements the specifics for one agent:
 - **codex.ts**: OpenAI Codex CLI (`codex`) with `--quiet` mode
 - **gemini.ts**: Google Gemini CLI (`gemini`) with headless flags
 - **opencode.ts**: OpenCode (`opencode`) CLI adapter
-- **cline.ts**: Cline headless mode adapter
 - **copilot-cli.ts**: GitHub Copilot CLI adapter
 
 ### Runtime Discovery (runtimes/discovery.ts)
