@@ -118,6 +118,17 @@ export function registerAnthropicModels(modelRegistry: InstanceType<typeof Model
   registered: string[];
   auth: AnthropicAuthStatus | null;
 } {
+  // Skip Anthropic registration when the local preset is active. The local
+  // preset is for local inference only. Registering Anthropic models causes
+  // Pi SDK's auto-selection to pick them (highest capability score) and then
+  // the orchestrator session makes direct API calls through the registered
+  // baseUrl, bypassing PanCode's dispatch routing entirely. The dispatch
+  // routing intercept only applies to worker dispatch, not the orchestrator's
+  // own Pi SDK session.
+  if (process.env.PANCODE_PRESET === "local") {
+    return { registered: [], auth: null };
+  }
+
   const auth = detectAnthropicAuth();
   if (!auth) {
     return { registered: [], auth: null };
@@ -125,11 +136,13 @@ export function registerAnthropicModels(modelRegistry: InstanceType<typeof Model
 
   // Register under provider "anthropic" for catalog visibility and metadata.
   // These models are accessed exclusively via cli:claude-code runtime, never by
-  // direct API calls. The empty apiKey prevents the Pi SDK from attempting
-  // direct Anthropic API requests. Worker dispatch in routing.ts infers the
-  // cli:claude-code runtime from the "anthropic" provider prefix.
+  // direct API calls. The baseUrl and apiKey satisfy the Pi SDK's
+  // ModelRegistry validation but are never used for HTTP requests. Worker
+  // dispatch in routing.ts infers the cli:claude-code runtime from the
+  // "anthropic" provider prefix.
   modelRegistry.registerProvider("anthropic", {
-    apiKey: "",
+    baseUrl: "https://api.anthropic.com",
+    apiKey: "cli-proxy",
     api: "anthropic-messages",
     models: ANTHROPIC_MODELS.map((m) => ({
       id: m.id,

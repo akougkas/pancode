@@ -510,6 +510,33 @@ export async function runOrchestratorEntry(): Promise<void> {
       console.warn("[pancode:orchestrator] No models resolved at boot. Starting in degraded mode.");
     }
   }
+
+  // Defense-in-depth: if the local preset is active and auto-selection resolved
+  // to an Anthropic model that the user did not explicitly request, re-resolve
+  // from local models only. Anthropic models in the orchestrator session cause
+  // Pi SDK to make direct API calls through the registered baseUrl, bypassing
+  // PanCode's dispatch routing. The dispatch routing intercept only applies to
+  // worker dispatch, not the orchestrator's own session.
+  const userExplicitlyRequestedModel = !!(args.model || config.model);
+  if (args.preset === "local" && model && model.provider === "anthropic" && !userExplicitlyRequestedModel) {
+    const localModels = modelRegistry.getAvailable().filter((m) => m.provider !== "anthropic");
+    if (localModels.length > 0) {
+      const prev = `${model.provider}/${model.id}`;
+      model = localModels[0];
+      const next = `${model.provider}/${model.id}`;
+      console.warn(
+        `[pancode:orchestrator] Local preset active but auto-selected Anthropic model ${prev}. ` +
+          `Falling back to local model: ${next}`,
+      );
+    } else {
+      bootFallbackMessage =
+        "Local preset active but no local models are available. Start a local engine " +
+        "(LM Studio :1234, Ollama :11434, llama-server :8080) and restart PanCode.";
+      console.warn("[pancode:orchestrator] Local preset active but no local models found. Starting in degraded mode.");
+      model = undefined;
+    }
+  }
+
   // Defensive context window fallback: if the resolved model has no context window
   // (0 or missing), apply a conservative default so the Pi SDK's internal context
   // management does not operate blindly. This prevents crashes under context pressure
