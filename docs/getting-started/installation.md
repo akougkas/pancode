@@ -21,7 +21,7 @@ You need at least one LLM provider available. Options include:
 ## Install from npm
 
 ```bash
-npm install -g pancode
+npm install -g pancode@exp
 ```
 
 Verify the installation:
@@ -37,6 +37,7 @@ pancode version
 git clone https://github.com/akougkas/pancode.git
 cd pancode
 npm install
+npm run build
 npm link
 ```
 

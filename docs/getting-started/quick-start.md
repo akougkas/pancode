@@ -169,7 +169,7 @@ Quick toggles via keyboard shortcuts handle the most common changes (mode, safet
 
 ## The Dashboard
 
-Run `/dashboard` or `/status` to see a visual summary:
+Run `/dashboard` to see a visual summary:
 
 - Mode badge and safety level
 - Active dispatches with progress

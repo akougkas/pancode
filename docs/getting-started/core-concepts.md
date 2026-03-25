@@ -50,7 +50,7 @@ dispatch, safety, and observability guarantees.
 ### Pan-agent
 
 PanCode discovers and registers agents automatically. At boot, it scans PATH
-for known agent binaries (Claude Code, Codex, Gemini CLI, OpenCode, Cline,
+for known agent binaries (Claude Code, Codex, Gemini CLI, OpenCode,
 Copilot CLI). Each discovered binary becomes a registered agent that PanCode
 can dispatch.
 
@@ -101,7 +101,6 @@ The CLI tier currently supports:
 - OpenAI Codex (`codex --quiet`)
 - Google Gemini CLI (`gemini`)
 - OpenCode (`opencode`)
-- Cline (headless mode)
 - GitHub Copilot CLI
 
 ## Workers and Agents
