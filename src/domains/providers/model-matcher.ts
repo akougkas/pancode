@@ -322,7 +322,7 @@ export function matchAllModels(
   });
 }
 
-export function writeModelCacheYaml(profiles: MergedModelProfile[], pancodeHome: string): void {
+export function writeModelCacheYaml(profiles: MergedModelProfile[], dataDir: string): void {
   const serializable = {
     cachedAt: new Date().toISOString(),
     models: profiles.map((p) => ({
@@ -339,7 +339,7 @@ export function writeModelCacheYaml(profiles: MergedModelProfile[], pancodeHome:
     })),
   };
 
-  const filePath = join(pancodeHome, "model-cache.yaml");
+  const filePath = join(dataDir, "model-cache.yaml");
   const tempPath = `${filePath}.tmp`;
   mkdirSync(dirname(filePath), { recursive: true });
   writeFileSync(tempPath, YAML.stringify(serializable), "utf8");
@@ -377,8 +377,8 @@ function resolveCacheTtlMs(): number {
  * cache is missing, empty, corrupt, or stale (older than the configured TTL).
  * Used for cache-first warm boot that skips network discovery.
  */
-export function readModelCacheYaml(pancodeHome: string): MergedModelProfile[] | null {
-  const filePath = join(pancodeHome, "model-cache.yaml");
+export function readModelCacheYaml(dataDir: string): MergedModelProfile[] | null {
+  const filePath = join(dataDir, "model-cache.yaml");
   try {
     const content = readFileSync(filePath, "utf8");
     const parsed = YAML.parse(content) as CachedModelFile;

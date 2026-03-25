@@ -1099,7 +1099,7 @@ export const extension = defineExtension((pi) => {
   });
 
   pi.registerCommand("preset", {
-    description: "List or apply a boot preset from ~/.pancode/panpresets.yaml",
+    description: "List or apply a boot preset from panpresets.yaml",
     handler: handlers.handlePresetCommand,
   });
 

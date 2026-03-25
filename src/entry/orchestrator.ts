@@ -5,6 +5,7 @@ import { resetRuntimeState } from "../cli/reset";
 import { type BootPhaseRecord, setBootTimings } from "../core/boot-timing";
 import { type PanCodeConfig, type SafetyLevel, loadConfig } from "../core/config";
 import { atomicWriteJsonSync } from "../core/config-writer";
+import { initDebugLog } from "../core/debug-log";
 import { DEFAULT_STARTUP_BUDGET_MS } from "../core/defaults";
 import { collectDomainExtensions, filterValidDomains, resolveDomainOrder } from "../core/domain-loader";
 import { createSafeEventBus } from "../core/event-bus";
@@ -13,7 +14,7 @@ import { resolvePackageRoot } from "../core/package-root";
 import { ensurePresetsFile, loadPreset } from "../core/presets";
 import { installSigintDoubleTap, shutdownCoordinator } from "../core/termination";
 import { type PanCodeReasoningPreference, resolveThinkingLevelForPreference } from "../core/thinking";
-import { getDataDir } from "../core/xdg.js";
+import { getConfigDir, getDataDir } from "../core/xdg";
 import { DOMAIN_REGISTRY } from "../domains";
 import { ensureAgentsYaml } from "../domains/agents/spec-registry";
 import {
@@ -70,7 +71,7 @@ Options:
   --fresh              Clear runtime state (runs, metrics, sessions) before boot
   --help               Show this help
 
-Presets are defined in ~/.pancode/panpresets.yaml. Edit freely.`);
+Presets are defined in panpresets.yaml (see pancode config dir). Edit freely.`);
 }
 
 function parseSafetyLevel(value: string | undefined): SafetyLevel | null {
@@ -256,16 +257,20 @@ function reapOrphanRuns(runtimeRoot: string): void {
 }
 
 export async function runOrchestratorEntry(): Promise<void> {
-  // Top-level crash handlers: log the actual error and write to crash.log
-  // before exiting. Prevents silent restarts under context pressure or API errors.
-  const crashLogPath = join(process.env.PANCODE_HOME ?? "", "crash.log");
+  // Top-level crash handlers: log errors to the debug log and stderr before
+  // exiting. Prevents silent restarts under context pressure or API errors.
+  const debugLogPath = join(getDataDir(), "debug.log");
+
+  // Initialize debug logging before anything else so console.error/warn are
+  // captured to the persistent log file.
+  initDebugLog();
 
   process.on("uncaughtException", (err) => {
     const ts = new Date().toISOString();
     const msg = `[pancode:crash] Uncaught exception at ${ts}: ${err.message}\n${err.stack}`;
     process.stderr.write(`${msg}\n`);
     try {
-      appendFileSync(crashLogPath, `\n${msg}\n`);
+      appendFileSync(debugLogPath, `\n${msg}\n`);
     } catch {
       /* ignore */
     }
@@ -286,7 +291,7 @@ export async function runOrchestratorEntry(): Promise<void> {
     const msg = `[pancode:crash] Unhandled rejection at ${ts}: ${detail}`;
     process.stderr.write(`${msg}\n`);
     try {
-      appendFileSync(crashLogPath, `\n${msg}\n`);
+      appendFileSync(debugLogPath, `\n${msg}\n`);
     } catch {
       /* ignore */
     }
@@ -318,16 +323,13 @@ export async function runOrchestratorEntry(): Promise<void> {
   let presetScoutModel: string | null = null;
 
   // Ensure panpresets.yaml exists (seeds defaults on first run).
-  // PANCODE_HOME is set by loader.ts before this entry point runs.
-  const pancodeHomeForPresets = process.env.PANCODE_HOME;
-  if (pancodeHomeForPresets) {
-    ensurePresetsFile(pancodeHomeForPresets);
-  }
+  const configDir = getConfigDir();
+  ensurePresetsFile(configDir);
 
-  if (args.preset && pancodeHomeForPresets) {
-    const preset = loadPreset(pancodeHomeForPresets, args.preset);
+  if (args.preset) {
+    const preset = loadPreset(configDir, args.preset);
     if (!preset) {
-      console.error(`[pancode] Unknown preset: ${args.preset}. Check ~/.pancode/panpresets.yaml`);
+      console.error(`[pancode] Unknown preset: ${args.preset}. Check panpresets.yaml in ${configDir}`);
       process.exit(1);
     }
     presetModel = preset.model;
@@ -656,7 +658,7 @@ export async function runOrchestratorEntry(): Promise<void> {
     }
     try {
       const ts = new Date().toISOString();
-      appendFileSync(crashLogPath, `\n[${ts}] Session error: ${errMsg}\n${errStack ?? ""}\n`);
+      appendFileSync(debugLogPath, `\n[${ts}] Session error: ${errMsg}\n${errStack ?? ""}\n`);
     } catch {
       /* ignore */
     }
@@ -670,13 +672,13 @@ export async function runOrchestratorEntry(): Promise<void> {
 }
 
 runOrchestratorEntry().catch((error) => {
-  const crashLogPath = join(process.env.PANCODE_HOME ?? "", "crash.log");
+  const fallbackLogPath = join(getDataDir(), "debug.log");
   const message = error instanceof Error ? error.message : String(error);
   const stack = error instanceof Error ? error.stack : undefined;
   console.error(`[pancode:orchestrator] Fatal: ${message}`);
   try {
     const ts = new Date().toISOString();
-    appendFileSync(crashLogPath, `\n[${ts}] Fatal: ${message}\n${stack ?? ""}\n`);
+    appendFileSync(fallbackLogPath, `\n[${ts}] Fatal: ${message}\n${stack ?? ""}\n`);
   } catch {
     /* ignore */
   }

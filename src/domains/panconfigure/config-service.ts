@@ -2,7 +2,7 @@
  * ConfigService: read, validate, apply, and undo PanCode configuration.
  *
  * Reads live state from process.env and settings-state. Writes to process.env
- * for hot-reload params and persists to ~/.pancode/settings.json for durable changes.
+ * for hot-reload params and persists to settings.json (XDG data dir) for durable changes.
  *
  * After each successful apply, the service calls subsystem-specific handlers
  * (budget, mode, safety, reasoning, models) and emits CONFIG_CHANGED on the

@@ -211,8 +211,8 @@ function expandEnvVars(value: string): string {
   });
 }
 
-export function ensureAgentsYaml(pancodeHome: string): string {
-  const filePath = join(pancodeHome, "panagents.yaml");
+export function ensureAgentsYaml(dataDir: string): string {
+  const filePath = join(dataDir, "panagents.yaml");
   if (!existsSync(filePath)) {
     mkdirSync(dirname(filePath), { recursive: true });
     atomicWriteTextSync(filePath, DEFAULT_AGENTS_YAML);
@@ -235,8 +235,8 @@ export function ensureAgentsYaml(pancodeHome: string): string {
   return filePath;
 }
 
-export function loadAgentsFromYaml(pancodeHome: string): AgentSpec[] {
-  const filePath = ensureAgentsYaml(pancodeHome);
+export function loadAgentsFromYaml(dataDir: string): AgentSpec[] {
+  const filePath = ensureAgentsYaml(dataDir);
 
   let content: string;
   try {

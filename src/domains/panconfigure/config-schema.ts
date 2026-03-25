@@ -16,7 +16,7 @@ export interface ConfigParamDef {
   domain: string;
   /** Environment variable backing this param, if any. */
   envVar?: string;
-  /** Settings-state key in ~/.pancode/settings.json, if any. */
+  /** Settings-state key in the global settings file, if any. */
   settingsKey?: string;
 }
 

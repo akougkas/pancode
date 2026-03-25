@@ -25,13 +25,14 @@ export function buildWorkerModelArgs(config: Pick<PanCodeConfig, "provider" | "m
   return args;
 }
 
-// Set by loader.ts at boot
-const pancodeHome = process.env.PANCODE_HOME;
-if (!pancodeHome) {
-  throw new Error("PANCODE_HOME must be set before loading provider-bridge");
+// Set by loader.ts at boot. Workers read PANCODE_DATA_DIR from the inherited
+// environment rather than importing xdg.ts (worker/ is physically isolated).
+const pancodeDataDir = process.env.PANCODE_DATA_DIR || process.env.PANCODE_HOME;
+if (!pancodeDataDir) {
+  throw new Error("PANCODE_DATA_DIR must be set before loading provider-bridge");
 }
 
-export const PANCODE_HOME = pancodeHome;
+export const PANCODE_HOME = pancodeDataDir;
 export const PANCODE_AGENT_DIR = join(PANCODE_HOME, "agent-engine");
 
 function copyLegacyFileIfMissing(fileName: string): void {

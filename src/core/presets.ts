@@ -1,5 +1,5 @@
 /**
- * Named boot presets stored in ~/.pancode/panpresets.yaml.
+ * Named boot presets stored in panpresets.yaml under the XDG config directory.
  *
  * Each preset defines orchestrator model, worker model, reasoning level,
  * and safety mode. The CLI flag --preset <name> applies a preset at boot.
@@ -87,8 +87,8 @@ function buildDefaultPresets(): PresetFile {
   };
 }
 
-function presetsPath(pancodeHome: string): string {
-  return join(pancodeHome, "panpresets.yaml");
+function presetsPath(configDir: string): string {
+  return join(configDir, "panpresets.yaml");
 }
 
 function isValidSafety(value: unknown): value is SafetyLevel {
@@ -123,8 +123,8 @@ function parseEntry(name: string, entry: PresetFileEntry): Preset | null {
  * Ensure panpresets.yaml exists. Seeds the default file on first run.
  * Never overwrites an existing file.
  */
-export function ensurePresetsFile(pancodeHome: string): void {
-  const filePath = presetsPath(pancodeHome);
+export function ensurePresetsFile(configDir: string): void {
+  const filePath = presetsPath(configDir);
   if (existsSync(filePath)) return;
   const header =
     "# PanCode boot presets. Use: pancode --preset <name>\n" +
@@ -135,8 +135,8 @@ export function ensurePresetsFile(pancodeHome: string): void {
 /**
  * Load all presets from disk. Returns an empty map if the file is missing or malformed.
  */
-export function loadPresets(pancodeHome: string): Map<string, Preset> {
-  const filePath = presetsPath(pancodeHome);
+export function loadPresets(configDir: string): Map<string, Preset> {
+  const filePath = presetsPath(configDir);
   const result = new Map<string, Preset>();
   if (!existsSync(filePath)) return result;
 
@@ -163,13 +163,13 @@ export function loadPresets(pancodeHome: string): Map<string, Preset> {
 /**
  * Load a single preset by name. Returns null if not found.
  */
-export function loadPreset(pancodeHome: string, name: string): Preset | null {
-  return loadPresets(pancodeHome).get(name) ?? null;
+export function loadPreset(configDir: string, name: string): Preset | null {
+  return loadPresets(configDir).get(name) ?? null;
 }
 
 /**
  * List all available preset names.
  */
-export function listPresetNames(pancodeHome: string): string[] {
-  return [...loadPresets(pancodeHome).keys()];
+export function listPresetNames(configDir: string): string[] {
+  return [...loadPresets(configDir).keys()];
 }

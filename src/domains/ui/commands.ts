@@ -8,6 +8,7 @@ import { loadPresets } from "../../core/presets";
 import { writePanCodeSettings } from "../../core/settings-state";
 import { PANCODE_PRODUCT_NAME, formatCategorizedHelp } from "../../core/shell-metadata";
 import { type PanCodeReasoningPreference, THINKING_LEVELS, getModelReasoningControl } from "../../core/thinking";
+import { getConfigDir } from "../../core/xdg";
 import type { ExtensionContext } from "../../engine/extensions";
 import { runtimeRegistry } from "../../engine/runtimes";
 import type { ThemeColor } from "../../engine/tui";
@@ -925,12 +926,8 @@ export function createCommandHandlers(state: UiCommandState, cb: UiCommandCallba
   };
 
   const handlePresetCommand: CommandHandler = async (args, ctx) => {
-    const pancodeHome = process.env.PANCODE_HOME;
-    if (!pancodeHome) {
-      ctx.ui.notify("PANCODE_HOME is not set.", "error");
-      return;
-    }
-    const presets = loadPresets(pancodeHome);
+    const configDir = getConfigDir();
+    const presets = loadPresets(configDir);
     const request = args.trim();
 
     const current = process.env.PANCODE_PRESET ?? "(none)";

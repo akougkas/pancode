@@ -1,8 +1,9 @@
 import { existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolvePackageRoot } from "./core/package-root";
+import { releaseAllSessionLocks } from "./core/session-lock";
+import { getAgentEngineDir, getCacheDir, getConfigDir, getDataDir } from "./core/xdg";
 
 type LoaderTarget = "orchestrator" | "worker" | "cli" | "tmux-start";
 
@@ -40,14 +41,35 @@ function initializeEnvironment(): string {
   const packageRoot = resolvePackageRoot(import.meta.url);
   loadEnvFile(packageRoot);
 
-  const pancodeHome = process.env.PANCODE_HOME?.trim() || join(homedir(), ".pancode");
-  const agentDir = join(pancodeHome, "agent-engine");
+  // XDG-compliant directory resolution. These env vars are the canonical paths
+  // for all PanCode subsystems. Workers inherit them from the orchestrator process.
+  const dataDir = getDataDir();
+  const cacheDir = getCacheDir();
+  const configDir = getConfigDir();
+  const agentDir = getAgentEngineDir();
 
   process.env.PANCODE_PACKAGE_ROOT = packageRoot;
   process.env.PANCODE_BIN_PATH = fileURLToPath(import.meta.url);
-  process.env.PANCODE_HOME = pancodeHome;
+  process.env.PANCODE_DATA_DIR = dataDir;
+  process.env.PANCODE_CACHE_DIR = cacheDir;
+  process.env.PANCODE_CONFIG_DIR = configDir;
   process.env.PANCODE_AGENT_DIR = agentDir;
   process.env.PI_CODING_AGENT_DIR = process.env.PI_CODING_AGENT_DIR?.trim() || agentDir;
+
+  // Backward compatibility: if PANCODE_HOME is not already set by the user,
+  // set it to the data dir so legacy code that reads PANCODE_HOME still works.
+  if (!process.env.PANCODE_HOME?.trim()) {
+    process.env.PANCODE_HOME = dataDir;
+  }
+
+  // Register cleanup handler to release session locks on exit.
+  process.on("exit", () => {
+    try {
+      releaseAllSessionLocks();
+    } catch {
+      // Best-effort cleanup during exit. Do not throw.
+    }
+  });
 
   return packageRoot;
 }

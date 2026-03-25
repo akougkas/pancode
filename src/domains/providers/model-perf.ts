@@ -26,8 +26,8 @@ const EMPTY_STORE: ModelPerfStore = { version: 1, models: {} };
  * Read the model performance store from disk. Returns an empty store if
  * the file is missing, corrupt, or uses an incompatible version.
  */
-export function readModelPerfStore(pancodeHome: string): ModelPerfStore {
-  const filePath = join(pancodeHome, "model-perf.json");
+export function readModelPerfStore(dataDir: string): ModelPerfStore {
+  const filePath = join(dataDir, "model-perf.json");
   if (!existsSync(filePath)) return { ...EMPTY_STORE, models: {} };
 
   try {
@@ -45,8 +45,8 @@ export function readModelPerfStore(pancodeHome: string): ModelPerfStore {
 /**
  * Write the model performance store to disk using atomic temp+rename.
  */
-export function writeModelPerfStore(pancodeHome: string, store: ModelPerfStore): void {
-  const filePath = join(pancodeHome, "model-perf.json");
+export function writeModelPerfStore(dataDir: string, store: ModelPerfStore): void {
+  const filePath = join(dataDir, "model-perf.json");
   const tempPath = `${filePath}.tmp`;
   mkdirSync(dirname(filePath), { recursive: true });
   writeFileSync(tempPath, JSON.stringify(store, null, 2), "utf8");

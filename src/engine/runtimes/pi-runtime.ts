@@ -105,11 +105,11 @@ export class PiRuntime implements AgentRuntime {
     }
 
     // Ensure worker agent dir exists and has auth (set by loader.ts at boot)
-    const pancakeHome = process.env.PANCODE_HOME;
-    if (!pancakeHome) {
-      throw new Error("PANCODE_HOME must be set before spawning Pi workers");
+    const dataDir = process.env.PANCODE_DATA_DIR;
+    if (!dataDir) {
+      throw new Error("PANCODE_DATA_DIR must be set before spawning Pi workers");
     }
-    const agentDir = join(pancakeHome, "agent-engine");
+    const agentDir = join(dataDir, "agent-engine");
 
     // Pass sampling params via env vars so Pi SDK picks them up
     const samplingEnv: Record<string, string> = {};
