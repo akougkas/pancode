@@ -346,7 +346,7 @@ function phase3(): void {
   // Expected commands by domain (source of truth from extension.ts files)
   const expectedByDomain: Record<string, string[]> = {
     session: ["session", "checkpoint", "context", "reset"],
-    dispatch: ["runs", "batches", "stoprun", "cost", "dispatch-insights"],
+    dispatch: ["runs", "batches", "stoprun", "cost"],
     agents: ["agents", "runtimes", "workers", "skills"],
     observability: ["metrics", "audit", "doctor", "receipt"],
     scheduling: ["budget"],
@@ -355,14 +355,15 @@ function phase3(): void {
       "dashboard",
       "theme",
       "models",
-      "preferences",
       "settings",
       "reasoning",
-      "thinking",
       "modes",
       "help",
       "preset",
+      "perf",
+      "safety",
       "exit",
+      "hotkeys",
     ],
   };
 
@@ -399,7 +400,7 @@ function phase3(): void {
   }
 
   // Domains that should register zero commands
-  for (const domain of ["safety", "intelligence"]) {
+  for (const domain of ["safety", "intelligence", "panconfigure"]) {
     const actual = domainCommands.get(domain) ?? [];
     check("commands", `${domain} domain (no commands expected)`, () => {
       if (actual.length > 0) {
@@ -470,6 +471,19 @@ function phase4(): void {
       };
     });
   }
+
+  // Verify SDK runtimes
+  check("runtimes", "Adapter sdk:claude-code", () => {
+    const rt = runtimeRegistry.get("sdk:claude-code");
+    if (!rt) {
+      return { status: "fail", details: "not registered" };
+    }
+    const available = rt.isAvailable();
+    return {
+      status: "pass",
+      details: `tier=${rt.tier}, available=${available}`,
+    };
+  });
 }
 
 // ---------------------------------------------------------------------------
