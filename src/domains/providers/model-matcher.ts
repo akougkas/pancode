@@ -409,10 +409,31 @@ export function readModelCacheYaml(pancodeHome: string): MergedModelProfile[] | 
   }
 }
 
+/**
+ * Returns true if the model id looks like an embedding, reranker, or other
+ * non-conversational model that cannot be used for chat completions.
+ * Used to filter agent-facing model lists while keeping embedding models
+ * in the persistent cache for future features.
+ */
+export function isEmbeddingModel(modelId: string): boolean {
+  const lower = modelId.toLowerCase();
+  if (lower.startsWith("text-embedding")) return true;
+  if (lower.includes("embedding") || lower.includes("reranker")) return true;
+  if (/(?:^|[\/-])bge-/.test(lower)) return true;
+  if (lower.includes("embed") && !lower.includes("instruct") && !lower.includes("chat")) return true;
+  return false;
+}
+
 let cachedProfiles: MergedModelProfile[] = [];
 
+/**
+ * Store model profiles in the in-memory cache for agent-facing consumption.
+ * Filters out embedding and reranker models since they cannot serve chat
+ * completions and would inflate model counts and pollute selection lists.
+ * The persistent cache (model-cache.yaml) retains all models for future use.
+ */
 export function setModelProfileCache(profiles: MergedModelProfile[]): void {
-  cachedProfiles = profiles;
+  cachedProfiles = profiles.filter((p) => !isEmbeddingModel(p.modelId));
 }
 
 export function getModelProfileCache(): MergedModelProfile[] {

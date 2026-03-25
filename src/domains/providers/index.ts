@@ -20,6 +20,7 @@ export {
   getRecommendedModels,
   findModelProfile,
   getSamplingPreset,
+  isEmbeddingModel,
   type MergedModelProfile,
   type SamplingPreset,
   type RegistryMetadata,
