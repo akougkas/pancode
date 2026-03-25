@@ -261,25 +261,41 @@ export async function runOrchestratorEntry(): Promise<void> {
   const crashLogPath = join(process.env.PANCODE_HOME ?? "", "crash.log");
 
   process.on("uncaughtException", (err) => {
-    const msg = `[pancode:crash] Uncaught exception: ${err.message}\n${err.stack}`;
+    const ts = new Date().toISOString();
+    const msg = `[pancode:crash] Uncaught exception at ${ts}: ${err.message}\n${err.stack}`;
     process.stderr.write(`${msg}\n`);
     try {
-      appendFileSync(crashLogPath, `\n[${new Date().toISOString()}] ${msg}\n`);
+      appendFileSync(crashLogPath, `\n${msg}\n`);
     } catch {
       /* ignore */
     }
-    process.exit(1);
+    // Attempt graceful shutdown so workers are killed and state is persisted.
+    // If the coordinator is already running or hangs, the 5-second fallback
+    // forces an exit to avoid leaving the process in a broken state.
+    const forceExitTimer = setTimeout(() => process.exit(1), 5000);
+    forceExitTimer.unref();
+    shutdownCoordinator
+      .execute()
+      .catch(() => {})
+      .finally(() => process.exit(1));
   });
 
   process.on("unhandledRejection", (reason) => {
-    const msg = `[pancode:crash] Unhandled rejection: ${reason instanceof Error ? (reason.stack ?? reason.message) : String(reason)}`;
+    const ts = new Date().toISOString();
+    const detail = reason instanceof Error ? (reason.stack ?? reason.message) : String(reason);
+    const msg = `[pancode:crash] Unhandled rejection at ${ts}: ${detail}`;
     process.stderr.write(`${msg}\n`);
     try {
-      appendFileSync(crashLogPath, `\n[${new Date().toISOString()}] ${msg}\n`);
+      appendFileSync(crashLogPath, `\n${msg}\n`);
     } catch {
       /* ignore */
     }
-    process.exit(1);
+    const forceExitTimer = setTimeout(() => process.exit(1), 5000);
+    forceExitTimer.unref();
+    shutdownCoordinator
+      .execute()
+      .catch(() => {})
+      .finally(() => process.exit(1));
   });
 
   const args = parseArgs(process.argv.slice(2));
@@ -627,6 +643,22 @@ export async function runOrchestratorEntry(): Promise<void> {
   process.on("SIGTERM", handleSigterm);
   try {
     await shell.run();
+  } catch (sessionErr) {
+    // Session-level errors (context pressure, API failures, SDK crashes)
+    // are caught here instead of propagating to the top-level handler.
+    // Log diagnostic details and proceed to graceful shutdown.
+    const errMsg = sessionErr instanceof Error ? sessionErr.message : String(sessionErr);
+    const errStack = sessionErr instanceof Error ? sessionErr.stack : undefined;
+    process.stderr.write(`[pancode:session] Session terminated with error: ${errMsg}\n`);
+    if (errStack) {
+      process.stderr.write(`${errStack}\n`);
+    }
+    try {
+      const ts = new Date().toISOString();
+      appendFileSync(crashLogPath, `\n[${ts}] Session error: ${errMsg}\n${errStack ?? ""}\n`);
+    } catch {
+      /* ignore */
+    }
   } finally {
     removeSigintHandler();
     process.off("SIGTERM", handleSigterm);
@@ -637,7 +669,15 @@ export async function runOrchestratorEntry(): Promise<void> {
 }
 
 runOrchestratorEntry().catch((error) => {
+  const crashLogPath = join(process.env.PANCODE_HOME ?? "", "crash.log");
   const message = error instanceof Error ? error.message : String(error);
-  console.error(`[pancode:orchestrator] ${message}`);
+  const stack = error instanceof Error ? error.stack : undefined;
+  console.error(`[pancode:orchestrator] Fatal: ${message}`);
+  try {
+    const ts = new Date().toISOString();
+    appendFileSync(crashLogPath, `\n[${ts}] Fatal: ${message}\n${stack ?? ""}\n`);
+  } catch {
+    /* ignore */
+  }
   process.exit(1);
 });
