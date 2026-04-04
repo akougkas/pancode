@@ -94,6 +94,15 @@ export default defineConfig({
           ],
         },
         { label: "Troubleshooting", slug: "troubleshooting" },
+        {
+          label: "Blog",
+          items: [
+            {
+              label: "Your Coding Agent Is Missing a Runtime",
+              slug: "blog/your-coding-agent-is-missing-a-runtime",
+            },
+          ],
+        },
       ],
       head: [
         {
