@@ -57,6 +57,10 @@ bun.lockb
 # npm pack artifacts
 pancode-*.tgz
 
+# Repomix generated repository bundles
+repomix-output/
+repomix-output.*
+
 # Planning & identity docs (local only, not part of product)
 .planning/
 dist/
@@ -70,7 +74,6 @@ website/.astro/
 scripts/load-dynamo-fleet.sh
 __NUKED/
 .specs/
-
 
 
 
